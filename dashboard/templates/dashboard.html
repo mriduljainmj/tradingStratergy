@@ -129,6 +129,18 @@
         .fib-toggle input { cursor: pointer; margin: 0; width: 10px; height: 10px; accent-color: var(--accent-blue);}
         .fib-toggle:hover { color: var(--text-main); border-color: var(--text-muted); }
 
+        /* ── Timeframe Selector ── */
+        .tf-group { display: flex; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; }
+        .tf-btn {
+            padding: 2px 7px; font-size: 9px; font-weight: 700; cursor: pointer;
+            background: var(--bg-card); color: var(--text-muted);
+            border: none; border-right: 1px solid var(--border-color);
+            text-transform: uppercase; transition: all 0.15s; user-select: none;
+        }
+        .tf-btn:last-child { border-right: none; }
+        .tf-btn:hover { color: var(--text-main); background: var(--bg-surface); }
+        .tf-btn.active { background: var(--accent-blue); color: #fff; }
+
         .chart-inner { flex-grow: 1; width: 100%; min-height: 0; position: relative; display: flex; flex-direction: column; }
         #chart, #optionsChart { flex-grow: 1; width: 100%; min-height: 0; position: relative; }
 
@@ -226,11 +238,16 @@
         <div class="charts-column">
             <div class="chart-wrapper" id="niftyPanel">
                 <div class="chart-header">
-                    <div style="display:flex; align-items:center;">
-                        <button class="collapse-btn" onclick="togglePanel('niftyPanel')" style="margin-right:8px;">−</button>
-                        <span class="ch-title" style="margin-right: 12px;">NIFTY 50</span>
-                        <span class="ch-sub" style="margin-right: 12px;">· 5m</span>
-
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button class="collapse-btn" onclick="togglePanel('niftyPanel')" style="margin-right:0;">−</button>
+                        <span class="ch-title">NIFTY 50</span>
+                        <div class="tf-group" id="niftyTfGroup">
+                            <button class="tf-btn" onclick="setNiftyTf(1)">1m</button>
+                            <button class="tf-btn active" onclick="setNiftyTf(5)">5m</button>
+                            <button class="tf-btn" onclick="setNiftyTf(15)">15m</button>
+                            <button class="tf-btn" onclick="setNiftyTf(30)">30m</button>
+                            <button class="tf-btn" onclick="setNiftyTf('D')">D</button>
+                        </div>
                         <label class="fib-toggle" title="Toggle Fibonacci Levels">
                             <input type="checkbox" id="fibToggle" checked onchange="toggleFibLines(this.checked)">
                             <span>FIB</span>
@@ -245,9 +262,16 @@
 
             <div class="options-wrapper" id="optionsWrapper">
                 <div class="chart-header">
-                    <div style="display:flex; align-items:center;">
-                        <button class="collapse-btn" onclick="togglePanel('optionsWrapper')" style="margin-right:8px;">−</button>
-                        <span class="ch-title" id="optLabel">OPTIONS</span> <span class="ch-sub">· BS Theoretical</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button class="collapse-btn" onclick="togglePanel('optionsWrapper')" style="margin-right:0;">−</button>
+                        <span class="ch-title" id="optLabel">OPTIONS</span>
+                        <div class="tf-group" id="optTfGroup">
+                            <button class="tf-btn" onclick="setOptTf(1)">1m</button>
+                            <button class="tf-btn active" onclick="setOptTf(5)">5m</button>
+                            <button class="tf-btn" onclick="setOptTf(15)">15m</button>
+                            <button class="tf-btn" onclick="setOptTf(30)">30m</button>
+                            <button class="tf-btn" onclick="setOptTf('D')">D</button>
+                        </div>
                     </div>
                     <div id="optionsBadge"></div>
                 </div>
@@ -374,7 +398,8 @@
                 ? '<span style="color:#2962FF; font-weight:bold; font-size:10px; border:1px solid rgba(41,98,255,0.3); padding:2px 8px; border-radius:3px; background:rgba(41,98,255,0.15);">CALL</span>'
                 : pos === 'PUT' ? '<span style="color:#F23645; font-weight:bold; font-size:10px; border:1px solid rgba(242,54,69,0.3); padding:2px 8px; border-radius:3px; background:rgba(242,54,69,0.15);">PUT</span>' : '';
 
-            optSeries.setData(prices);
+            rawOptCandles = prices;
+            optSeries.setData(aggregateCandles(rawOptCandles, optTfMins));
 
             const entryOpts  = { price: state.entry_prem,  color: '#787B86', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'Entry'  };
             const targetOpts = { price: state.target_prem, color: '#089981', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'Target' };
@@ -390,6 +415,7 @@
         }
 
         function clearOptionsChart() {
+            rawOptCandles = [];
             optSeries.setData([]);
             if (optTargetLine) { try { optSeries.removePriceLine(optTargetLine); } catch(e) {} optTargetLine = null; }
             if (optEntryLine)  { try { optSeries.removePriceLine(optEntryLine);  } catch(e) {} optEntryLine  = null; }
@@ -397,6 +423,51 @@
         }
 
         // ── Fibonacci Logic Refactor ──
+        // ── Timeframe State ──
+        let niftyTfMins = 5;
+        let optTfMins   = 5;
+        let rawNiftyCandles = [];
+        let rawOptCandles   = [];
+
+        const TF_SECS = { 1: 60, 5: 300, 15: 900, 30: 1800, D: 86400 };
+
+        function aggregateCandles(candles, tfKey) {
+            if (!candles || candles.length === 0) return [];
+            const secs = TF_SECS[tfKey];
+            const buckets = {};
+            for (const c of candles) {
+                const key = Math.floor(c.time / secs) * secs;
+                if (!buckets[key]) {
+                    buckets[key] = { time: key, open: c.open, high: c.high, low: c.low, close: c.close };
+                } else {
+                    buckets[key].high  = Math.max(buckets[key].high, c.high);
+                    buckets[key].low   = Math.min(buckets[key].low,  c.low);
+                    buckets[key].close = c.close;
+                }
+            }
+            return Object.values(buckets).sort((a, b) => a.time - b.time);
+        }
+
+        function setActiveTfBtn(groupId, tfKey) {
+            document.querySelectorAll(`#${groupId} .tf-btn`).forEach(btn => {
+                btn.classList.toggle('active', btn.textContent === String(tfKey === 'D' ? 'D' : tfKey + 'm'));
+            });
+        }
+
+        function setNiftyTf(tf) {
+            niftyTfMins = tf;
+            setActiveTfBtn('niftyTfGroup', tf);
+            candleSeries.setData(aggregateCandles(rawNiftyCandles, tf));
+            chart.timeScale().fitContent();
+        }
+
+        function setOptTf(tf) {
+            optTfMins = tf;
+            setActiveTfBtn('optTfGroup', tf);
+            optSeries.setData(aggregateCandles(rawOptCandles, tf));
+            optChart.timeScale().fitContent();
+        }
+
         let fibLines = {};
         let lastPositionType = null;
         let frozenChart = false;
@@ -488,7 +559,8 @@
                 .then(res => res.json())
                 .then(state => {
                     if (!frozenChart) {
-                        candleSeries.setData(state.candles);
+                        rawNiftyCandles = state.candles;
+                        candleSeries.setData(aggregateCandles(rawNiftyCandles, niftyTfMins));
                         candleSeries.setMarkers(state.markers);
                         renderFibLines(state);
                     }
@@ -642,7 +714,8 @@
 
         function displayDayResult(data) {
             frozenChart = true;
-            candleSeries.setData(data.candles || []);
+            rawNiftyCandles = data.candles || [];
+            candleSeries.setData(aggregateCandles(rawNiftyCandles, niftyTfMins));
             candleSeries.setMarkers(data.markers || []);
             chart.timeScale().fitContent();
 
