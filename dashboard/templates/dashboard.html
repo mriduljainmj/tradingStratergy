@@ -79,8 +79,13 @@
         .range-stat .rs-lbl { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
         .range-scroll { overflow-y: auto; min-height: 0; flex-grow: 1; }
         .pnl-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-        .pnl-table th { text-align: left; padding: 4px 8px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+        .pnl-table th { text-align: left; padding: 4px 8px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg-surface); z-index: 10;}
         .pnl-table td { padding: 4px 8px; border-bottom: 1px solid var(--border-color); }
+
+        .pnl-table tr.clickable-row { cursor: pointer; transition: background 0.1s; }
+        .pnl-table tr.clickable-row:hover td { background: var(--border-color); }
+        .pnl-table tr.no-trade { opacity: 0.5; }
+
         .pnl-pos { color: var(--up-green); font-weight: 600; }
         .pnl-neg { color: var(--down-red); font-weight: 600; }
 
@@ -97,49 +102,33 @@
 
         /* ── Collapsed States ── */
         .collapsed .collapsible-content { display: none !important; }
-        .collapsed.card { flex-grow: 0 !important; min-height: fit-content !important; padding-bottom: 8px !important; }
+        .collapsed.card, .collapsed.range-results { flex-grow: 0 !important; min-height: fit-content !important; padding-bottom: 12px !important; }
         .collapsed.chart-wrapper, .collapsed.options-wrapper { flex-grow: 0 !important; flex-basis: auto !important; height: auto !important; min-height: fit-content !important;}
         .collapsed .panel-header-row { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .collapsed .chart-header { border-bottom: none; }
 
         /* ── Grid Layout ── */
-        .grid-container {
-            display: grid;
-            grid-template-columns: 2.5fr 1fr;
-            gap: 16px;
-            flex-grow: 1;
-            min-height: 0;
-        }
-
-        .charts-column {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            min-height: 0;
-        }
-
-        .chart-wrapper, .options-wrapper {
-            background: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-            flex: 1;
-            overflow: hidden;
-            transition: flex 0.2s ease;
-        }
-
+        .grid-container { display: grid; grid-template-columns: 2.5fr 1fr; gap: 16px; flex-grow: 1; min-height: 0; }
+        .charts-column { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+        .chart-wrapper, .options-wrapper { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; transition: flex 0.2s ease;}
         .options-wrapper { display: none; }
         .options-wrapper.visible { display: flex; }
-
-        .chart-header {
-            padding: 8px 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
-        }
+        .chart-header { padding: 8px 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
         .chart-header .ch-title { color: var(--text-main); font-size: 11px; }
         .chart-header .ch-sub   { color: var(--text-muted); font-size: 10px; }
 
-        /* Inner chart container to hide when collapsed */
+        /* ── Fib Toggle ── */
+        .fib-toggle {
+            display: flex; align-items: center; gap: 4px;
+            font-size: 9px; font-weight: 700; color: var(--text-muted);
+            cursor: pointer; background: var(--bg-surface);
+            border: 1px solid var(--border-color); border-radius: 4px;
+            padding: 2px 6px; text-transform: uppercase; user-select: none;
+            transition: all 0.2s;
+        }
+        .fib-toggle input { cursor: pointer; margin: 0; width: 10px; height: 10px; accent-color: var(--accent-blue);}
+        .fib-toggle:hover { color: var(--text-main); border-color: var(--text-muted); }
+
         .chart-inner { flex-grow: 1; width: 100%; min-height: 0; position: relative; display: flex; flex-direction: column; }
         #chart, #optionsChart { flex-grow: 1; width: 100%; min-height: 0; position: relative; }
 
@@ -159,13 +148,19 @@
         .pnl-display .label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
         .pnl-display .amount { font-size: 26px; font-weight: 700; }
 
+        .tax-breakdown { padding-left: 12px; border-left: 2px solid var(--border-color); margin-bottom: 12px; margin-top: -4px; display: none; }
+        .tax-breakdown.open { display: block; }
+        .tax-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; color: var(--text-muted); }
+        .tax-row .val { font-family: "SF Mono", "Fira Code", monospace; }
+        .clickable-row-tax { cursor: pointer; user-select: none; transition: opacity 0.15s; }
+        .clickable-row-tax:hover { opacity: 0.8; }
+
         .log-box {
             border-radius: 6px;
             flex-grow: 1; overflow-y: auto; min-height: 0;
             font-family: "SF Mono", "Fira Code", monospace; font-size: 11px; line-height: 1.5; color: #A9B1D6;
         }
 
-        /* Scrollbar Styling */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
@@ -209,16 +204,21 @@
     </div>
 
     <div class="range-results" id="rangeResults">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-shrink: 0;">
+        <div class="panel-header-row" style="margin-bottom: 0;">
             <span style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase;">Range Results</span>
-            <button onclick="closeRangeResults()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;">✕</button>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <button class="collapse-btn" onclick="togglePanel('rangeResults')">−</button>
+                <button onclick="closeRangeResults()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
+            </div>
         </div>
-        <div class="range-stats" id="rangeStats"></div>
-        <div class="range-scroll">
-            <table class="pnl-table">
-                <thead><tr><th>Date</th><th>Position</th><th>Entry ₹</th><th>Exit ₹</th><th>P&L</th><th>Cumulative</th></tr></thead>
-                <tbody id="rangeTableBody"></tbody>
-            </table>
+        <div class="collapsible-content" style="display:flex; flex-direction:column; flex-grow:1; min-height:0; margin-top:10px;">
+            <div class="range-stats" id="rangeStats"></div>
+            <div class="range-scroll">
+                <table class="pnl-table">
+                    <thead><tr><th>Date</th><th>Position</th><th>Entry ₹</th><th>Exit ₹</th><th>Net P&L</th><th>Cumulative</th></tr></thead>
+                    <tbody id="rangeTableBody"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -228,7 +228,13 @@
                 <div class="chart-header">
                     <div style="display:flex; align-items:center;">
                         <button class="collapse-btn" onclick="togglePanel('niftyPanel')" style="margin-right:8px;">−</button>
-                        <span class="ch-title">NIFTY 50</span> <span class="ch-sub">· 5m</span>
+                        <span class="ch-title" style="margin-right: 12px;">NIFTY 50</span>
+                        <span class="ch-sub" style="margin-right: 12px;">· 5m</span>
+
+                        <label class="fib-toggle" title="Toggle Fibonacci Levels">
+                            <input type="checkbox" id="fibToggle" checked onchange="toggleFibLines(this.checked)">
+                            <span>FIB</span>
+                        </label>
                     </div>
                     <div id="indexBadge"></div>
                 </div>
@@ -267,9 +273,19 @@
                     <div class="stat-row"><span class="stat-lbl">Entry Prem</span><span class="stat-val" id="en">-</span></div>
                     <div class="stat-row"><span class="stat-lbl">Target</span><span class="stat-val" id="tgt" style="color:var(--up-green)">-</span></div>
                     <div class="stat-row"><span class="stat-lbl">Exit Prem</span><span class="stat-val" id="ex">-</span></div>
+                    <div class="divider"></div>
+                    <div class="stat-row"><span class="stat-lbl">Gross P&L</span><span class="stat-val" id="gpnl">-</span></div>
+
+                    <div class="stat-row clickable-row-tax" onclick="document.getElementById('taxDetails').classList.toggle('open')">
+                        <span class="stat-lbl" style="border-bottom: 1px dashed var(--text-muted);">Taxes & Brokerage ▾</span>
+                        <span class="stat-val" id="chrg" style="color:var(--down-red)">-</span>
+                    </div>
+
+                    <div class="tax-breakdown" id="taxDetails"></div>
+
                     <div class="pnl-display">
                         <div class="label">Net P&amp;L</div>
-                        <div class="amount" id="pnl">₹0.00</div>
+                        <div class="amount" id="npnl">₹0.00</div>
                     </div>
                 </div>
             </div>
@@ -286,7 +302,6 @@
     </div>
 
     <script>
-        // ── Minimize/Collapse Logic ──
         function togglePanel(panelId) {
             const panel = document.getElementById(panelId);
             const btn = panel.querySelector('.collapse-btn');
@@ -298,12 +313,9 @@
             } else {
                 btn.innerText = '−';
             }
-            // Trigger a resize event so lightweight-charts refits to the new flex dimensions
             setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
         }
 
-
-        // ── Charts Logic ──
         const chart = LightweightCharts.createChart(document.getElementById('chart'), {
             layout: { textColor: '#D1D4DC', background: { type: 'solid', color: '#131722' } },
             grid: { vertLines: { color: '#2A2E39' }, horzLines: { color: '#2A2E39' } },
@@ -359,8 +371,8 @@
 
             const pos = state.position_type;
             document.getElementById('optionsBadge').innerHTML = pos === 'CALL'
-                ? '<span style="color:#2962FF; font-weight:bold; font-size:10px;">CALL</span>'
-                : pos === 'PUT' ? '<span style="color:#F23645; font-weight:bold; font-size:10px;">PUT</span>' : '';
+                ? '<span style="color:#2962FF; font-weight:bold; font-size:10px; border:1px solid rgba(41,98,255,0.3); padding:2px 8px; border-radius:3px; background:rgba(41,98,255,0.15);">CALL</span>'
+                : pos === 'PUT' ? '<span style="color:#F23645; font-weight:bold; font-size:10px; border:1px solid rgba(242,54,69,0.3); padding:2px 8px; border-radius:3px; background:rgba(242,54,69,0.15);">PUT</span>' : '';
 
             optSeries.setData(prices);
 
@@ -384,9 +396,22 @@
             document.getElementById('optionsWrapper').classList.remove('visible');
         }
 
+        // ── Fibonacci Logic Refactor ──
         let fibLines = {};
         let lastPositionType = null;
         let frozenChart = false;
+        let lastKnownState = null;
+        let isFibVisible = true;
+
+        function toggleFibLines(visible) {
+            isFibVisible = visible;
+            if (!isFibVisible) {
+                clearFibLines();
+            } else if (lastKnownState) {
+                lastPositionType = null; // force redraw
+                renderFibLines(lastKnownState);
+            }
+        }
 
         function clearFibLines() {
             for (const line of Object.values(fibLines)) {
@@ -433,6 +458,31 @@
             return null;
         }
 
+        function renderFibLines(state) {
+            lastKnownState = state;
+            if (!isFibVisible) {
+                clearFibLines();
+                return;
+            }
+
+            if (state.current_high > 0 && state.current_low > 0 && state.current_low < state.current_high) {
+                if (state.position_type !== lastPositionType) {
+                    clearFibLines();
+                    lastPositionType = state.position_type;
+                }
+                const levels = buildLevels(state);
+                if (levels) {
+                    for (const [key, cfg] of Object.entries(levels)) {
+                        if (fibLines[key]) {
+                            fibLines[key].applyOptions({ price: cfg.p });
+                        } else {
+                            fibLines[key] = candleSeries.createPriceLine({ price: cfg.p, color: cfg.c, lineWidth: cfg.w, lineStyle: cfg.s, axisLabelVisible: true, title: cfg.t });
+                        }
+                    }
+                }
+            }
+        }
+
         function pollData() {
             fetch('/api/state')
                 .then(res => res.json())
@@ -440,26 +490,10 @@
                     if (!frozenChart) {
                         candleSeries.setData(state.candles);
                         candleSeries.setMarkers(state.markers);
+                        renderFibLines(state);
                     }
 
                     if (!frozenChart) {
-                        if (state.current_high > 0 && state.current_low > 0 && state.current_low < state.current_high) {
-                            if (state.position_type !== lastPositionType) {
-                                clearFibLines();
-                                lastPositionType = state.position_type;
-                            }
-                            const levels = buildLevels(state);
-                            if (levels) {
-                                for (const [key, cfg] of Object.entries(levels)) {
-                                    if (fibLines[key]) {
-                                        fibLines[key].applyOptions({ price: cfg.p });
-                                    } else {
-                                        fibLines[key] = candleSeries.createPriceLine({ price: cfg.p, color: cfg.c, lineWidth: cfg.w, lineStyle: cfg.s, axisLabelVisible: true, title: cfg.t });
-                                    }
-                                }
-                            }
-                        }
-
                         const badge = document.getElementById('tradeBadge');
                         if (state.position_type === "CALL" || state.position_type === "PUT") {
                             badge.innerText = `Active: ${state.position_type} OPTION`;
@@ -470,8 +504,8 @@
                         }
 
                         document.getElementById('indexBadge').innerHTML =
-                            state.position_type === 'CALL' ? '<span style="color:#2962FF; font-weight:bold; font-size:10px;">CALL</span>' :
-                            state.position_type === 'PUT'  ? '<span style="color:#F23645; font-weight:bold; font-size:10px;">PUT</span>'   : '';
+                            state.position_type === 'CALL' ? '<span style="color:#2962FF; font-weight:bold; font-size:10px; border:1px solid rgba(41,98,255,0.3); padding:2px 8px; border-radius:3px; background:rgba(41,98,255,0.15);">CALL</span>' :
+                            state.position_type === 'PUT'  ? '<span style="color:#F23645; font-weight:bold; font-size:10px; border:1px solid rgba(242,54,69,0.3); padding:2px 8px; border-radius:3px; background:rgba(242,54,69,0.15);">PUT</span>'   : '';
 
                         document.getElementById('orh').innerText = state.or_high  > 0 ? state.or_high.toFixed(2)  : '-';
                         document.getElementById('orl').innerText = state.or_low   > 0 ? state.or_low.toFixed(2)   : '-';
@@ -481,9 +515,25 @@
                         document.getElementById('tgt').innerText = state.target_prem > 0 ? '₹' + state.target_prem.toFixed(2) : '-';
                         document.getElementById('ex').innerText  = state.exit_prem   > 0 ? '₹' + state.exit_prem.toFixed(2)   : '-';
 
-                        const pnlEl = document.getElementById('pnl');
-                        pnlEl.innerText = '₹' + state.pnl.toFixed(2);
-                        pnlEl.style.color = state.pnl >= 0 ? 'var(--up-green)' : 'var(--down-red)';
+                        document.getElementById('gpnl').innerText = state.gross_pnl !== 0 && state.gross_pnl !== undefined ? '₹' + state.gross_pnl.toFixed(2) : '-';
+                        document.getElementById('chrg').innerText = state.total_charges > 0 ? '-₹' + state.total_charges.toFixed(2) : '-';
+
+                        const pnlEl = document.getElementById('npnl');
+                        pnlEl.innerText = '₹' + (state.net_pnl || 0).toFixed(2);
+                        pnlEl.style.color = (state.net_pnl || 0) >= 0 ? 'var(--up-green)' : 'var(--down-red)';
+
+                        const taxContainer = document.getElementById('taxDetails');
+                        if (state.brokerage_breakdown && Object.keys(state.brokerage_breakdown).length > 0) {
+                            taxContainer.innerHTML = Object.entries(state.brokerage_breakdown)
+                                .map(([key, value]) => `
+                                    <div class="tax-row">
+                                        <span>${key}</span>
+                                        <span class="val">₹${value.toFixed(2)}</span>
+                                    </div>
+                                `).join('');
+                        } else {
+                            taxContainer.innerHTML = '';
+                        }
 
                         document.getElementById('logs').innerHTML = state.logs.map(l => `<div>${l}</div>`).join('');
                         updateOptionsChart(state);
@@ -570,6 +620,26 @@
             .finally(() => { btn.disabled = false; });
         }
 
+        function loadSingleDayFromRange(dateStr) {
+            const status = document.getElementById('btStatus');
+            status.innerText = `Loading chart for ${dateStr}…`;
+
+            fetch('/api/backtest/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'single', date: dateStr })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) { status.innerText = '⚠ ' + data.error; return; }
+                displayDayResult(data);
+                status.innerText = data.trade_taken
+                    ? `${data.position_type} loaded | P&L ₹${data.pnl.toFixed(2)}`
+                    : `No trade triggered on ${dateStr}.`;
+            })
+            .catch(() => { status.innerText = 'Request failed.'; });
+        }
+
         function displayDayResult(data) {
             frozenChart = true;
             candleSeries.setData(data.candles || []);
@@ -584,28 +654,36 @@
             document.getElementById('tgt').innerText = data.target_prem   > 0 ? '₹' + data.target_prem.toFixed(2) : '-';
             document.getElementById('ex').innerText  = data.exit_prem     > 0 ? '₹' + data.exit_prem.toFixed(2)   : '-';
 
-            document.getElementById('indexBadge').innerHTML =
-                data.position_type === 'CALL' ? '<span style="color:#2962FF; font-weight:bold; font-size:10px;">CALL</span>' :
-                data.position_type === 'PUT'  ? '<span style="color:#F23645; font-weight:bold; font-size:10px;">PUT</span>'   : '';
+            document.getElementById('gpnl').innerText = data.gross_pnl !== 0 && data.gross_pnl !== undefined ? '₹' + data.gross_pnl.toFixed(2) : '-';
+            document.getElementById('chrg').innerText = data.total_charges > 0 ? '-₹' + data.total_charges.toFixed(2) : '-';
 
-            const pnlEl = document.getElementById('pnl');
-            pnlEl.innerText   = '₹' + (data.pnl || 0).toFixed(2);
-            pnlEl.style.color = (data.pnl || 0) >= 0 ? 'var(--up-green)' : 'var(--down-red)';
+            document.getElementById('indexBadge').innerHTML =
+                data.position_type === 'CALL' ? '<span style="color:#2962FF; font-weight:bold; font-size:10px; border:1px solid rgba(41,98,255,0.3); padding:2px 8px; border-radius:3px; background:rgba(41,98,255,0.15);">CALL</span>' :
+                data.position_type === 'PUT'  ? '<span style="color:#F23645; font-weight:bold; font-size:10px; border:1px solid rgba(242,54,69,0.3); padding:2px 8px; border-radius:3px; background:rgba(242,54,69,0.15);">PUT</span>'   : '';
+
+            const pnlEl = document.getElementById('npnl');
+            pnlEl.innerText   = '₹' + (data.net_pnl || 0).toFixed(2);
+            pnlEl.style.color = (data.net_pnl || 0) >= 0 ? 'var(--up-green)' : 'var(--down-red)';
+
+            const taxContainer = document.getElementById('taxDetails');
+            if (data.brokerage_breakdown && Object.keys(data.brokerage_breakdown).length > 0) {
+                taxContainer.innerHTML = Object.entries(data.brokerage_breakdown)
+                    .map(([key, value]) => `
+                        <div class="tax-row">
+                            <span>${key}</span>
+                            <span class="val">₹${value.toFixed(2)}</span>
+                        </div>
+                    `).join('');
+            } else {
+                taxContainer.innerHTML = '';
+            }
+
             document.getElementById('logs').innerHTML = (data.logs || []).map(l => `<div>${l}</div>`).join('');
 
             clearFibLines();
             lastPositionType = null;
             const snap = { position_type: data.position_type, current_high: data.current_high, current_low: data.current_low, or_high: data.or_high, or_low: data.or_low };
-
-            if (snap.current_high > 0 && snap.current_low > 0) {
-                lastPositionType = snap.position_type;
-                const levels = buildLevels(snap);
-                if (levels) {
-                    for (const [key, cfg] of Object.entries(levels)) {
-                        fibLines[key] = candleSeries.createPriceLine({ price: cfg.p, color: cfg.c, lineWidth: cfg.w, lineStyle: cfg.s, axisLabelVisible: true, title: cfg.t });
-                    }
-                }
-            }
+            renderFibLines(snap);
 
             updateOptionsChart(data);
             if ((data.option_prices || []).length > 0) optChart.timeScale().fitContent();
@@ -626,20 +704,34 @@
                 </div>`
             ).join('');
 
-            document.getElementById('rangeTableBody').innerHTML = data.cumulative.map(row =>
-                `<tr>
-                    <td>${row.date}</td>
-                    <td>-</td><td>-</td><td>-</td>
-                    <td class="${row.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">₹${row.pnl.toFixed(2)}</td>
-                    <td class="${row.cumulative >= 0 ? 'pnl-pos' : 'pnl-neg'}">₹${row.cumulative.toFixed(2)}</td>
-                </tr>`
-            ).join('');
+            document.getElementById('rangeTableBody').innerHTML = data.cumulative.map(row => {
+                const posHtml = row.position_type === 'CALL' ? '<span style="color:#2962FF; font-weight:bold; font-size:10px; border:1px solid rgba(41,98,255,0.3); padding:2px 8px; border-radius:3px; background:rgba(41,98,255,0.15);">CALL</span>' :
+                               (row.position_type === 'PUT'  ? '<span style="color:#F23645; font-weight:bold; font-size:10px; border:1px solid rgba(242,54,69,0.3); padding:2px 8px; border-radius:3px; background:rgba(242,54,69,0.15);">PUT</span>' : '-');
+
+                const entry = row.trade_taken ? '₹' + row.entry_prem.toFixed(2) : '-';
+                const exit  = row.trade_taken ? '₹' + row.exit_prem.toFixed(2) : '-';
+
+                const rowClass = row.trade_taken ? 'clickable-row' : 'no-trade';
+                const clickAttr = row.trade_taken ? `onclick="loadSingleDayFromRange('${row.date}')"` : '';
+                const icon = row.trade_taken ? '<span style="float:right; font-size:12px; color:var(--accent-blue);">📊</span>' : '';
+
+                return `<tr class="${rowClass}" ${clickAttr} title="${row.trade_taken ? 'Click to view chart' : 'No trade'}">
+                    <td>${row.date} ${icon}</td>
+                    <td>${posHtml}</td>
+                    <td style="font-family: monospace;">${entry}</td>
+                    <td style="font-family: monospace;">${exit}</td>
+                    <td class="${row.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-family: monospace;">₹${row.pnl.toFixed(2)}</td>
+                    <td class="${row.cumulative >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-family: monospace;">₹${row.cumulative.toFixed(2)}</td>
+                </tr>`;
+            }).join('');
 
             document.getElementById('rangeResults').classList.add('visible');
         }
 
         function closeRangeResults() {
             document.getElementById('rangeResults').classList.remove('visible');
+            document.getElementById('rangeResults').classList.remove('collapsed');
+            document.getElementById('rangeResults').querySelector('.collapse-btn').innerText = '−';
         }
 
         setInterval(pollData, 1000);

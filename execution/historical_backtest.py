@@ -68,7 +68,11 @@ class HistoricalBacktester:
             "markers": state.markers,
             "entry_prem": state.entry_prem,
             "exit_prem": state.exit_prem,
-            "pnl": state.pnl,
+            "gross_pnl": state.gross_pnl,
+            "total_charges": state.total_charges,
+            "net_pnl": state.net_pnl,
+            "pnl": state.net_pnl,
+            "brokerage_breakdown": state.brokerage_breakdown,
             "position_type": state.position_type,
             "or_high": state.or_high,
             "or_low": state.or_low,
@@ -108,7 +112,16 @@ class HistoricalBacktester:
         cumulative = []
         for d in daily:
             running += d["pnl"]
-            cumulative.append({"date": d["date"], "pnl": round(d["pnl"], 2), "cumulative": round(running, 2)})
+            # Inject Trade Details for the UI Table
+            cumulative.append({
+                "date": d["date"],
+                "pnl": round(d["pnl"], 2),
+                "cumulative": round(running, 2),
+                "position_type": d.get("position_type", "NONE"),
+                "entry_prem": round(d.get("entry_prem", 0), 2) if d.get("entry_prem") else 0,
+                "exit_prem": round(d.get("exit_prem", 0), 2) if d.get("exit_prem") else 0,
+                "trade_taken": d.get("trade_taken", False)
+            })
 
         return {
             "from_date": str(from_date),

@@ -33,6 +33,13 @@ class TradingConfig:
     risk_free_rate: float = 0.065
     assumed_iv: float = 0.15
 
+    brokerage_per_order: float = 20.0
+    stt_pct: float = 0.000625
+    exchange_charges_pct: float = 0.00053
+    gst_pct: float = 0.18
+    sebi_charges_pct: float = 0.000001
+    stamp_duty_pct: float = 0.00003
+
     @property
     def qty(self) -> int:
         return int(self.lot_size * self.qty_multiplier)

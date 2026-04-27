@@ -14,7 +14,14 @@ class BotState:
     position_type: str = "NONE"
     entry_prem: float = 0.0
     exit_prem: float = 0.0
+
+    # --- P&L TRACKING ---
+    gross_pnl: float = 0.0
+    total_charges: float = 0.0
+    net_pnl: float = 0.0
     pnl: float = 0.0
+    brokerage_breakdown: dict = field(default_factory=dict)
+
     option_prices: List[dict] = field(default_factory=list)   # {"time": int, "value": float}
     option_label: str = ""                                     # e.g. "NIFTY26APR24000CE"
     target_prem: float = 0.0
@@ -35,7 +42,11 @@ class BotState:
         self.position_type = "NONE"
         self.entry_prem = 0.0
         self.exit_prem = 0.0
+        self.gross_pnl = 0.0
+        self.total_charges = 0.0
+        self.net_pnl = 0.0
         self.pnl = 0.0
+        self.brokerage_breakdown = {}
         self.option_prices = []
         self.option_label = ""
         self.target_prem = 0.0
@@ -54,7 +65,11 @@ class BotState:
             "position_type": self.position_type,
             "entry_prem": self.entry_prem,
             "exit_prem": self.exit_prem,
-            "pnl": self.pnl,
+            "gross_pnl": self.gross_pnl,
+            "total_charges": self.total_charges,
+            "net_pnl": self.net_pnl,
+            "pnl": self.net_pnl,
+            "brokerage_breakdown": self.brokerage_breakdown,
             "option_prices": list(self.option_prices),
             "option_label": self.option_label,
             "target_prem": self.target_prem,

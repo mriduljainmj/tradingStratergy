@@ -84,7 +84,6 @@ class ORBStrategy:
             low_p   = bs(tick_low,   self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
             close_p = bs(tick_close, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
         else:
-            # For puts: underlying high → option low, underlying low → option high
             open_p  = bs(tick_open,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
             high_p  = bs(tick_low,   self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
             low_p   = bs(tick_high,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
@@ -93,7 +92,6 @@ class ORBStrategy:
         self.best_prem = max(self.best_prem, high_p)
         trail_sl_prem = self.best_prem - self.trail_dist_prem
 
-        # Record OHLC candle for the options chart
         self.state.option_prices.append({
             "time": unix_time,
             "open":  round(open_p,  2),
@@ -111,20 +109,48 @@ class ORBStrategy:
             triggered, exit_prem = "EOD Force Close", close_p
 
         if triggered:
-            pnl = (exit_prem - self.state.entry_prem) * cfg.qty
+            # P&L and Charges Math
+            gross_pnl = (exit_prem - self.state.entry_prem) * cfg.qty
+
+            buy_val = self.state.entry_prem * cfg.qty
+            sell_val = exit_prem * cfg.qty
+            turnover = buy_val + sell_val
+
+            brokerage = cfg.brokerage_per_order * 2
+            stt = sell_val * cfg.stt_pct
+            exch = turnover * cfg.exchange_charges_pct
+            gst = (brokerage + exch) * cfg.gst_pct
+            sebi = turnover * cfg.sebi_charges_pct
+            stamp = buy_val * cfg.stamp_duty_pct
+
+            total_charges = round(brokerage + stt + exch + gst + sebi + stamp, 2)
+            net_pnl = round(gross_pnl - total_charges, 2)
+
+            self.state.gross_pnl = round(gross_pnl, 2)
+            self.state.total_charges = total_charges
+            self.state.net_pnl = net_pnl
+            self.state.pnl = net_pnl
             self.state.exit_prem = exit_prem
-            self.state.pnl = pnl
-            # Close the final candle at exit price
+
+            self.state.brokerage_breakdown = {
+                "Brokerage (₹20/order)": round(brokerage, 2),
+                "STT (0.0625% on sell)": round(stt, 2),
+                "Exchange (0.053%)": round(exch, 2),
+                "GST (18% on Brk+Exc)": round(gst, 2),
+                "SEBI (₹10/Cr)": round(sebi, 2),
+                "Stamp Duty (0.003% on buy)": round(stamp, 2)
+            }
+
             self.state.option_prices[-1]["close"] = round(exit_prem, 2)
             self.state.markers.append({
                 "time": unix_time,
-                "position": "belowBar" if pnl > 0 else "aboveBar",
-                "color": "#089981" if pnl > 0 else "#F23645",
-                "shape": "arrowUp" if pnl > 0 else "arrowDown",
-                "text": f"EXIT: ₹{pnl:.0f}",
+                "position": "belowBar" if net_pnl > 0 else "aboveBar",
+                "color": "#089981" if net_pnl > 0 else "#F23645",
+                "shape": "arrowUp" if net_pnl > 0 else "arrowDown",
+                "text": f"EXIT: ₹{net_pnl:.0f}",
             })
             self.in_position = False
-            return {"action": "SELL", "reason": triggered, "price": exit_prem, "pnl": pnl}
+            return {"action": "SELL", "reason": triggered, "price": exit_prem, "pnl": net_pnl}
 
         return None
 
