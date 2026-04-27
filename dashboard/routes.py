@@ -2,14 +2,24 @@ import datetime
 
 from flask import Blueprint, jsonify, render_template, request
 
+from config.settings import TradingConfig
 from core.state import BotState
 
 dashboard_bp = Blueprint("dashboard", __name__)
 _state: BotState = None
 _switch_mode_callback = None
 _backtester = None
+_trading_config: TradingConfig = None
 
 VALID_MODES = {"BACKTEST", "PAPER", "LIVE"}
+
+# Fields exposed via the settings API, grouped by section
+_STRATEGY_FIELDS = ["target_pts", "fib_trail", "entry_end_time", "eod_exit_time", "strike_spacing"]
+_POSITION_FIELDS = ["lot_size", "qty_multiplier"]
+_OPTIONS_FIELDS  = ["risk_free_rate", "assumed_iv"]
+_BROKER_FIELDS   = ["brokerage_per_order", "stt_pct", "exchange_charges_pct",
+                    "gst_pct", "sebi_charges_pct", "stamp_duty_pct"]
+_TIME_FIELDS     = {"entry_end_time", "eod_exit_time"}
 
 
 def register_state(state: BotState):
@@ -27,6 +37,40 @@ def register_backtester(backtester):
     _backtester = backtester
 
 
+def register_trading_config(config: TradingConfig):
+    global _trading_config
+    _trading_config = config
+
+
+def _config_to_dict(cfg: TradingConfig) -> dict:
+    result = {}
+    for field in _STRATEGY_FIELDS + _POSITION_FIELDS + _OPTIONS_FIELDS + _BROKER_FIELDS:
+        val = getattr(cfg, field, None)
+        if isinstance(val, datetime.time):
+            val = val.strftime("%H:%M")
+        result[field] = val
+    return result
+
+
+def _apply_config_dict(cfg: TradingConfig, data: dict):
+    for field in _STRATEGY_FIELDS + _POSITION_FIELDS + _OPTIONS_FIELDS + _BROKER_FIELDS:
+        if field not in data:
+            continue
+        val = data[field]
+        if field in _TIME_FIELDS:
+            try:
+                h, m = str(val).split(":")
+                setattr(cfg, field, datetime.time(int(h), int(m)))
+            except Exception:
+                pass
+        else:
+            current = getattr(cfg, field, None)
+            try:
+                setattr(cfg, field, type(current)(val))
+            except Exception:
+                pass
+
+
 @dashboard_bp.route("/")
 def index():
     return render_template("dashboard.html", mode=_state.app_mode)
@@ -35,6 +79,22 @@ def index():
 @dashboard_bp.route("/api/state")
 def get_state():
     return jsonify(_state.to_dict())
+
+
+@dashboard_bp.route("/api/settings", methods=["GET"])
+def get_settings():
+    if not _trading_config:
+        return jsonify({"error": "Config not registered"}), 503
+    return jsonify(_config_to_dict(_trading_config))
+
+
+@dashboard_bp.route("/api/settings", methods=["POST"])
+def update_settings():
+    if not _trading_config:
+        return jsonify({"error": "Config not registered"}), 503
+    data = request.json or {}
+    _apply_config_dict(_trading_config, data)
+    return jsonify({"ok": True, "settings": _config_to_dict(_trading_config)})
 
 
 @dashboard_bp.route("/api/backtest/run", methods=["POST"])

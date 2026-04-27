@@ -93,7 +93,8 @@ def main():
     _start_engine(app_config.mode)
 
     backtester = HistoricalBacktester(trading_config, broker)
-    flask_app = create_app(state, mode_switcher=switch_mode, backtester=backtester)
+    flask_app = create_app(state, mode_switcher=switch_mode, backtester=backtester,
+                           trading_config=trading_config)
     logger.info(f"Dashboard live at http://{app_config.host}:{app_config.port}")
     flask_app.run(host=app_config.host, port=app_config.port, debug=False, use_reloader=False)
 
