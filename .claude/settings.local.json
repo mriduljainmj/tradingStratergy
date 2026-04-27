@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python nifty_swing_backtest.py)",
+      "Bash(pip install *)",
+      "Bash(python3 -m pip install pandas numpy yfinance matplotlib -q)",
+      "Bash(python3 nifty_swing_backtest.py)",
+      "Bash(python3 -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(/opt/homebrew/bin/python3 -m pip install pandas numpy yfinance matplotlib -q)",
+      "Bash(/opt/homebrew/bin/python3 nifty_swing_backtest.py)",
+      "Bash(conda info *)",
+      "Read(//usr/bin/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(/usr/local/bin/python3.11 -c \"import pandas; print\\('ok'\\)\")",
+      "Bash(/usr/local/bin/python3.11 nifty_swing_backtest.py)",
+      "Bash(/usr/local/bin/python3.11 -c ' *)"
+    ]
+  }
+}

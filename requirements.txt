@@ -1,0 +1,7 @@
+flask>=3.0
+kiteconnect>=5.0
+python-dotenv>=1.0
+yfinance>=0.2
+pandas>=2.0
+numpy>=1.26
+matplotlib>=3.8
