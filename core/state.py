@@ -28,6 +28,7 @@ class BotState:
     logs: List[str] = field(default_factory=list)
     markers: List[dict] = field(default_factory=list)
     candles: List[dict] = field(default_factory=list)
+    candles_1m: List[dict] = field(default_factory=list)
 
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
@@ -53,6 +54,7 @@ class BotState:
         self.logs = []
         self.markers = []
         self.candles = []
+        self.candles_1m = []
 
     def to_dict(self) -> dict:
         return {
@@ -76,4 +78,5 @@ class BotState:
             "logs": list(self.logs),
             "markers": list(self.markers),
             "candles": list(self.candles),
+            "candles_1m": list(self.candles_1m),
         }

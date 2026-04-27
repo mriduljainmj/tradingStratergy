@@ -34,6 +34,18 @@ class HistoricalBacktester:
         if not records:
             return {"error": "No data returned (market holiday?)", "date": str(date)}
 
+        def to_candles(recs):
+            return [
+                {
+                    "time": int(r["date"].timestamp()),
+                    "open": r["open"], "high": r["high"],
+                    "low": r["low"], "close": r["close"],
+                }
+                for r in recs
+            ]
+
+        candles_1m = to_candles(records)
+
         try:
             chart_records = self.broker.get_historical_data(
                 self.config.index_token,
@@ -41,14 +53,7 @@ class HistoricalBacktester:
                 f"{date} 15:30:00",
                 "5minute",
             )
-            candles = [
-                {
-                    "time": int(r["date"].timestamp()),
-                    "open": r["open"], "high": r["high"],
-                    "low": r["low"], "close": r["close"],
-                }
-                for r in chart_records
-            ]
+            candles = to_candles(chart_records)
         except Exception:
             candles = []
 
@@ -65,6 +70,7 @@ class HistoricalBacktester:
         return {
             "date": str(date),
             "candles": candles,
+            "candles_1m": candles_1m,
             "markers": state.markers,
             "entry_prem": state.entry_prem,
             "exit_prem": state.exit_prem,

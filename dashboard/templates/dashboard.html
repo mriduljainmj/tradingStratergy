@@ -265,13 +265,6 @@
                     <div style="display:flex; align-items:center; gap:8px;">
                         <button class="collapse-btn" onclick="togglePanel('optionsWrapper')" style="margin-right:0;">−</button>
                         <span class="ch-title" id="optLabel">OPTIONS</span>
-                        <div class="tf-group" id="optTfGroup">
-                            <button class="tf-btn" onclick="setOptTf(1)">1m</button>
-                            <button class="tf-btn active" onclick="setOptTf(5)">5m</button>
-                            <button class="tf-btn" onclick="setOptTf(15)">15m</button>
-                            <button class="tf-btn" onclick="setOptTf(30)">30m</button>
-                            <button class="tf-btn" onclick="setOptTf('D')">D</button>
-                        </div>
                     </div>
                     <div id="optionsBadge"></div>
                 </div>
@@ -399,7 +392,7 @@
                 : pos === 'PUT' ? '<span style="color:#F23645; font-weight:bold; font-size:10px; border:1px solid rgba(242,54,69,0.3); padding:2px 8px; border-radius:3px; background:rgba(242,54,69,0.15);">PUT</span>' : '';
 
             rawOptCandles = prices;
-            optSeries.setData(aggregateCandles(rawOptCandles, optTfMins));
+            optSeries.setData(aggregateCandles(rawOptCandles, currentTf));
 
             const entryOpts  = { price: state.entry_prem,  color: '#787B86', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'Entry'  };
             const targetOpts = { price: state.target_prem, color: '#089981', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'Target' };
@@ -424,8 +417,7 @@
 
         // ── Fibonacci Logic Refactor ──
         // ── Timeframe State ──
-        let niftyTfMins = 5;
-        let optTfMins   = 5;
+        let currentTf = 5;
         let rawNiftyCandles = [];
         let rawOptCandles   = [];
 
@@ -448,24 +440,18 @@
             return Object.values(buckets).sort((a, b) => a.time - b.time);
         }
 
-        function setActiveTfBtn(groupId, tfKey) {
-            document.querySelectorAll(`#${groupId} .tf-btn`).forEach(btn => {
-                btn.classList.toggle('active', btn.textContent === String(tfKey === 'D' ? 'D' : tfKey + 'm'));
-            });
-        }
-
         function setNiftyTf(tf) {
-            niftyTfMins = tf;
-            setActiveTfBtn('niftyTfGroup', tf);
+            currentTf = tf;
+            document.querySelectorAll('#niftyTfGroup .tf-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.textContent === (tf === 'D' ? 'D' : tf + 'm'));
+            });
             candleSeries.setData(aggregateCandles(rawNiftyCandles, tf));
             chart.timeScale().fitContent();
-        }
-
-        function setOptTf(tf) {
-            optTfMins = tf;
-            setActiveTfBtn('optTfGroup', tf);
-            optSeries.setData(aggregateCandles(rawOptCandles, tf));
-            optChart.timeScale().fitContent();
+            // Mirror timeframe on options chart
+            if (rawOptCandles.length > 0) {
+                optSeries.setData(aggregateCandles(rawOptCandles, tf));
+                optChart.timeScale().fitContent();
+            }
         }
 
         let fibLines = {};
@@ -559,8 +545,8 @@
                 .then(res => res.json())
                 .then(state => {
                     if (!frozenChart) {
-                        rawNiftyCandles = state.candles;
-                        candleSeries.setData(aggregateCandles(rawNiftyCandles, niftyTfMins));
+                        rawNiftyCandles = state.candles_1m && state.candles_1m.length ? state.candles_1m : state.candles;
+                        candleSeries.setData(aggregateCandles(rawNiftyCandles, currentTf));
                         candleSeries.setMarkers(state.markers);
                         renderFibLines(state);
                     }
@@ -714,8 +700,8 @@
 
         function displayDayResult(data) {
             frozenChart = true;
-            rawNiftyCandles = data.candles || [];
-            candleSeries.setData(aggregateCandles(rawNiftyCandles, niftyTfMins));
+            rawNiftyCandles = (data.candles_1m && data.candles_1m.length) ? data.candles_1m : (data.candles || []);
+            candleSeries.setData(aggregateCandles(rawNiftyCandles, currentTf));
             candleSeries.setMarkers(data.markers || []);
             chart.timeScale().fitContent();
 
