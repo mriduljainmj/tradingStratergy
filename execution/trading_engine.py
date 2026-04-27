@@ -28,27 +28,34 @@ class TradingEngine:
         return self._stop_event.is_set()
 
     def fetch_chart_data(self):
-        """Fetches 5-minute historical candles for the UI chart."""
-        try:
-            today = datetime.datetime.now().date()
-            records = self.broker.get_historical_data(
-                self.config.index_token,
-                f"{today} 09:15:00",
-                f"{today} 15:30:00",
-                "5minute",
-            )
-            self.state.candles = [
+        """Fetches 1-minute and 5-minute historical candles for the UI chart."""
+        today = datetime.datetime.now().date()
+        start = f"{today} 09:15:00"
+        end   = f"{today} 15:30:00"
+
+        def to_candles(records):
+            return [
                 {
                     "time": int(r["date"].timestamp()),
-                    "open": r["open"],
-                    "high": r["high"],
-                    "low": r["low"],
-                    "close": r["close"],
+                    "open": r["open"], "high": r["high"],
+                    "low": r["low"],   "close": r["close"],
                 }
                 for r in records
             ]
+
+        try:
+            self.state.candles = to_candles(
+                self.broker.get_historical_data(self.config.index_token, start, end, "5minute")
+            )
         except Exception as e:
-            logger.error(f"Error fetching chart data: {e}")
+            logger.error(f"Error fetching 5m chart data: {e}")
+
+        try:
+            self.state.candles_1m = to_candles(
+                self.broker.get_historical_data(self.config.index_token, start, end, "minute")
+            )
+        except Exception as e:
+            logger.error(f"Error fetching 1m chart data: {e}")
 
     def run_backtest(self):
         logger.info("Mode: BACKTEST — fetching 1-min historical data.")
