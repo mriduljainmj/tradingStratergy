@@ -533,35 +533,54 @@
             setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
         }
 
-        const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+        // ── Bulletproof IST Time Formatter ──
+        function formatIST(time) {
+            if (!time) return '';
+            const d = new Date(time * 1000);
+            return new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Kolkata',
+                hour: '2-digit',
+                minute: '2-digit'
+            }).format(d);
+        }
+
+        const commonChartConfig = {
             layout: { textColor: '#D1D4DC', background: { type: 'solid', color: '#131722' } },
             grid: { vertLines: { color: '#2A2E39' }, horzLines: { color: '#2A2E39' } },
             timeScale: {
                 timeVisible: true, rightOffset: 12,
-                tickMarkFormatter: (time) => new Date(time * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata', hour12: false })
+                tickMarkFormatter: formatIST
             },
-            localization: {
-                timeFormatter: (time) => new Date(time * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata', hour12: true })
-            }
-        });
+            localization: { timeFormatter: formatIST },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+        };
+
+        const chart = LightweightCharts.createChart(document.getElementById('chart'), commonChartConfig);
         const candleSeries = chart.addCandlestickSeries({ upColor: '#089981', downColor: '#F23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#F23645' });
 
-        const optChart = LightweightCharts.createChart(document.getElementById('optionsChart'), {
-            layout: { textColor: '#D1D4DC', background: { type: 'solid', color: '#131722' } },
-            grid: { vertLines: { color: '#2A2E39' }, horzLines: { color: '#2A2E39' } },
-            timeScale: {
-                timeVisible: true, rightOffset: 12,
-                tickMarkFormatter: (time) => new Date(time * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata', hour12: false })
-            },
-            localization: {
-                timeFormatter: (time) => new Date(time * 1000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata', hour12: true })
-            },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-        });
+        const optChart = LightweightCharts.createChart(document.getElementById('optionsChart'), commonChartConfig);
         const optSeries = optChart.addCandlestickSeries({ upColor: '#089981', downColor: '#F23645', borderVisible: false, wickUpColor: '#089981', wickDownColor: '#F23645' });
 
         let optTargetLine = null;
         let optEntryLine  = null;
+
+        // ── Synchronize Time Scales (prevents the options chart from stretching) ──
+        let isSyncingLeft = false;
+        let isSyncingRight = false;
+
+        chart.timeScale().subscribeVisibleTimeRangeChange(range => {
+            if (isSyncingLeft || !range) return;
+            isSyncingRight = true;
+            optChart.timeScale().setVisibleTimeRange(range);
+            isSyncingRight = false;
+        });
+
+        optChart.timeScale().subscribeVisibleTimeRangeChange(range => {
+            if (isSyncingRight || !range) return;
+            isSyncingLeft = true;
+            chart.timeScale().setVisibleTimeRange(range);
+            isSyncingLeft = false;
+        });
 
         new ResizeObserver(entries => {
             if (entries.length === 0 || entries[0].target !== document.getElementById('chart')) return;
@@ -573,8 +592,16 @@
             optChart.applyOptions({ height: entries[0].contentRect.height, width: entries[0].contentRect.width });
         }).observe(document.getElementById('optionsChart'));
 
+        // ── Bi-directional Crosshair Sync ──
         chart.subscribeCrosshairMove(param => {
-            if (param.time) optChart.setCrossHairXY(optChart.timeScale().timeToCoordinate(param.time) ?? -1, 0, true);
+            if (param.time) {
+                try { optChart.setCrossHairXY(optChart.timeScale().timeToCoordinate(param.time) ?? -1, 0, true); } catch(e) {}
+            }
+        });
+        optChart.subscribeCrosshairMove(param => {
+            if (param.time) {
+                try { chart.setCrossHairXY(chart.timeScale().timeToCoordinate(param.time) ?? -1, 0, true); } catch(e) {}
+            }
         });
 
         function updateOptionsChart(state) {
