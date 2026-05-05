@@ -84,10 +84,54 @@ class TradingEngine:
             logger.info("No trades triggered today.")
         logger.info("Backtest complete.")
 
+    def _backfill_session(self):
+        """Replay today's 1-min historical ticks so the strategy has correct OR and
+        position state when paper/live mode is started mid-session."""
+        now = datetime.datetime.now()
+        if now.time() <= datetime.time(9, 20):
+            return  # OR window hasn't closed yet — nothing to backfill
+
+        today = now.date()
+        end_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            records = self.broker.get_historical_data(
+                self.config.index_token,
+                f"{today} 09:15:00",
+                end_str,
+                "minute",
+            )
+        except Exception as e:
+            logger.warning(f"Session backfill failed — strategy starts without OR: {e}")
+            return
+
+        if not records:
+            return
+
+        logger.info(f"Backfilling {len(records)} ticks to establish OR and position state…")
+        for r in records:
+            if self._stopped():
+                break
+            dt = r["date"]
+            signal = self.strategy.process_tick(
+                int(dt.timestamp()), dt.time(),
+                r["open"], r["high"], r["low"], r["close"],
+            )
+            if signal:
+                self._handle_signal(signal)
+                if signal["action"] == "SELL":
+                    logger.info("Trade already completed in backfill — entering monitoring state.")
+                    break
+
+        logger.info(
+            f"Backfill done. OR={self.state.or_high:.2f}/{self.state.or_low:.2f} "
+            f"Position={self.state.position_type}"
+        )
+
     def run_live(self, real_money: bool = False):
         mode = "REAL MONEY" if real_money else "PAPER TRADING"
         logger.info(f"Mode: {mode} LIVE — connecting to market.")
         self.fetch_chart_data()
+        self._backfill_session()  # establish OR + position before live loop
 
         while not self._stopped():
             now_dt = datetime.datetime.now()

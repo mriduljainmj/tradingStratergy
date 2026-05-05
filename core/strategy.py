@@ -16,8 +16,6 @@ class ORBStrategy:
         self.config = config
         self.state = state
         self.in_position: bool = False
-        self.best_prem: Optional[float] = None
-        self.trail_dist_prem: Optional[float] = None
         self.target_prem: Optional[float] = None
         self.strike: Optional[int] = None
 
@@ -89,9 +87,6 @@ class ORBStrategy:
             low_p   = bs(tick_high,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
             close_p = bs(tick_close, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
 
-        self.best_prem = max(self.best_prem, high_p)
-        trail_sl_prem = self.best_prem - self.trail_dist_prem
-
         self.state.option_prices.append({
             "time": unix_time,
             "open":  round(open_p,  2),
@@ -100,12 +95,31 @@ class ORBStrategy:
             "close": round(close_p, 2),
         })
 
+        # Trailing stop is anchored to the Fibonacci level on NIFTY price
+        # (matches the orange "Trail SL" line drawn on the chart).
+        # CALL: SL price = swing_high - range * fib_trail   (exit if NIFTY low pierces it)
+        # PUT : SL price = swing_low  + range * fib_trail   (exit if NIFTY high pierces it)
+        h, l = self.state.current_high, self.state.current_low
+        rng = h - l
         triggered, exit_prem = None, None
-        if low_p <= trail_sl_prem:
-            triggered, exit_prem = "Trailing SL Hit", trail_sl_prem
-        elif high_p >= self.target_prem:
+
+        if rng > 0:
+            if is_call:
+                trail_sl_price = h - rng * cfg.fib_trail
+                if tick_low <= trail_sl_price:
+                    triggered = "Trailing SL Hit"
+                    exit_prem = bs(trail_sl_price, self.strike, T_current,
+                                   cfg.risk_free_rate, cfg.assumed_iv)
+            else:
+                trail_sl_price = l + rng * cfg.fib_trail
+                if tick_high >= trail_sl_price:
+                    triggered = "Trailing SL Hit"
+                    exit_prem = bs(trail_sl_price, self.strike, T_current,
+                                   cfg.risk_free_rate, cfg.assumed_iv)
+
+        if not triggered and high_p >= self.target_prem:
             triggered, exit_prem = "Target Hit", self.target_prem
-        elif t >= cfg.eod_exit_time:
+        elif not triggered and t >= cfg.eod_exit_time:
             triggered, exit_prem = "EOD Force Close", close_p
 
         if triggered:
@@ -185,10 +199,8 @@ class ORBStrategy:
         else:
             return None
 
-        prem_risk = entry_prem - sl_prem
+        prem_risk = entry_prem - sl_prem  # kept for the BUY signal payload only
         self.target_prem = entry_prem + cfg.target_pts
-        self.trail_dist_prem = prem_risk * cfg.fib_trail
-        self.best_prem = entry_prem
         self.state.entry_prem = entry_prem
         self.state.target_prem = self.target_prem
         suffix = "CE" if self.state.position_type == "CALL" else "PE"
