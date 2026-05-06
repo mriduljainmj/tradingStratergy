@@ -411,8 +411,10 @@
 </head>
 <body>
     <div class="header">
-        <div style="display: flex; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
             <h1>ORB Architecture</h1>
+            <a href="/analytics" style="font-size:12px; color:var(--text-muted); text-decoration:none; padding:4px 10px; border:1px solid var(--border-color); border-radius:4px; transition:all 0.15s;" onmouseover="this.style.color='var(--text-main)'" onmouseout="this.style.color='var(--text-muted)'">Analytics 📊</a>
+            <a href="/strategy-builder" style="font-size:12px; color:var(--text-muted); text-decoration:none; padding:4px 10px; border:1px solid var(--border-color); border-radius:4px; transition:all 0.15s;" onmouseover="this.style.color='var(--text-main)'" onmouseout="this.style.color='var(--text-muted)'">Strategies ⚡</a>
         </div>
         <div class="mode-switcher">
             <button class="mode-btn" id="btn-BACKTEST" onclick="switchMode('BACKTEST')">Backtest</button>

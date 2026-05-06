@@ -5,3 +5,6 @@ yfinance>=0.2
 pandas>=2.0
 numpy>=1.26
 gunicorn>=21.0
+flask-jwt-extended>=4.6
+sqlalchemy>=2.0
+bcrypt>=4.0

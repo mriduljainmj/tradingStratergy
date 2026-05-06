@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ORB — Strategy Builder</title>
+    <style>
+        :root {
+            --bg-base:#0B0E14; --bg-surface:#131722; --bg-card:#1E222D;
+            --text-main:#D1D4DC; --text-muted:#787B86;
+            --accent-blue:#2962FF; --up-green:#089981; --down-red:#F23645;
+            --border-color:#2A2E39; --warning-yellow:#E6A23C;
+        }
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg-base); color:var(--text-main); }
+
+        .nav { display:flex; align-items:center; gap:16px; padding:12px 24px; background:var(--bg-surface); border-bottom:1px solid var(--border-color); flex-wrap:wrap; }
+        .nav .brand { font-size:16px; font-weight:800; }
+        .nav a { color:var(--text-muted); font-size:13px; text-decoration:none; padding:5px 10px; border-radius:4px; border:1px solid transparent; transition:all 0.15s; }
+        .nav a:hover { color:var(--text-main); border-color:var(--border-color); }
+        .nav a.active { color:#fff; background:var(--accent-blue); border-color:var(--accent-blue); }
+
+        .layout { display:grid; grid-template-columns:260px 1fr; min-height:calc(100vh - 49px); }
+
+        /* ── Sidebar ── */
+        .sidebar { background:var(--bg-surface); border-right:1px solid var(--border-color); display:flex; flex-direction:column; }
+        .sidebar-header { padding:14px 16px; border-bottom:1px solid var(--border-color); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); display:flex; align-items:center; justify-content:space-between; }
+        .sidebar-list { overflow-y:auto; flex:1; }
+        .strategy-item { padding:12px 16px; border-bottom:1px solid var(--border-color); cursor:pointer; transition:background 0.15s; }
+        .strategy-item:hover { background:var(--bg-card); }
+        .strategy-item.active { background:rgba(41,98,255,0.12); border-left:3px solid var(--accent-blue); }
+        .strategy-item .si-name { font-size:13px; font-weight:600; }
+        .strategy-item .si-meta { font-size:11px; color:var(--text-muted); margin-top:3px; }
+        .active-badge { display:inline-block; background:rgba(8,153,129,0.2); color:var(--up-green); border:1px solid rgba(8,153,129,0.4); border-radius:10px; padding:1px 7px; font-size:10px; font-weight:700; margin-left:6px; }
+        .btn-new { margin:12px; padding:8px; background:var(--accent-blue); color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; text-align:center; }
+        .btn-new:hover { opacity:0.88; }
+
+        /* ── Editor ── */
+        .editor { padding:24px; overflow-y:auto; }
+        .editor-header { margin-bottom:20px; }
+        .editor-header h1 { font-size:18px; font-weight:700; }
+        .editor-header p  { font-size:13px; color:var(--text-muted); margin-top:4px; }
+
+        /* Form sections */
+        .section { background:var(--bg-surface); border:1px solid var(--border-color); border-radius:8px; margin-bottom:16px; overflow:hidden; }
+        .section-title { padding:12px 16px; background:var(--bg-card); border-bottom:1px solid var(--border-color); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); display:flex; align-items:center; gap:8px; }
+        .section-body  { padding:16px; }
+
+        label { display:block; font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px; }
+        input[type=text], input[type=number], input[type=time], textarea, select {
+            background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-main);
+            padding:8px 10px; border-radius:4px; font-size:13px; width:100%; outline:none; transition:border-color 0.15s;
+        }
+        input:focus, textarea:focus, select:focus { border-color:var(--accent-blue); }
+        textarea { resize:vertical; min-height:60px; }
+
+        .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
+        .form-row.single { grid-template-columns:1fr; }
+
+        /* Condition rows */
+        .condition-row {
+            display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+            background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px;
+            padding:10px 12px; margin-bottom:8px;
+        }
+        .condition-row select { flex:1; min-width:110px; width:auto; }
+        .condition-row input  { flex:0.7; min-width:80px; width:auto; }
+        .cond-label { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; white-space:nowrap; }
+        .del-btn { background:rgba(242,54,69,0.15); border:1px solid rgba(242,54,69,0.3); color:var(--down-red); border-radius:4px; padding:5px 9px; font-size:12px; cursor:pointer; flex-shrink:0; }
+        .del-btn:hover { background:rgba(242,54,69,0.25); }
+        .operator-chip {
+            display:inline-block; background:rgba(41,98,255,0.15); border:1px solid rgba(41,98,255,0.3); color:var(--accent-blue);
+            border-radius:10px; padding:2px 10px; font-size:10px; font-weight:800; cursor:pointer; margin:4px 0;
+            transition:all 0.15s; text-align:center;
+        }
+        .operator-chip:hover { background:rgba(41,98,255,0.3); }
+
+        .add-cond-btn { background:none; border:1px dashed var(--border-color); color:var(--text-muted); border-radius:6px; padding:8px 14px; font-size:12px; cursor:pointer; width:100%; margin-top:4px; transition:all 0.15s; }
+        .add-cond-btn:hover { border-color:var(--accent-blue); color:var(--accent-blue); }
+
+        /* Time filter */
+        .time-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .time-row label { margin:0; white-space:nowrap; }
+
+        /* Exit rules */
+        .exit-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+        .exit-card { background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:12px; }
+        .exit-card .ec-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:10px; }
+
+        /* Action buttons */
+        .actions { display:flex; gap:10px; flex-wrap:wrap; padding:16px 0 0; }
+        .btn { padding:10px 20px; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; transition:opacity 0.15s; }
+        .btn:hover { opacity:0.88; }
+        .btn-primary  { background:var(--accent-blue); color:#fff; }
+        .btn-success  { background:var(--up-green); color:#fff; }
+        .btn-danger   { background:rgba(242,54,69,0.15); border:1px solid rgba(242,54,69,0.3); color:var(--down-red); }
+        .btn-cancel   { background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-muted); }
+
+        /* Toast */
+        .toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:8px; font-size:13px; font-weight:600; opacity:0; transition:opacity 0.3s; z-index:9999; pointer-events:none; }
+        .toast.show { opacity:1; }
+        .toast.ok  { background:rgba(8,153,129,0.9); color:#fff; }
+        .toast.err { background:rgba(242,54,69,0.9);  color:#fff; }
+
+        @media (max-width:900px) {
+            .layout { grid-template-columns:1fr; }
+            .sidebar { max-height:220px; }
+            .exit-grid { grid-template-columns:1fr; }
+            .form-row { grid-template-columns:1fr; }
+        }
+    </style>
+</head>
+<body>
+<nav class="nav">
+    <span class="brand">ORB 📈</span>
+    <a href="/">Dashboard</a>
+    <a href="/analytics">Analytics</a>
+    <a href="/strategy-builder" class="active">Strategies ⚡</a>
+    <span style="margin-left:auto;font-size:12px;color:var(--text-muted)" id="userLabel"></span>
+    <a href="#" onclick="logout();" style="color:var(--down-red);">Logout</a>
+</nav>
+
+<div class="layout">
+    <!-- Sidebar: strategy list -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            My Strategies
+        </div>
+        <button class="btn-new" onclick="newStrategy()">+ New Strategy</button>
+        <div class="sidebar-list" id="strategyList">
+            <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Main editor -->
+    <div class="editor">
+        <div class="editor-header">
+            <h1 id="editorTitle">Create New Strategy</h1>
+            <p id="editorSub">Define entry/exit rules with the visual builder below.</p>
+        </div>
+
+        <!-- Name & description -->
+        <div class="section">
+            <div class="section-title">📋 Strategy Info</div>
+            <div class="section-body">
+                <div class="form-row">
+                    <div>
+                        <label>Strategy Name</label>
+                        <input type="text" id="stratName" placeholder="e.g. ORB Breakout v2">
+                    </div>
+                    <div>
+                        <label>Description (optional)</label>
+                        <input type="text" id="stratDesc" placeholder="Short description of this strategy">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Entry Conditions -->
+        <div class="section">
+            <div class="section-title">🟢 Entry Conditions</div>
+            <div class="section-body">
+                <div id="conditionRows"></div>
+                <button class="add-cond-btn" onclick="addCondition()">+ Add Condition</button>
+
+                <div style="margin-top:16px">
+                    <label style="margin-bottom:8px">Entry Time Window (skip trades outside this window)</label>
+                    <div class="time-row">
+                        <label>Start</label>
+                        <input type="time" id="timeStart" value="09:20" style="width:120px">
+                        <label>End</label>
+                        <input type="time" id="timeEnd" value="10:30" style="width:120px">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exit Rules -->
+        <div class="section">
+            <div class="section-title">🔴 Exit Rules</div>
+            <div class="section-body">
+                <div class="exit-grid">
+                    <div class="exit-card">
+                        <div class="ec-title">🎯 Take Profit</div>
+                        <label>Type</label>
+                        <select id="tpType" onchange="updateExitHints()">
+                            <option value="PREMIUM_POINTS">Premium Points</option>
+                            <option value="PERCENT_GAIN">% Gain on Premium</option>
+                        </select>
+                        <label style="margin-top:10px" id="tpLbl">Points above entry premium</label>
+                        <input type="number" id="tpValue" value="130" min="1" step="1">
+                    </div>
+                    <div class="exit-card">
+                        <div class="ec-title">🛡 Stop Loss</div>
+                        <label>Type</label>
+                        <select id="slType" onchange="updateExitHints()">
+                            <option value="FIB_TRAIL">Fibonacci Trailing SL</option>
+                            <option value="FIXED_PREMIUM">Fixed Premium Loss</option>
+                            <option value="PERCENT_LOSS">% Loss on Premium</option>
+                        </select>
+                        <label style="margin-top:10px" id="slLbl">Fibonacci level (0–1)</label>
+                        <input type="number" id="slValue" value="0.7" min="0.01" max="1" step="0.01">
+                    </div>
+                    <div class="exit-card">
+                        <div class="ec-title">⏰ Time Exit</div>
+                        <label>Force close all positions at</label>
+                        <input type="time" id="timeExit" value="12:30">
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Trade will be closed at market price at this time if still open.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Position sizing -->
+        <div class="section">
+            <div class="section-title">📦 Position Sizing</div>
+            <div class="section-body">
+                <div class="form-row">
+                    <div>
+                        <label>Lot Size</label>
+                        <input type="number" id="lotSize" value="25" min="1">
+                    </div>
+                    <div>
+                        <label>Number of Lots</label>
+                        <input type="number" id="numLots" value="2" min="1">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions">
+            <button class="btn btn-primary" onclick="saveStrategy()">💾 Save Strategy</button>
+            <button class="btn btn-success" onclick="activateStrategy()" id="activateBtn" style="display:none">⚡ Set as Active</button>
+            <button class="btn btn-danger"  onclick="deleteStrategy()"  id="deleteBtn"   style="display:none">🗑 Delete</button>
+            <button class="btn btn-cancel"  onclick="newStrategy()">✕ Clear</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const TOKEN = localStorage.getItem('orb_token');
+if (!TOKEN) window.location.href = '/login';
+const USER = JSON.parse(localStorage.getItem('orb_user') || '{}');
+document.getElementById('userLabel').textContent = USER.username || '';
+function logout() { localStorage.removeItem('orb_token'); localStorage.removeItem('orb_user'); window.location.href = '/login'; }
+function hdrs() { return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}; }
+
+let currentId = null;
+let conditionCount = 0;
+let operators = [];   // 'AND' or 'OR' between conditions (length = conditionCount-1)
+
+const INDICATORS = ['PRICE','RSI_14','EMA_9','EMA_21','VWAP','OR_HIGH','OR_LOW'];
+const CONDITIONS = ['CROSSES_ABOVE','CROSSES_BELOW','GREATER_THAN','LESS_THAN'];
+const REFERENCES  = ['OR_HIGH','OR_LOW','VWAP'];
+const ACTIONS    = ['BUY_CALL','BUY_PUT'];
+
+function opt(arr, selected='') {
+    return arr.map(v => `<option value="${v}"${v===selected?' selected':''}>${v.replace(/_/g,' ')}</option>`).join('');
+}
+
+function addCondition(data={}) {
+    conditionCount++;
+    const id = 'cond_'+conditionCount;
+    const container = document.getElementById('conditionRows');
+
+    // Add operator chip between conditions
+    if (conditionCount > 1) {
+        const op = data.operator || 'OR';
+        operators.push(op);
+        const chip = document.createElement('div');
+        chip.style.textAlign = 'center';
+        chip.innerHTML = `<span class="operator-chip" id="op_${conditionCount}" onclick="toggleOp(${conditionCount})">${op}</span>`;
+        container.appendChild(chip);
+    }
+
+    const row = document.createElement('div');
+    row.className = 'condition-row';
+    row.id = id;
+    row.innerHTML = `
+        <span class="cond-label">IF</span>
+        <select id="${id}_ind" onchange="updateCondRow('${id}')">${opt(INDICATORS, data.indicator||'PRICE')}</select>
+        <select id="${id}_cond">${opt(CONDITIONS, data.condition||'CROSSES_ABOVE')}</select>
+        <select id="${id}_ref" style="display:none">${opt(REFERENCES, data.reference||'OR_HIGH')}</select>
+        <input  id="${id}_num" type="number" placeholder="value" value="${data.numValue||30}" style="display:none; width:80px">
+        <span class="cond-label">THEN</span>
+        <select id="${id}_action">${opt(ACTIONS, data.action||'BUY_CALL')}</select>
+        <button class="del-btn" onclick="removeCondition('${id}')">✕</button>`;
+    container.appendChild(row);
+    updateCondRow(id);
+}
+
+function updateCondRow(id) {
+    const ind = document.getElementById(id+'_ind').value;
+    const showRef = ['PRICE'].includes(ind);
+    document.getElementById(id+'_ref').style.display = showRef ? '' : 'none';
+    document.getElementById(id+'_num').style.display = showRef ? 'none' : '';
+}
+
+function toggleOp(idx) {
+    const i = idx - 2;  // operators array index
+    operators[i] = operators[i] === 'AND' ? 'OR' : 'AND';
+    document.getElementById('op_'+idx).textContent = operators[i];
+}
+
+function removeCondition(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    // Remove the preceding operator chip if any
+    const prev = el.previousElementSibling;
+    if (prev && prev.querySelector('.operator-chip')) prev.remove();
+    el.remove();
+    conditionCount = document.querySelectorAll('.condition-row').length;
+}
+
+function readConditions() {
+    const rows = document.querySelectorAll('.condition-row');
+    return Array.from(rows).map((row, i) => {
+        const id = row.id;
+        const ind = document.getElementById(id+'_ind').value;
+        const showRef = ['PRICE'].includes(ind);
+        return {
+            indicator: ind,
+            condition: document.getElementById(id+'_cond').value,
+            reference: showRef ? document.getElementById(id+'_ref').value : undefined,
+            numValue:  showRef ? undefined : parseFloat(document.getElementById(id+'_num').value),
+            action:    document.getElementById(id+'_action').value,
+            operator:  i < operators.length ? operators[i] : undefined,
+        };
+    });
+}
+
+function updateExitHints() {
+    const tpType = document.getElementById('tpType').value;
+    const slType = document.getElementById('slType').value;
+    document.getElementById('tpLbl').textContent = tpType === 'PREMIUM_POINTS' ? 'Points above entry premium' : '% gain to trigger exit';
+    document.getElementById('slLbl').textContent = slType === 'FIB_TRAIL' ? 'Fibonacci level (0–1, e.g. 0.7)' : slType === 'PERCENT_LOSS' ? '% loss to trigger SL' : 'Fixed premium loss amount';
+}
+
+function buildPayload() {
+    const conds = readConditions();
+    if (!conds.length) { showToast('Add at least one entry condition.', true); return null; }
+    return {
+        name:        document.getElementById('stratName').value.trim(),
+        description: document.getElementById('stratDesc').value.trim(),
+        rules: {
+            version: "1.0",
+            entry: {
+                conditions:  conds,
+                operator:    conds.length > 1 ? (operators[0] || 'OR') : 'OR',
+                time_filter: { start: document.getElementById('timeStart').value, end: document.getElementById('timeEnd').value },
+            },
+            exit: {
+                take_profit: { type: document.getElementById('tpType').value, value: parseFloat(document.getElementById('tpValue').value) },
+                stop_loss:   { type: document.getElementById('slType').value,  value: parseFloat(document.getElementById('slValue').value) },
+                time_exit:   { time: document.getElementById('timeExit').value },
+            },
+            position: {
+                lot_size: parseInt(document.getElementById('lotSize').value),
+                lots:     parseInt(document.getElementById('numLots').value),
+            },
+        },
+    };
+}
+
+function loadPayloadIntoForm(s) {
+    document.getElementById('stratName').value = s.name || '';
+    document.getElementById('stratDesc').value = s.description || '';
+    const r = s.rules || {};
+
+    // Entry
+    document.getElementById('conditionRows').innerHTML = '';
+    conditionCount = 0; operators = [];
+    (r.entry?.conditions || []).forEach((c,i) => addCondition({...c, operator: i>0?operators[i-1]:'OR'}));
+    document.getElementById('timeStart').value = r.entry?.time_filter?.start || '09:20';
+    document.getElementById('timeEnd').value   = r.entry?.time_filter?.end   || '10:30';
+
+    // Exit
+    const tp = r.exit?.take_profit || {};
+    const sl = r.exit?.stop_loss   || {};
+    document.getElementById('tpType').value  = tp.type  || 'PREMIUM_POINTS';
+    document.getElementById('tpValue').value = tp.value || 130;
+    document.getElementById('slType').value  = sl.type  || 'FIB_TRAIL';
+    document.getElementById('slValue').value = sl.value || 0.7;
+    document.getElementById('timeExit').value = r.exit?.time_exit?.time || '12:30';
+
+    // Position
+    document.getElementById('lotSize').value = r.position?.lot_size || 25;
+    document.getElementById('numLots').value  = r.position?.lots     || 2;
+    updateExitHints();
+}
+
+async function saveStrategy() {
+    const p = buildPayload();
+    if (!p || !p.name) { showToast('Strategy name is required.', true); return; }
+    const method = currentId ? 'PUT' : 'POST';
+    const url    = currentId ? `/api/strategies/${currentId}` : '/api/strategies';
+    const r = await fetch(url, {method, headers:hdrs(), body:JSON.stringify(p)});
+    const d = await r.json();
+    if (d.ok) { currentId = d.strategy.id; showToast('Strategy saved!', false); loadList(); updateButtons(); }
+    else showToast(d.error || 'Save failed.', true);
+}
+
+async function activateStrategy() {
+    if (!currentId) return;
+    const r = await fetch(`/api/strategies/${currentId}/activate`, {method:'POST', headers:hdrs()});
+    const d = await r.json();
+    if (d.ok) { showToast('Strategy activated! ⚡', false); loadList(); }
+    else showToast(d.error || 'Failed.', true);
+}
+
+async function deleteStrategy() {
+    if (!currentId || !confirm('Delete this strategy? This cannot be undone.')) return;
+    const r = await fetch(`/api/strategies/${currentId}`, {method:'DELETE', headers:hdrs()});
+    const d = await r.json();
+    if (d.ok) { showToast('Deleted.', false); newStrategy(); loadList(); }
+    else showToast(d.error || 'Delete failed.', true);
+}
+
+function newStrategy() {
+    currentId = null;
+    document.getElementById('stratName').value = '';
+    document.getElementById('stratDesc').value = '';
+    document.getElementById('conditionRows').innerHTML = '';
+    conditionCount = 0; operators = [];
+    addCondition();
+    document.getElementById('editorTitle').textContent = 'Create New Strategy';
+    document.getElementById('editorSub').textContent   = 'Define entry/exit rules with the visual builder below.';
+    updateButtons();
+    document.querySelectorAll('.strategy-item').forEach(el => el.classList.remove('active'));
+}
+
+function updateButtons() {
+    document.getElementById('activateBtn').style.display = currentId ? '' : 'none';
+    document.getElementById('deleteBtn').style.display   = currentId ? '' : 'none';
+}
+
+async function loadList() {
+    const r = await fetch('/api/strategies', {headers:hdrs()});
+    const d = await r.json();
+    const list = document.getElementById('strategyList');
+    if (!d.ok || !d.strategies.length) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">No strategies yet.<br>Create your first one →</div>';
+        return;
+    }
+    list.innerHTML = d.strategies.map(s => `
+        <div class="strategy-item ${s.id===currentId?'active':''}" onclick="selectStrategy(${s.id})">
+            <div class="si-name">${s.name}${s.is_active?'<span class="active-badge">ACTIVE</span>':''}</div>
+            <div class="si-meta">${s.description || 'No description'}</div>
+        </div>`).join('');
+}
+
+async function selectStrategy(id) {
+    const r = await fetch(`/api/strategies/${id}`, {headers:hdrs()});
+    const d = await r.json();
+    if (!d.ok) { showToast(d.error, true); return; }
+    currentId = id;
+    loadPayloadIntoForm(d.strategy);
+    document.getElementById('editorTitle').textContent = d.strategy.name;
+    document.getElementById('editorSub').textContent   = d.strategy.description || 'Edit this strategy below.';
+    updateButtons();
+    document.querySelectorAll('.strategy-item').forEach(el => el.classList.toggle('active', el.onclick.toString().includes(id)));
+    loadList();  // refresh active state
+}
+
+function showToast(msg, isErr) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast show ' + (isErr ? 'err' : 'ok');
+    setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// Init
+loadList();
+addCondition();  // start with one empty condition
+updateExitHints();
+</script>
+</body>
+</html>
