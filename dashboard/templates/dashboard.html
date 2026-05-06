@@ -168,7 +168,7 @@
         .modal-overlay.open { display: flex; }
         .modal {
             background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
-            width: 540px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column;
+            width: 580px; max-width: 95vw; max-height: 88vh; display: flex; flex-direction: column;
             box-shadow: 0 8px 40px rgba(0,0,0,0.6);
         }
         .modal-header {
@@ -181,49 +181,93 @@
             cursor: pointer; padding: 0 4px; line-height: 1;
         }
         .modal-close:hover { color: var(--text-main); }
-        .modal-tabs { display: flex; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+
+        /* Tab strip */
+        .modal-tabs { display: flex; flex-shrink: 0; gap: 0; padding: 10px 14px 0; }
         .modal-tab {
-            padding: 8px 18px; font-size: 11px; font-weight: 700; cursor: pointer;
-            color: var(--text-muted); background: none; border: none;
-            border-bottom: 2px solid transparent; transition: all 0.15s; text-transform: uppercase;
+            flex: 1; padding: 9px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+            color: var(--text-muted); background: var(--bg-card);
+            border: 1px solid var(--border-color); border-bottom: none;
+            border-radius: 6px 6px 0 0; transition: all 0.15s; text-transform: uppercase;
+            letter-spacing: 0.06em; text-align: center; position: relative; top: 1px;
         }
         .modal-tab:hover { color: var(--text-main); }
-        .modal-tab.active { color: var(--text-main); border-bottom-color: var(--accent-blue); }
-        .modal-tab.active-BACKTEST { border-bottom-color: #4CAF50; color: #4CAF50; }
-        .modal-tab.active-PAPER    { border-bottom-color: var(--warning-yellow); color: var(--warning-yellow); }
-        .modal-tab.active-LIVE     { border-bottom-color: var(--down-red); color: var(--down-red); }
-        .modal-body { padding: 16px 18px; overflow-y: auto; flex-grow: 1; }
+        /* Active tab states — full background + white text */
+        .modal-tab.is-active-BACKTEST {
+            background: #2e7d32; color: #fff; border-color: #2e7d32;
+            box-shadow: 0 -2px 0 0 #4CAF50 inset;
+        }
+        .modal-tab.is-active-PAPER {
+            background: #7a5c00; color: #ffe082; border-color: #7a5c00;
+            box-shadow: 0 -2px 0 0 var(--warning-yellow) inset;
+        }
+        .modal-tab.is-active-LIVE {
+            background: #7f1d1d; color: #fca5a5; border-color: #7f1d1d;
+            box-shadow: 0 -2px 0 0 var(--down-red) inset;
+        }
+
+        /* divider line under tab strip */
+        .modal-tab-divider { height: 1px; background: var(--border-color); flex-shrink: 0; }
+
+        .modal-body { padding: 0 0 4px; overflow-y: auto; flex-grow: 1; }
         .modal-tab-pane { display: none; }
         .modal-tab-pane.active { display: block; }
+
+        /* Pane mode banner */
+        .pane-banner {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 18px; margin-bottom: 0; font-weight: 700; font-size: 13px;
+            border-bottom: 1px solid rgba(255,255,255,0.06); letter-spacing: 0.04em;
+        }
+        .pane-banner .banner-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+        }
+        .pane-banner .banner-subtitle {
+            font-size: 10px; font-weight: 400; opacity: 0.7; margin-left: auto;
+        }
+        .pane-banner-BACKTEST { background: rgba(76,175,80,0.12); color: #81c784; }
+        .pane-banner-PAPER    { background: rgba(230,162,60,0.12); color: #e6a23c; }
+        .pane-banner-LIVE     { background: rgba(242,54,69,0.12);  color: #ef9a9a; }
+        .pane-banner-BACKTEST .banner-dot { background: #4CAF50; }
+        .pane-banner-PAPER    .banner-dot { background: var(--warning-yellow); }
+        .pane-banner-LIVE     .banner-dot { background: var(--down-red); }
+
+        .pane-inner { padding: 16px 18px; }
+
         .settings-section { margin-bottom: 18px; }
         .settings-section-title {
-            font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+            font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
             color: var(--text-muted); margin-bottom: 10px; padding-bottom: 5px;
             border-bottom: 1px solid var(--border-color);
         }
-        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .settings-field { display: flex; flex-direction: column; gap: 4px; }
-        .settings-field label { font-size: 10px; color: var(--text-muted); }
+        .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .settings-field { display: flex; flex-direction: column; gap: 3px; }
+        .settings-field label {
+            font-size: 11px; color: var(--text-main); font-weight: 600; line-height: 1.3;
+        }
+        .settings-field .field-hint {
+            font-size: 10px; color: var(--text-muted); margin-bottom: 2px;
+        }
         .settings-input {
             background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main);
-            padding: 5px 8px; border-radius: 4px; font-size: 12px; width: 100%;
+            padding: 6px 9px; border-radius: 4px; font-size: 12px; width: 100%;
             transition: border-color 0.15s;
         }
         .settings-input:focus { outline: none; border-color: var(--accent-blue); }
         .modal-footer {
             padding: 12px 18px; border-top: 1px solid var(--border-color);
-            display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
+            display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-shrink: 0;
         }
         .btn-cancel {
             padding: 6px 16px; background: var(--bg-card); border: 1px solid var(--border-color);
             color: var(--text-muted); border-radius: 4px; font-size: 12px; cursor: pointer;
         }
         .btn-save {
-            padding: 6px 16px; background: var(--accent-blue); border: none;
+            padding: 7px 20px; background: var(--accent-blue); border: none;
             color: #fff; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer;
         }
         .btn-save:hover { opacity: 0.9; }
-        .settings-note { font-size: 10px; color: var(--text-muted); margin-top: 2px; font-style: italic; }
+        .settings-note { font-size: 10px; color: var(--text-muted); font-style: italic; margin: 0; }
 
         .chart-inner { flex-grow: 1; width: 100%; min-height: 0; position: relative; display: flex; flex-direction: column; }
         #chart, #optionsChart { flex-grow: 1; width: 100%; min-height: 0; position: relative; }
@@ -282,103 +326,258 @@
     <div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this) closeSettings()">
         <div class="modal">
             <div class="modal-header">
-                <h2>⚙ Configuration</h2>
+                <h2>⚙ Strategy Configuration</h2>
                 <button class="modal-close" onclick="closeSettings()">✕</button>
             </div>
+            <!-- Tab strip -->
             <div class="modal-tabs">
-                <button class="modal-tab active-BACKTEST active" id="stab-BACKTEST" onclick="switchSettingsTab('BACKTEST')">Backtest</button>
-                <button class="modal-tab active-PAPER"           id="stab-PAPER"    onclick="switchSettingsTab('PAPER')">Paper</button>
-                <button class="modal-tab active-LIVE"            id="stab-LIVE"     onclick="switchSettingsTab('LIVE')">Live</button>
+                <button class="modal-tab" id="stab-BACKTEST" onclick="switchSettingsTab('BACKTEST')">📊 Backtest</button>
+                <button class="modal-tab" id="stab-PAPER"    onclick="switchSettingsTab('PAPER')">📋 Paper</button>
+                <button class="modal-tab" id="stab-LIVE"     onclick="switchSettingsTab('LIVE')">⚡ Live</button>
             </div>
+            <div class="modal-tab-divider"></div>
             <div class="modal-body">
-                <!-- All three tabs share the same live fields; the tab just highlights context -->
-                <div class="modal-tab-pane active" id="spane-BACKTEST">
-                    <div class="settings-section">
-                        <div class="settings-section-title">Strategy</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Target Points</label><input class="settings-input" id="sf-target_pts" type="number"></div>
-                            <div class="settings-field"><label>FIB Trail</label><input class="settings-input" id="sf-fib_trail" type="number" step="0.01"></div>
-                            <div class="settings-field"><label>Entry End Time (HH:MM)</label><input class="settings-input" id="sf-entry_end_time" type="time"></div>
-                            <div class="settings-field"><label>EOD Exit Time (HH:MM)</label><input class="settings-input" id="sf-eod_exit_time" type="time"></div>
-                            <div class="settings-field"><label>Strike Spacing</label><input class="settings-input" id="sf-strike_spacing" type="number"></div>
-                        </div>
+
+                <!-- ── BACKTEST PANE ── -->
+                <div class="modal-tab-pane" id="spane-BACKTEST">
+                    <div class="pane-banner pane-banner-BACKTEST">
+                        <span class="banner-dot"></span>
+                        BACKTEST MODE
+                        <span class="banner-subtitle">Replay historical data — no real orders</span>
                     </div>
-                    <div class="settings-section">
-                        <div class="settings-section-title">Position Sizing</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Lot Size</label><input class="settings-input" id="sf-lot_size" type="number"></div>
-                            <div class="settings-field"><label>Qty Multiplier</label><input class="settings-input" id="sf-qty_multiplier" type="number" step="0.1"></div>
+                    <div class="pane-inner">
+                        <div class="settings-section">
+                            <div class="settings-section-title">🎯 Trade Rules</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Profit Target</label>
+                                    <div class="field-hint">Exit when option gains this many ₹ in premium</div>
+                                    <input class="settings-input" id="sf-target_pts" type="number" placeholder="e.g. 30">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Trail SL — Fibonacci Level</label>
+                                    <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
+                                    <input class="settings-input" id="sf-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Last Entry Time</label>
+                                    <div class="field-hint">No new trades after this time</div>
+                                    <input class="settings-input" id="sf-entry_end_time" type="time">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Force-Close Time (EOD)</label>
+                                    <div class="field-hint">Close open position at this time regardless</div>
+                                    <input class="settings-input" id="sf-eod_exit_time" type="time">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Strike Spacing (index pts)</label>
+                                    <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
+                                    <input class="settings-input" id="sf-strike_spacing" type="number" placeholder="50">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <div class="settings-section-title">📦 Position Sizing</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Lot Size</label>
+                                    <div class="field-hint">Units per lot (NIFTY = 25)</div>
+                                    <input class="settings-input" id="sf-lot_size" type="number" placeholder="25">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Number of Lots</label>
+                                    <div class="field-hint">How many lots to trade</div>
+                                    <input class="settings-input" id="sf-qty_multiplier" type="number" step="1" placeholder="1">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- ── PAPER PANE ── -->
                 <div class="modal-tab-pane" id="spane-PAPER">
-                    <div class="settings-section">
-                        <div class="settings-section-title">Strategy</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Target Points</label><input class="settings-input" id="sf2-target_pts" type="number"></div>
-                            <div class="settings-field"><label>FIB Trail</label><input class="settings-input" id="sf2-fib_trail" type="number" step="0.01"></div>
-                            <div class="settings-field"><label>Entry End Time (HH:MM)</label><input class="settings-input" id="sf2-entry_end_time" type="time"></div>
-                            <div class="settings-field"><label>EOD Exit Time (HH:MM)</label><input class="settings-input" id="sf2-eod_exit_time" type="time"></div>
-                            <div class="settings-field"><label>Strike Spacing</label><input class="settings-input" id="sf2-strike_spacing" type="number"></div>
-                        </div>
+                    <div class="pane-banner pane-banner-PAPER">
+                        <span class="banner-dot"></span>
+                        PAPER TRADING MODE
+                        <span class="banner-subtitle">Live market feed — simulated orders only</span>
                     </div>
-                    <div class="settings-section">
-                        <div class="settings-section-title">Options Pricing</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Risk-Free Rate</label><input class="settings-input" id="sf2-risk_free_rate" type="number" step="0.001"></div>
-                            <div class="settings-field"><label>Assumed IV</label><input class="settings-input" id="sf2-assumed_iv" type="number" step="0.01"></div>
+                    <div class="pane-inner">
+                        <div class="settings-section">
+                            <div class="settings-section-title">🎯 Trade Rules</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Profit Target</label>
+                                    <div class="field-hint">Exit when option gains this many ₹ in premium</div>
+                                    <input class="settings-input" id="sf2-target_pts" type="number" placeholder="e.g. 30">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Trail SL — Fibonacci Level</label>
+                                    <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
+                                    <input class="settings-input" id="sf2-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Last Entry Time</label>
+                                    <div class="field-hint">No new trades after this time</div>
+                                    <input class="settings-input" id="sf2-entry_end_time" type="time">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Force-Close Time (EOD)</label>
+                                    <div class="field-hint">Close open position at this time regardless</div>
+                                    <input class="settings-input" id="sf2-eod_exit_time" type="time">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Strike Spacing (index pts)</label>
+                                    <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
+                                    <input class="settings-input" id="sf2-strike_spacing" type="number" placeholder="50">
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="settings-section">
-                        <div class="settings-section-title">Position Sizing</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Lot Size</label><input class="settings-input" id="sf2-lot_size" type="number"></div>
-                            <div class="settings-field"><label>Qty Multiplier</label><input class="settings-input" id="sf2-qty_multiplier" type="number" step="0.1"></div>
+                        <div class="settings-section">
+                            <div class="settings-section-title">📐 Options Pricing (Black-Scholes)</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Risk-Free Rate</label>
+                                    <div class="field-hint">Annual rate as decimal (e.g. 0.065 = 6.5%)</div>
+                                    <input class="settings-input" id="sf2-risk_free_rate" type="number" step="0.001" placeholder="0.065">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Assumed IV (Implied Volatility)</label>
+                                    <div class="field-hint">As decimal (e.g. 0.15 = 15% IV)</div>
+                                    <input class="settings-input" id="sf2-assumed_iv" type="number" step="0.01" placeholder="0.15">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <div class="settings-section-title">📦 Position Sizing</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Lot Size</label>
+                                    <div class="field-hint">Units per lot (NIFTY = 25)</div>
+                                    <input class="settings-input" id="sf2-lot_size" type="number" placeholder="25">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Number of Lots</label>
+                                    <div class="field-hint">How many lots to trade</div>
+                                    <input class="settings-input" id="sf2-qty_multiplier" type="number" step="1" placeholder="1">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
+
+                <!-- ── LIVE PANE ── -->
                 <div class="modal-tab-pane" id="spane-LIVE">
-                    <div class="settings-section">
-                        <div class="settings-section-title">Strategy</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Target Points</label><input class="settings-input" id="sf3-target_pts" type="number"></div>
-                            <div class="settings-field"><label>FIB Trail</label><input class="settings-input" id="sf3-fib_trail" type="number" step="0.01"></div>
-                            <div class="settings-field"><label>Entry End Time (HH:MM)</label><input class="settings-input" id="sf3-entry_end_time" type="time"></div>
-                            <div class="settings-field"><label>EOD Exit Time (HH:MM)</label><input class="settings-input" id="sf3-eod_exit_time" type="time"></div>
-                            <div class="settings-field"><label>Strike Spacing</label><input class="settings-input" id="sf3-strike_spacing" type="number"></div>
-                        </div>
+                    <div class="pane-banner pane-banner-LIVE">
+                        <span class="banner-dot"></span>
+                        LIVE TRADING MODE
+                        <span class="banner-subtitle">⚠ Real orders will be placed on Kite</span>
                     </div>
-                    <div class="settings-section">
-                        <div class="settings-section-title">Options Pricing</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Risk-Free Rate</label><input class="settings-input" id="sf3-risk_free_rate" type="number" step="0.001"></div>
-                            <div class="settings-field"><label>Assumed IV</label><input class="settings-input" id="sf3-assumed_iv" type="number" step="0.01"></div>
+                    <div class="pane-inner">
+                        <div class="settings-section">
+                            <div class="settings-section-title">🎯 Trade Rules</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Profit Target</label>
+                                    <div class="field-hint">Exit when option gains this many ₹ in premium</div>
+                                    <input class="settings-input" id="sf3-target_pts" type="number" placeholder="e.g. 30">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Trail SL — Fibonacci Level</label>
+                                    <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
+                                    <input class="settings-input" id="sf3-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Last Entry Time</label>
+                                    <div class="field-hint">No new trades after this time</div>
+                                    <input class="settings-input" id="sf3-entry_end_time" type="time">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Force-Close Time (EOD)</label>
+                                    <div class="field-hint">Close open position at this time regardless</div>
+                                    <input class="settings-input" id="sf3-eod_exit_time" type="time">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Strike Spacing (index pts)</label>
+                                    <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
+                                    <input class="settings-input" id="sf3-strike_spacing" type="number" placeholder="50">
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="settings-section">
-                        <div class="settings-section-title">Position Sizing</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Lot Size</label><input class="settings-input" id="sf3-lot_size" type="number"></div>
-                            <div class="settings-field"><label>Qty Multiplier</label><input class="settings-input" id="sf3-qty_multiplier" type="number" step="0.1"></div>
+                        <div class="settings-section">
+                            <div class="settings-section-title">📐 Options Pricing (Black-Scholes)</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Risk-Free Rate</label>
+                                    <div class="field-hint">Annual rate as decimal (e.g. 0.065 = 6.5%)</div>
+                                    <input class="settings-input" id="sf3-risk_free_rate" type="number" step="0.001" placeholder="0.065">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Assumed IV (Implied Volatility)</label>
+                                    <div class="field-hint">As decimal (e.g. 0.15 = 15% IV)</div>
+                                    <input class="settings-input" id="sf3-assumed_iv" type="number" step="0.01" placeholder="0.15">
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="settings-section">
-                        <div class="settings-section-title">Brokerage &amp; Charges</div>
-                        <div class="settings-grid">
-                            <div class="settings-field"><label>Brokerage / Order (₹)</label><input class="settings-input" id="sf3-brokerage_per_order" type="number" step="0.01"></div>
-                            <div class="settings-field"><label>STT %</label><input class="settings-input" id="sf3-stt_pct" type="number" step="0.000001"></div>
-                            <div class="settings-field"><label>Exchange Charges %</label><input class="settings-input" id="sf3-exchange_charges_pct" type="number" step="0.000001"></div>
-                            <div class="settings-field"><label>GST %</label><input class="settings-input" id="sf3-gst_pct" type="number" step="0.001"></div>
-                            <div class="settings-field"><label>SEBI Charges %</label><input class="settings-input" id="sf3-sebi_charges_pct" type="number" step="0.0000001"></div>
-                            <div class="settings-field"><label>Stamp Duty %</label><input class="settings-input" id="sf3-stamp_duty_pct" type="number" step="0.000001"></div>
+                        <div class="settings-section">
+                            <div class="settings-section-title">📦 Position Sizing</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Lot Size</label>
+                                    <div class="field-hint">Units per lot (NIFTY = 25)</div>
+                                    <input class="settings-input" id="sf3-lot_size" type="number" placeholder="25">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Number of Lots</label>
+                                    <div class="field-hint">How many lots to trade</div>
+                                    <input class="settings-input" id="sf3-qty_multiplier" type="number" step="1" placeholder="1">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <div class="settings-section-title">💸 Brokerage &amp; Statutory Charges</div>
+                            <div class="settings-grid">
+                                <div class="settings-field">
+                                    <label>Brokerage per Order (₹)</label>
+                                    <div class="field-hint">Flat fee per order leg (e.g. ₹20)</div>
+                                    <input class="settings-input" id="sf3-brokerage_per_order" type="number" step="0.01" placeholder="20">
+                                </div>
+                                <div class="settings-field">
+                                    <label>STT — Securities Transaction Tax</label>
+                                    <div class="field-hint">% of sell-side value (e.g. 0.000625)</div>
+                                    <input class="settings-input" id="sf3-stt_pct" type="number" step="0.000001" placeholder="0.000625">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Exchange Transaction Charges</label>
+                                    <div class="field-hint">% of total turnover (e.g. 0.00053)</div>
+                                    <input class="settings-input" id="sf3-exchange_charges_pct" type="number" step="0.000001" placeholder="0.00053">
+                                </div>
+                                <div class="settings-field">
+                                    <label>GST on Brokerage + Exchange</label>
+                                    <div class="field-hint">% (e.g. 0.18 = 18%)</div>
+                                    <input class="settings-input" id="sf3-gst_pct" type="number" step="0.001" placeholder="0.18">
+                                </div>
+                                <div class="settings-field">
+                                    <label>SEBI Regulatory Fee</label>
+                                    <div class="field-hint">% of turnover (e.g. 0.000001 = ₹10/Cr)</div>
+                                    <input class="settings-input" id="sf3-sebi_charges_pct" type="number" step="0.0000001" placeholder="0.000001">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Stamp Duty</label>
+                                    <div class="field-hint">% of buy-side value (e.g. 0.00003)</div>
+                                    <input class="settings-input" id="sf3-stamp_duty_pct" type="number" step="0.000001" placeholder="0.00003">
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <p class="settings-note">Changes apply immediately to the running engine. Restart to persist.</p>
+
             </div>
             <div class="modal-footer">
-                <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
-                <button class="btn-save" onclick="saveSettings()">Save Changes</button>
+                <p class="settings-note">⚡ Changes apply to the running engine immediately.</p>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+                    <button class="btn-save" id="saveBtn" onclick="saveSettings()">Save Changes</button>
+                </div>
             </div>
         </div>
     </div>
@@ -564,23 +763,11 @@
         let optTargetLine = null;
         let optEntryLine  = null;
 
-        // ── Synchronize Time Scales (prevents the options chart from stretching) ──
-        let isSyncingLeft = false;
-        let isSyncingRight = false;
-
-        chart.timeScale().subscribeVisibleTimeRangeChange(range => {
-            if (isSyncingLeft || !range) return;
-            isSyncingRight = true;
-            optChart.timeScale().setVisibleTimeRange(range);
-            isSyncingRight = false;
-        });
-
-        optChart.timeScale().subscribeVisibleTimeRangeChange(range => {
-            if (isSyncingRight || !range) return;
-            isSyncingLeft = true;
-            chart.timeScale().setVisibleTimeRange(range);
-            isSyncingLeft = false;
-        });
+        // Pan/zoom on the two charts is intentionally independent — the
+        // chain-link toggle (⛓) only governs whether the *timeframe* is
+        // mirrored. Trying to sync pan/zoom too caused either feedback
+        // loops or visual drift when the trade window doesn't span the
+        // full NIFTY range.
 
         new ResizeObserver(entries => {
             if (entries.length === 0 || entries[0].target !== document.getElementById('chart')) return;
@@ -619,7 +806,8 @@
                 : pos === 'PUT' ? '<span style="color:#F23645; font-weight:bold; font-size:10px; border:1px solid rgba(242,54,69,0.3); padding:2px 8px; border-radius:3px; background:rgba(242,54,69,0.15);">PUT</span>' : '';
 
             rawOptCandles = prices;
-            optSeries.setData(aggregateCandles(rawOptCandles, currentTf));
+            const optTf = optSynced ? currentTf : currentOptTf;
+            paintOptionsChart(optTf);
 
             const entryOpts  = { price: state.entry_prem,  color: '#787B86', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'Entry'  };
             const targetOpts = { price: state.target_prem, color: '#089981', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'Target' };
@@ -637,6 +825,7 @@
         function clearOptionsChart() {
             rawOptCandles = [];
             optSeries.setData([]);
+            optSeries.setMarkers([]);
             if (optTargetLine) { try { optSeries.removePriceLine(optTargetLine); } catch(e) {} optTargetLine = null; }
             if (optEntryLine)  { try { optSeries.removePriceLine(optEntryLine);  } catch(e) {} optEntryLine  = null; }
             document.getElementById('optionsWrapper').classList.remove('visible');
@@ -648,8 +837,36 @@
         let optSynced    = true;
         let rawNiftyCandles = [];
         let rawOptCandles   = [];
+        let rawMarkers      = [];
 
         const TF_SECS = { 1: 60, 5: 300, 15: 900, 30: 1800, D: 86400 };
+
+        function paintOptionsChart(tf) {
+            if (rawOptCandles.length === 0) {
+                optSeries.setData([]);
+                optSeries.setMarkers([]);
+                return;
+            }
+            optSeries.setData(aggregateCandles(rawOptCandles, tf));
+            optSeries.setMarkers(snapMarkers(rawMarkers, tf));
+        }
+
+        function snapMarkers(markers, tfKey) {
+            if (!markers || markers.length === 0) return [];
+            const secs = TF_SECS[tfKey];
+            const snapped = markers.map(m => ({ ...m, time: Math.floor(m.time / secs) * secs }));
+            // Markers must be strictly ascending by time and unique per timestamp
+            snapped.sort((a, b) => a.time - b.time);
+            const out = [];
+            for (const m of snapped) {
+                if (out.length && out[out.length - 1].time === m.time) {
+                    out[out.length - 1] = m; // keep the latest one for the same bucket
+                } else {
+                    out.push(m);
+                }
+            }
+            return out;
+        }
 
         function aggregateCandles(candles, tfKey) {
             if (!candles || candles.length === 0) return [];
@@ -678,10 +895,11 @@
             currentTf = tf;
             setActiveTfBtn('niftyTfGroup', tf);
             candleSeries.setData(aggregateCandles(rawNiftyCandles, tf));
+            candleSeries.setMarkers(snapMarkers(rawMarkers, tf));
             chart.timeScale().fitContent();
             if (optSynced && rawOptCandles.length > 0) {
                 currentOptTf = tf;
-                optSeries.setData(aggregateCandles(rawOptCandles, tf));
+                paintOptionsChart(tf);
                 optChart.timeScale().fitContent();
             }
         }
@@ -690,7 +908,7 @@
             currentOptTf = tf;
             setActiveTfBtn('optTfGroup', tf);
             if (rawOptCandles.length > 0) {
-                optSeries.setData(aggregateCandles(rawOptCandles, tf));
+                paintOptionsChart(tf);
                 optChart.timeScale().fitContent();
             }
         }
@@ -706,7 +924,7 @@
                 // snap options back to NIFTY timeframe
                 currentOptTf = currentTf;
                 if (rawOptCandles.length > 0) {
-                    optSeries.setData(aggregateCandles(rawOptCandles, currentTf));
+                    paintOptionsChart(currentTf);
                     optChart.timeScale().fitContent();
                 }
             } else {
@@ -748,10 +966,19 @@
 
         function switchSettingsTab(tab) {
             settingsTab = tab;
-            document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+            // Remove all active classes from tabs
+            ['BACKTEST','PAPER','LIVE'].forEach(m => {
+                const t = document.getElementById('stab-' + m);
+                t.classList.remove('is-active-BACKTEST','is-active-PAPER','is-active-LIVE');
+            });
+            // Deactivate all panes
             document.querySelectorAll('.modal-tab-pane').forEach(p => p.classList.remove('active'));
-            document.getElementById('stab-' + tab).classList.add('active');
+            // Activate selected
+            document.getElementById('stab-' + tab).classList.add('is-active-' + tab);
             document.getElementById('spane-' + tab).classList.add('active');
+            // Update save button color to match mode
+            const colors = { BACKTEST: '#2e7d32', PAPER: '#7a5c00', LIVE: '#b91c1c' };
+            document.getElementById('saveBtn').style.background = colors[tab] || 'var(--accent-blue)';
         }
 
         function saveSettings() {
@@ -872,7 +1099,8 @@
                     if (!frozenChart) {
                         rawNiftyCandles = state.candles_1m && state.candles_1m.length ? state.candles_1m : state.candles;
                         candleSeries.setData(aggregateCandles(rawNiftyCandles, currentTf));
-                        candleSeries.setMarkers(state.markers);
+                        rawMarkers = state.markers || [];
+                        candleSeries.setMarkers(snapMarkers(rawMarkers, currentTf));
                         renderFibLines(state);
                     }
 
@@ -1027,7 +1255,8 @@
             frozenChart = true;
             rawNiftyCandles = (data.candles_1m && data.candles_1m.length) ? data.candles_1m : (data.candles || []);
             candleSeries.setData(aggregateCandles(rawNiftyCandles, currentTf));
-            candleSeries.setMarkers(data.markers || []);
+            rawMarkers = data.markers || [];
+            candleSeries.setMarkers(snapMarkers(rawMarkers, currentTf));
             chart.timeScale().fitContent();
 
             document.getElementById('orh').innerText = data.or_high       > 0 ? data.or_high.toFixed(2)       : '-';

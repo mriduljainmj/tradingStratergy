@@ -31,7 +31,20 @@ class KiteBroker:
             return False
 
     def restore_session(self) -> bool:
-        """Reuse today's cached access token if it exists — skips re-login."""
+        """Reuse today's cached access token if it exists — skips re-login.
+        Also checks the KITE_ACCESS_TOKEN env var (useful on Render/cloud)."""
+        # 1. Try env var (set manually in Render dashboard each trading day)
+        env_token = os.getenv("KITE_ACCESS_TOKEN", "").strip()
+        if env_token:
+            try:
+                self.kite.set_access_token(env_token)
+                self.kite.profile()
+                logger.info("Session restored from KITE_ACCESS_TOKEN env var.")
+                return True
+            except Exception as e:
+                logger.warning(f"KITE_ACCESS_TOKEN env var is invalid: {e}")
+
+        # 2. Try local file cache (works in local dev / persistent VPS)
         try:
             if not os.path.exists(_TOKEN_CACHE):
                 return False

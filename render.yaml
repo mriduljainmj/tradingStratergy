@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: orb-trading-dashboard
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    plan: free
+    envVars:
+      - key: APP_MODE
+        value: PAPER          # BACKTEST | PAPER | LIVE
+      - key: DASHBOARD_HOST
+        value: 0.0.0.0        # must bind to 0.0.0.0 on Render
+      - key: KITE_API_KEY
+        sync: false           # set manually in Render dashboard
+      - key: KITE_API_SECRET
+        sync: false           # set manually in Render dashboard
+      - key: KITE_ACCESS_TOKEN
+        sync: false           # optional — set each morning after Kite login

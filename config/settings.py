@@ -10,7 +10,8 @@ load_dotenv()
 class AppConfig:
     mode: str = os.getenv("APP_MODE", "PAPER")  # BACKTEST | PAPER | LIVE
     host: str = os.getenv("DASHBOARD_HOST", "127.0.0.1")
-    port: int = int(os.getenv("DASHBOARD_PORT", "8080"))
+    # Render injects PORT; fall back to DASHBOARD_PORT, then 8080 for local dev
+    port: int = int(os.getenv("PORT") or os.getenv("DASHBOARD_PORT") or "8080")
 
 
 @dataclass
