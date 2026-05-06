@@ -9,6 +9,7 @@ from config.settings import TradingConfig
 logger = logging.getLogger(__name__)
 
 _TOKEN_CACHE = ".kite_session.json"
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 
 class KiteBroker:
@@ -50,7 +51,7 @@ class KiteBroker:
                 return False
             with open(_TOKEN_CACHE) as f:
                 cache = json.load(f)
-            if cache.get("date") != str(datetime.date.today()):
+            if cache.get("date") != str(datetime.datetime.now(tz=_IST).date()):
                 return False
             self.kite.set_access_token(cache["access_token"])
             self.kite.profile()  # validates the token is still alive
@@ -61,7 +62,7 @@ class KiteBroker:
 
     def _save_token(self, access_token: str):
         with open(_TOKEN_CACHE, "w") as f:
-            json.dump({"date": str(datetime.date.today()), "access_token": access_token}, f)
+            json.dump({"date": str(datetime.datetime.now(tz=_IST).date()), "access_token": access_token}, f)
 
     def login_url(self) -> str:
         return self.kite.login_url()

@@ -6,6 +6,8 @@ services:
     startCommand: python main.py
     plan: free
     envVars:
+      - key: TZ
+        value: Asia/Kolkata   # IST — critical for market time comparisons
       - key: APP_MODE
         value: PAPER          # BACKTEST | PAPER | LIVE
       - key: DASHBOARD_HOST

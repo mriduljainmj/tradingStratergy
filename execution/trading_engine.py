@@ -10,6 +10,13 @@ from execution.broker import KiteBroker
 
 logger = logging.getLogger(__name__)
 
+# Always use IST regardless of the server's local timezone (Render runs UTC)
+_IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+def _now() -> datetime.datetime:
+    """Current datetime in IST."""
+    return datetime.datetime.now(tz=_IST)
+
 
 class TradingEngine:
     """Orchestrates data fetching, strategy execution, and order routing."""
@@ -29,7 +36,7 @@ class TradingEngine:
 
     def fetch_chart_data(self):
         """Fetches 1-minute and 5-minute historical candles for the UI chart."""
-        today = datetime.datetime.now().date()
+        today = _now().date()
         start = f"{today} 09:15:00"
         end   = f"{today} 15:30:00"
 
@@ -61,7 +68,7 @@ class TradingEngine:
         logger.info("Mode: BACKTEST — fetching 1-min historical data.")
         self.fetch_chart_data()
 
-        today = datetime.datetime.now().date()
+        today = _now().date()
         records = self.broker.get_historical_data(
             self.config.index_token,
             f"{today} 09:15:00",
@@ -87,7 +94,7 @@ class TradingEngine:
     def _backfill_session(self):
         """Replay today's 1-min historical ticks so the strategy has correct OR and
         position state when paper/live mode is started mid-session."""
-        now = datetime.datetime.now()
+        now = _now()
         if now.time() <= datetime.time(9, 20):
             return  # OR window hasn't closed yet — nothing to backfill
 
@@ -134,7 +141,7 @@ class TradingEngine:
         self._backfill_session()  # establish OR + position before live loop
 
         while not self._stopped():
-            now_dt = datetime.datetime.now()
+            now_dt = _now()
             t = now_dt.time()
 
             if t < datetime.time(9, 15):
