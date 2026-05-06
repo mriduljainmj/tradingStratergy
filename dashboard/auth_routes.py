@@ -5,11 +5,53 @@ from flask import Blueprint, jsonify, render_template, request
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 
 from db.database import SessionLocal
-from db.models import User
+from db.models import User, Strategy
 
 auth_bp = Blueprint("auth", __name__)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# ── Default strategy seeded for every new user ─────────────────────────────────
+_DEFAULT_ORB_STRATEGY = {
+    "version": "1.0",
+    "entry": {
+        "conditions": [
+            {
+                "indicator": "PRICE",
+                "condition": "CROSSES_ABOVE",
+                "reference": "OR_HIGH",
+                "action":    "BUY_CALL",
+            },
+            {
+                "indicator": "PRICE",
+                "condition": "CROSSES_BELOW",
+                "reference": "OR_LOW",
+                "action":    "BUY_PUT",
+            },
+        ],
+        "operator":    "OR",
+        "time_filter": {"start": "09:20", "end": "10:30"},
+    },
+    "exit": {
+        "take_profit": {"type": "PREMIUM_POINTS", "value": 130},
+        "stop_loss":   {"type": "FIB_TRAIL",       "value": 0.7},
+        "time_exit":   {"time": "12:30"},
+    },
+    "position": {"lot_size": 25, "lots": 2},
+}
+
+
+def _seed_default_strategy(db, user_id: int):
+    s = Strategy(
+        user_id     = user_id,
+        name        = "ORB Breakout (Default)",
+        description = "Opening Range Breakout — buy CALL on OR High breakout, "
+                      "PUT on OR Low breakdown. 130-pt target, 0.7 Fib trail SL, "
+                      "EOD close at 12:30.",
+        is_active   = True,
+    )
+    s.set_rules(_DEFAULT_ORB_STRATEGY)
+    db.add(s)
 
 
 def _bad(msg, code=400):
@@ -27,7 +69,7 @@ def login_page():
 
 @auth_bp.route("/api/auth/register", methods=["POST"])
 def register():
-    data = request.get_json(silent=True) or {}
+    data     = request.get_json(silent=True) or {}
     email    = (data.get("email")    or "").strip().lower()
     username = (data.get("username") or "").strip()
     password = (data.get("password") or "")
@@ -49,11 +91,19 @@ def register():
         pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
         user = User(email=email, username=username, password_hash=pw_hash)
         db.add(user)
+        db.flush()  # get user.id before committing
+
+        # Seed the default ORB strategy for every new account
+        _seed_default_strategy(db, user.id)
+
         db.commit()
         db.refresh(user)
 
         token = create_access_token(identity=str(user.id))
         return jsonify({"ok": True, "token": token, "user": user.to_dict()}), 201
+    except Exception as e:
+        db.rollback()
+        return _bad(str(e), 500)
     finally:
         db.close()
 
@@ -81,7 +131,6 @@ def login():
 
 @auth_bp.route("/api/auth/logout", methods=["POST"])
 def logout():
-    # JWT is stateless — client drops the token
     return jsonify({"ok": True})
 
 

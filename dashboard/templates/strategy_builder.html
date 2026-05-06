@@ -419,15 +419,35 @@ async function deleteStrategy() {
     else showToast(d.error || 'Delete failed.', true);
 }
 
+// Default ORB strategy values used when creating a brand-new strategy
+const ORB_DEFAULTS = {
+    name: 'ORB Breakout (Default)',
+    description: 'Opening Range Breakout — buy CALL on OR High breakout, PUT on OR Low breakdown.',
+    rules: {
+        entry: {
+            conditions: [
+                {indicator:'PRICE', condition:'CROSSES_ABOVE', reference:'OR_HIGH', action:'BUY_CALL'},
+                {indicator:'PRICE', condition:'CROSSES_BELOW', reference:'OR_LOW',  action:'BUY_PUT'},
+            ],
+            operator:    'OR',
+            time_filter: {start:'09:20', end:'10:30'},
+        },
+        exit: {
+            take_profit: {type:'PREMIUM_POINTS', value:130},
+            stop_loss:   {type:'FIB_TRAIL',      value:0.7},
+            time_exit:   {time:'12:30'},
+        },
+        position: {lot_size:25, lots:2},
+    },
+};
+
 function newStrategy() {
     currentId = null;
-    document.getElementById('stratName').value = '';
-    document.getElementById('stratDesc').value = '';
-    document.getElementById('conditionRows').innerHTML = '';
-    conditionCount = 0; operators = [];
-    addCondition();
-    document.getElementById('editorTitle').textContent = 'Create New Strategy';
-    document.getElementById('editorSub').textContent   = 'Define entry/exit rules with the visual builder below.';
+    // Pre-fill with ORB defaults so new strategies start from a working baseline
+    loadPayloadIntoForm(ORB_DEFAULTS);
+    document.getElementById('stratName').value = '';   // clear name so user must name it
+    document.getElementById('editorTitle').textContent = 'New Strategy';
+    document.getElementById('editorSub').textContent   = 'Starts from the default ORB template — edit and save.';
     updateButtons();
     document.querySelectorAll('.strategy-item').forEach(el => el.classList.remove('active'));
 }
@@ -450,6 +470,7 @@ async function loadList() {
             <div class="si-name">${s.name}${s.is_active?'<span class="active-badge">ACTIVE</span>':''}</div>
             <div class="si-meta">${s.description || 'No description'}</div>
         </div>`).join('');
+    return d.strategies;
 }
 
 async function selectStrategy(id) {
@@ -461,8 +482,7 @@ async function selectStrategy(id) {
     document.getElementById('editorTitle').textContent = d.strategy.name;
     document.getElementById('editorSub').textContent   = d.strategy.description || 'Edit this strategy below.';
     updateButtons();
-    document.querySelectorAll('.strategy-item').forEach(el => el.classList.toggle('active', el.onclick.toString().includes(id)));
-    loadList();  // refresh active state
+    document.querySelectorAll('.strategy-item').forEach(el => el.classList.toggle('active', el.onclick.toString().includes(String(id))));
 }
 
 function showToast(msg, isErr) {
@@ -472,10 +492,25 @@ function showToast(msg, isErr) {
     setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// Init
-loadList();
-addCondition();  // start with one empty condition
-updateExitHints();
+// ── Init: load list then open the active (or first) strategy automatically ──
+async function init() {
+    const strategies = await loadList();
+    if (!strategies || !strategies.length) {
+        // No strategies at all — show ORB defaults ready to save
+        loadPayloadIntoForm(ORB_DEFAULTS);
+        document.getElementById('stratName').value = '';
+        document.getElementById('editorTitle').textContent = 'New Strategy';
+        document.getElementById('editorSub').textContent   = 'Starts from the default ORB template — name it and save.';
+        updateExitHints();
+        return;
+    }
+    // Open active strategy first, otherwise the first in the list
+    const active = strategies.find(s => s.is_active) || strategies[0];
+    await selectStrategy(active.id);
+    updateExitHints();
+}
+
+init();
 </script>
 </body>
 </html>

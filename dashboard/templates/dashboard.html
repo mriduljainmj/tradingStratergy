@@ -821,6 +821,30 @@
     </div>
 
     <script>
+        // ── Auth guard — redirect to /login if not authenticated ──────────────
+        (function() {
+            const token = localStorage.getItem('orb_token');
+            if (!token) { window.location.replace('/login'); }
+            const user = JSON.parse(localStorage.getItem('orb_user') || '{}');
+            if (user.username) {
+                const lbl = document.createElement('span');
+                lbl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-right:6px';
+                lbl.textContent = user.username;
+                const logoutBtn = document.createElement('button');
+                logoutBtn.className = 'gear-btn';
+                logoutBtn.title = 'Logout';
+                logoutBtn.textContent = '⏻';
+                logoutBtn.style.fontSize = '13px';
+                logoutBtn.onclick = () => {
+                    localStorage.removeItem('orb_token');
+                    localStorage.removeItem('orb_user');
+                    window.location.href = '/login';
+                };
+                const switcher = document.querySelector('.mode-switcher');
+                if (switcher) { switcher.appendChild(lbl); switcher.appendChild(logoutBtn); }
+            }
+        })();
+
         function togglePanel(panelId) {
             const panel = document.getElementById(panelId);
             const btn = panel.querySelector('.collapse-btn');

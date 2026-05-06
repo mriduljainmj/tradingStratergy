@@ -20,3 +20,5 @@ services:
         sync: false           # optional — set each morning after Kite login
       - key: JWT_SECRET_KEY
         sync: false           # set to a long random string in Render dashboard
+      - key: DATABASE_URL
+        sync: false           # PostgreSQL connection string from Neon/Supabase
