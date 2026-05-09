@@ -152,7 +152,24 @@ class TradingEngine:
             try:
                 ltp = self.broker.get_ltp(self.config.index_symbol)
                 unix_time = int(now_dt.timestamp())
-                signal = self.strategy.process_tick(unix_time, t, ltp, ltp, ltp, ltp)
+
+                # If we're holding a position, fetch the REAL option LTP from
+                # the exchange instead of estimating via Black-Scholes.
+                real_opt_price = None
+                if self.strategy.in_position and self.strategy.strike:
+                    suffix = "CE" if self.state.position_type == "CALL" else "PE"
+                    real_opt_price = self.broker.get_option_ltp(
+                        self.strategy.strike, suffix
+                    )
+                    if real_opt_price:
+                        self.state.status = (
+                            f"Tracking | NIFTY: {ltp}  "
+                            f"Option: ₹{real_opt_price:.2f}"
+                        )
+
+                signal = self.strategy.process_tick(
+                    unix_time, t, ltp, ltp, ltp, ltp, real_opt_price
+                )
 
                 if signal:
                     self._handle_signal(signal, real_money)
@@ -160,7 +177,8 @@ class TradingEngine:
                         logger.info("Trade complete. Shutting down engine.")
                         break
 
-                self.state.status = f"Tracking | LTP: {ltp}"
+                if not self.strategy.in_position:
+                    self.state.status = f"Tracking | LTP: {ltp}"
 
                 if now_dt.second % 15 == 0:
                     self.fetch_chart_data()
@@ -179,12 +197,53 @@ class TradingEngine:
                 f"Risk: ₹{signal['risk']:.2f} Target: ₹{signal['target']:.2f}"
             )
             if real_money:
-                sym = f"{cfg.trading_symbol_prefix}{signal['strike']}{'CE' if signal['type'] == 'CALL' else 'PE'}"
-                self.broker.place_market_order(sym, self.broker.kite.TRANSACTION_TYPE_BUY, cfg.qty)
+                sym = (f"{cfg.trading_symbol_prefix}{signal['strike']}"
+                       f"{'CE' if signal['type'] == 'CALL' else 'PE'}")
+                order_id = self.broker.place_market_order(
+                    sym, self.broker.kite.TRANSACTION_TYPE_BUY, cfg.qty
+                )
+                # Overwrite the BS-estimated entry with the actual exchange fill price
+                fill = self.broker.get_fill_price(order_id)
+                if fill:
+                    self.state.entry_prem = round(fill, 2)
+                    self.strategy.state.entry_prem = round(fill, 2)
+                    # Shift target so it is relative to the real fill price
+                    self.strategy.target_prem = fill + cfg.target_pts
+                    self.strategy.state.target_prem = round(self.strategy.target_prem, 2)
+                    logger.info(f"Real fill (BUY): ₹{fill:.2f} | Target updated: ₹{self.strategy.target_prem:.2f}")
 
         elif signal["action"] == "SELL":
             logger.info(f"{signal['reason']} — Exit: ₹{signal['price']:.2f} | P&L: ₹{signal['pnl']:.2f}")
             if real_money:
                 pos_type = self.state.position_type
-                sym = f"{cfg.trading_symbol_prefix}{self.strategy.strike}{'CE' if pos_type == 'CALL' else 'PE'}"
-                self.broker.place_market_order(sym, self.broker.kite.TRANSACTION_TYPE_SELL, cfg.qty)
+                sym = (f"{cfg.trading_symbol_prefix}{self.strategy.strike}"
+                       f"{'CE' if pos_type == 'CALL' else 'PE'}")
+                order_id = self.broker.place_market_order(
+                    sym, self.broker.kite.TRANSACTION_TYPE_SELL, cfg.qty
+                )
+                # Recalculate P&L from real fill prices
+                fill = self.broker.get_fill_price(order_id)
+                if fill:
+                    entry = self.state.entry_prem
+                    gross = (fill - entry) * cfg.qty
+                    buy_val  = entry * cfg.qty
+                    sell_val = fill  * cfg.qty
+                    turnover = buy_val + sell_val
+                    brokerage = cfg.brokerage_per_order * 2
+                    stt   = sell_val * cfg.stt_pct
+                    exch  = turnover * cfg.exchange_charges_pct
+                    gst   = (brokerage + exch) * cfg.gst_pct
+                    sebi  = turnover * cfg.sebi_charges_pct
+                    stamp = buy_val  * cfg.stamp_duty_pct
+                    total_charges = round(brokerage + stt + exch + gst + sebi + stamp, 2)
+                    net_pnl = round(gross - total_charges, 2)
+
+                    self.state.exit_prem     = round(fill, 2)
+                    self.state.gross_pnl     = round(gross, 2)
+                    self.state.total_charges = total_charges
+                    self.state.net_pnl       = net_pnl
+                    self.state.pnl           = net_pnl
+                    logger.info(
+                        f"Real fill (SELL): ₹{fill:.2f} | "
+                        f"Real Net P&L: ₹{net_pnl:.2f}"
+                    )

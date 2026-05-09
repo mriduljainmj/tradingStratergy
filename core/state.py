@@ -25,6 +25,7 @@ class BotState:
     option_prices: List[dict] = field(default_factory=list)   # {"time": int, "value": float}
     option_label: str = ""                                     # e.g. "NIFTY26APR24000CE"
     target_prem: float = 0.0
+    used_real_options: bool = False   # True when real Kite NFO prices were used
     logs: List[str] = field(default_factory=list)
     markers: List[dict] = field(default_factory=list)
     candles: List[dict] = field(default_factory=list)
@@ -51,6 +52,7 @@ class BotState:
         self.option_prices = []
         self.option_label = ""
         self.target_prem = 0.0
+        self.used_real_options = False
         self.logs = []
         self.markers = []
         self.candles = []
@@ -75,6 +77,7 @@ class BotState:
             "option_prices": list(self.option_prices),
             "option_label": self.option_label,
             "target_prem": self.target_prem,
+            "used_real_options": self.used_real_options,
             "logs": list(self.logs),
             "markers": list(self.markers),
             "candles": list(self.candles),

@@ -27,7 +27,16 @@ class ORBStrategy:
         tick_high: float,
         tick_low: float,
         tick_close: float,
+        real_option_price: Optional[float] = None,
     ) -> Optional[dict]:
+        """
+        Process one market tick.
+
+        `real_option_price` — when set (paper / live mode), the actual LTP of the
+        options contract fetched from the exchange replaces Black-Scholes pricing
+        for the chart and target check.  Trailing-SL logic always uses the NIFTY
+        price regardless.
+        """
         self._update_extremes(tick_high, tick_low)
 
         if t < datetime.time(9, 20):
@@ -43,7 +52,10 @@ class ORBStrategy:
             logger.info(f"OR Locked. High: {self.state.or_high:.2f}, Low: {self.state.or_low:.2f}")
 
         if self.in_position:
-            return self._manage_position(unix_time, t, tick_open, tick_high, tick_low, tick_close)
+            return self._manage_position(
+                unix_time, t, tick_open, tick_high, tick_low, tick_close,
+                real_option_price,
+            )
 
         if not self.in_position and t <= self.config.entry_end_time:
             return self._look_for_entry(unix_time, t, tick_open, tick_high, tick_low)
@@ -70,22 +82,29 @@ class ORBStrategy:
         tick_high: float,
         tick_low: float,
         tick_close: float,
+        real_option_price: Optional[float] = None,
     ) -> Optional[dict]:
         T_current = 4 / 365.25
         cfg = self.config
         is_call = self.state.position_type == "CALL"
         bs = OptionsMath.bs_call if is_call else OptionsMath.bs_put
 
-        if is_call:
-            open_p  = bs(tick_open,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
-            high_p  = bs(tick_high,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
-            low_p   = bs(tick_low,   self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
-            close_p = bs(tick_close, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+        if real_option_price is not None:
+            # ── Real exchange price (paper / live mode) ───────────────────────
+            # We only have a single LTP per tick, so OHLC all equal the LTP.
+            open_p = high_p = low_p = close_p = real_option_price
         else:
-            open_p  = bs(tick_open,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
-            high_p  = bs(tick_low,   self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
-            low_p   = bs(tick_high,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
-            close_p = bs(tick_close, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+            # ── Black-Scholes fallback (backtest or no real data) ─────────────
+            if is_call:
+                open_p  = bs(tick_open,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+                high_p  = bs(tick_high,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+                low_p   = bs(tick_low,   self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+                close_p = bs(tick_close, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+            else:
+                open_p  = bs(tick_open,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+                high_p  = bs(tick_low,   self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+                low_p   = bs(tick_high,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
+                close_p = bs(tick_close, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
 
         self.state.option_prices.append({
             "time": unix_time,
