@@ -1,3 +1,4 @@
+import datetime
 import math
 
 
@@ -23,5 +24,30 @@ class OptionsMath:
         return max(K * math.exp(-r * T) * OptionsMath._ncdf(-d2) - S * OptionsMath._ncdf(-d1), 0.05)
 
     @staticmethod
-    def get_atm_strike(ltp: float, strike_spacing: int = 50) -> int:
+    def get_atm_strike(ltp: float, strike_spacing: int = 100) -> int:
+        """Round LTP to nearest strike_spacing (default 100 for Nifty)."""
         return int(round(ltp / strike_spacing) * strike_spacing)
+
+    @staticmethod
+    def get_expiry_date(trade_date: datetime.date) -> datetime.date:
+        """
+        Return the nearest weekly expiry Thursday on or after trade_date.
+        If trade_date is itself a Thursday, that IS the expiry.
+        """
+        days_ahead = (3 - trade_date.weekday()) % 7   # 3 = Thursday
+        return trade_date + datetime.timedelta(days=days_ahead)
+
+    @staticmethod
+    def build_nfo_symbol(strike: int, option_type: str,
+                         trade_date: datetime.date | None = None) -> str:
+        """
+        Build the full NFO tradingsymbol for a Nifty option.
+        e.g.  build_nfo_symbol(24200, "CE", date(2026, 4, 21))
+              → "NFO:NIFTY26APR24200CE"
+        """
+        if trade_date is None:
+            trade_date = datetime.date.today()
+        expiry = OptionsMath.get_expiry_date(trade_date)
+        day   = f"{expiry.day:02d}"
+        month = expiry.strftime("%b").upper()   # APR, MAY …
+        return f"NFO:NIFTY{day}{month}{strike}{option_type}"

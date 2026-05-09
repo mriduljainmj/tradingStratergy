@@ -4,6 +4,7 @@ import threading
 import time
 
 from config.settings import TradingConfig
+from core.options_math import OptionsMath
 from core.state import BotState
 from core.strategy import ORBStrategy
 from execution.broker import KiteBroker
@@ -197,8 +198,8 @@ class TradingEngine:
                 f"Risk: ₹{signal['risk']:.2f} Target: ₹{signal['target']:.2f}"
             )
             if real_money:
-                sym = (f"{cfg.trading_symbol_prefix}{signal['strike']}"
-                       f"{'CE' if signal['type'] == 'CALL' else 'PE'}")
+                opt_type = "CE" if signal["type"] == "CALL" else "PE"
+                sym = OptionsMath.build_nfo_symbol(signal["strike"], opt_type)
                 order_id = self.broker.place_market_order(
                     sym, self.broker.kite.TRANSACTION_TYPE_BUY, cfg.qty
                 )
@@ -216,8 +217,8 @@ class TradingEngine:
             logger.info(f"{signal['reason']} — Exit: ₹{signal['price']:.2f} | P&L: ₹{signal['pnl']:.2f}")
             if real_money:
                 pos_type = self.state.position_type
-                sym = (f"{cfg.trading_symbol_prefix}{self.strategy.strike}"
-                       f"{'CE' if pos_type == 'CALL' else 'PE'}")
+                opt_type = "CE" if pos_type == "CALL" else "PE"
+                sym = OptionsMath.build_nfo_symbol(self.strategy.strike, opt_type)
                 order_id = self.broker.place_market_order(
                     sym, self.broker.kite.TRANSACTION_TYPE_SELL, cfg.qty
                 )

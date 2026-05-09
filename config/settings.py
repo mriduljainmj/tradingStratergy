@@ -21,7 +21,6 @@ class TradingConfig:
 
     index_symbol: str = "NSE:NIFTY 50"
     index_token: int = 256265
-    trading_symbol_prefix: str = "NFO:NIFTY26APR"
     lot_size: int = 25
     qty_multiplier: float = 2.6
 
@@ -30,7 +29,7 @@ class TradingConfig:
 
     entry_end_time: datetime.time = field(default_factory=lambda: datetime.time(10, 30))
     eod_exit_time: datetime.time = field(default_factory=lambda: datetime.time(12, 30))
-    strike_spacing: int = 50
+    strike_spacing: int = 100   # Nifty strikes rounded to nearest 100
     risk_free_rate: float = 0.065
     assumed_iv: float = 0.15
 
@@ -61,7 +60,7 @@ class BacktestConfig:
     entry_end_time: datetime.time = field(default_factory=lambda: datetime.time(10, 30))
     eod_exit_time: datetime.time = field(default_factory=lambda: datetime.time(12, 30))
 
-    strike_spacing: int = 50
+    strike_spacing: int = 100
     risk_free_rate: float = 0.065
     fixed_iv: float = None
 

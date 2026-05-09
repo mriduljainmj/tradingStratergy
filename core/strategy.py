@@ -223,7 +223,12 @@ class ORBStrategy:
         self.state.entry_prem = entry_prem
         self.state.target_prem = self.target_prem
         suffix = "CE" if self.state.position_type == "CALL" else "PE"
-        self.state.option_label = f"NIFTY {self.strike}{suffix}"
+
+        # Derive trade date from unix_time so expiry works correctly in backtest
+        trade_date = datetime.datetime.fromtimestamp(unix_time).date()
+        expiry     = OptionsMath.get_expiry_date(trade_date)
+        expiry_str = f"{expiry.day} {expiry.strftime('%b')}"   # e.g. "26 Apr"
+        self.state.option_label = f"NIFTY {self.strike} {suffix}  ·  Exp {expiry_str}"
         ep = round(entry_prem, 2)
         self.state.option_prices = [{"time": unix_time, "open": ep, "high": ep, "low": ep, "close": ep}]
 
