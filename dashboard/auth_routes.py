@@ -146,3 +146,72 @@ def me():
         return jsonify({"ok": True, "user": user.to_dict()})
     finally:
         db.close()
+
+
+@auth_bp.route("/profile")
+def profile_page():
+    return render_template("profile.html")
+
+
+@auth_bp.route("/api/auth/profile", methods=["GET"])
+@jwt_required()
+def get_profile():
+    uid = int(get_jwt_identity())
+    db  = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if not user:
+            return _bad("User not found.", 404)
+        return jsonify({"ok": True, "user": user.to_dict()})
+    finally:
+        db.close()
+
+
+@auth_bp.route("/api/auth/profile", methods=["POST"])
+@jwt_required()
+def update_profile():
+    uid  = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    db   = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if not user:
+            return _bad("User not found.", 404)
+
+        # Updateable fields
+        if "display_name" in data:
+            user.display_name = (data["display_name"] or "").strip()[:150] or None
+        if "bio" in data:
+            user.bio = (data["bio"] or "").strip()[:500] or None
+        if "broker_id" in data:
+            user.broker_id = (data["broker_id"] or "").strip()[:100] or None
+        if "trade_confirm_modal" in data:
+            user.trade_confirm_modal = bool(data["trade_confirm_modal"])
+        if "photo_base64" in data:
+            photo = data["photo_base64"]
+            # Basic validation: must be a data URI or empty
+            if photo and not photo.startswith("data:image/"):
+                return _bad("Invalid photo format. Expected data:image/... base64 URI.")
+            # Limit to ~500 KB (base64 is ~4/3 of raw, so 500KB base64 ≈ 375KB image)
+            if photo and len(photo) > 700_000:
+                return _bad("Photo too large. Max 500 KB.")
+            user.photo_base64 = photo or None
+
+        # Password change (optional)
+        if data.get("new_password"):
+            old_pw = data.get("old_password", "")
+            if not bcrypt.checkpw(old_pw.encode(), user.password_hash.encode()):
+                return _bad("Current password is incorrect.")
+            new_pw = data["new_password"]
+            if len(new_pw) < 8:
+                return _bad("New password must be at least 8 characters.")
+            user.password_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
+
+        db.commit()
+        db.refresh(user)
+        return jsonify({"ok": True, "user": user.to_dict()})
+    except Exception as e:
+        db.rollback()
+        return _bad(str(e), 500)
+    finally:
+        db.close()

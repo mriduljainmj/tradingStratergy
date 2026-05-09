@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>ORB — Profile</title>
+    <style>
+        :root {
+            --bg-base:    #F0F2F5;
+            --bg-surface: #FFFFFF;
+            --bg-card:    #F8FAFC;
+            --text-main:  #1E2328;
+            --text-muted: #6B7280;
+            --accent-blue:    #2563EB;
+            --up-green:       #059669;
+            --down-red:       #DC2626;
+            --border-color:   #E4E8EF;
+            --sidebar-bg:     #1A1D2E;
+            --sidebar-text:   #A9B1D6;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg-base); color: var(--text-main); display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
+
+        /* ═══ SIDEBAR ═══ */
+        .sidebar { width: 220px; background: var(--sidebar-bg); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.22s cubic-bezier(0.4,0,0.2,1); overflow: hidden; z-index: 100; }
+        .sidebar.collapsed { width: 52px; }
+        .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 52px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
+        .brand-logo { width: 28px; height: 28px; border-radius: 6px; background: var(--accent-blue); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; color: #fff; flex-shrink: 0; }
+        .brand-text { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; transition: opacity 0.15s; }
+        .sidebar.collapsed .brand-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-nav { flex: 1; padding: 10px 0; display: flex; flex-direction: column; gap: 2px; }
+        .nav-section-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(169,177,214,0.45); padding: 10px 16px 4px; white-space: nowrap; overflow: hidden; transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-section-label { opacity: 0; }
+        .nav-item { display: flex; align-items: center; gap: 11px; padding: 9px 14px; margin: 0 6px; border-radius: 6px; text-decoration: none; color: var(--sidebar-text); font-size: 13px; font-weight: 500; transition: background 0.15s, color 0.15s; white-space: nowrap; overflow: hidden; cursor: pointer; }
+        .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .nav-item.active { background: rgba(37,99,235,0.2); color: #60a5fa; }
+        .nav-icon { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; }
+        .nav-text { transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-toggle { display: flex; align-items: center; justify-content: center; padding: 10px; background: none; border: none; border-top: 1px solid rgba(255,255,255,0.07); color: rgba(169,177,214,0.5); cursor: pointer; font-size: 13px; transition: color 0.15s; flex-shrink: 0; width: 100%; }
+        .sidebar-toggle:hover { color: #fff; }
+
+        /* ═══ MAIN AREA ═══ */
+        .main-wrap { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; min-width: 0; }
+        .topbar { height: 52px; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .topbar-left { display: flex; align-items: center; gap: 12px; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-title { font-size: 15px; font-weight: 700; color: var(--text-main); }
+        .topbar-sub { font-size: 12px; color: var(--text-muted); }
+        .hamburger { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+        .hamburger:hover { background: var(--bg-card); color: var(--text-main); }
+
+        /* User menu */
+        .user-menu { position: relative; }
+        .user-btn { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 5px 10px 5px 6px; border-radius: 8px; cursor: pointer; transition: all 0.15s; color: var(--text-main); }
+        .user-btn:hover { border-color: var(--accent-blue); background: #eff6ff; }
+        .user-avatar-wrap { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg,#2563EB,#7c3aed); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; overflow: hidden; }
+        .user-avatar-wrap img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+        .user-name { font-size: 12px; font-weight: 600; color: var(--text-main); }
+        .user-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+        .user-menu.open .user-chevron { transform: rotate(180deg); }
+        .user-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); width: 200px; z-index: 500; overflow: hidden; }
+        .user-menu.open .user-dropdown { display: block; }
+        .dropdown-header { padding: 12px 14px; background: linear-gradient(135deg,rgba(37,99,235,0.06),rgba(124,58,237,0.06)); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 10px; }
+        .dropdown-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg,#2563EB,#7c3aed); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; overflow: hidden; }
+        .dropdown-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+        .dropdown-name { font-size: 13px; font-weight: 700; color: var(--text-main); }
+        .dropdown-email { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .dropdown-section { padding: 6px 8px; }
+        .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-muted); text-align: left; transition: all 0.15s; text-decoration: none; }
+        .dropdown-item:hover { background: var(--bg-card); color: var(--text-main); }
+        .dropdown-item.danger:hover { background: #fef2f2; color: #DC2626; }
+        .dropdown-divider { height: 1px; background: var(--border-color); }
+
+        /* ═══ PAGE CONTENT ═══ */
+        .page-content { flex: 1; overflow-y: auto; padding: 28px 32px; }
+
+        /* Profile layout */
+        .profile-grid { display: grid; grid-template-columns: 300px 1fr; gap: 24px; max-width: 960px; }
+        @media (max-width: 768px) { .profile-grid { grid-template-columns: 1fr; } }
+
+        /* Left card — avatar + quick info */
+        .profile-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 12px; padding: 28px 24px; display: flex; flex-direction: column; align-items: center; gap: 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+        .avatar-ring { position: relative; width: 96px; height: 96px; }
+        .avatar-img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 3px solid var(--accent-blue); background: linear-gradient(135deg,#2563EB,#7c3aed); display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 700; color: #fff; overflow: hidden; }
+        .avatar-img img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: none; }
+        .avatar-edit-btn { position: absolute; bottom: 2px; right: 2px; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-blue); border: 2px solid #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; transition: transform 0.15s; }
+        .avatar-edit-btn:hover { transform: scale(1.1); }
+        #photoInput { display: none; }
+        .profile-name { font-size: 18px; font-weight: 800; color: var(--text-main); text-align: center; }
+        .profile-email { font-size: 12px; color: var(--text-muted); text-align: center; }
+        .profile-since { font-size: 11px; color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 20px; padding: 3px 12px; }
+        .profile-stat-row { display: flex; gap: 24px; margin-top: 4px; }
+        .profile-stat { text-align: center; }
+        .profile-stat .ps-val { font-size: 18px; font-weight: 700; color: var(--text-main); }
+        .profile-stat .ps-lbl { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+        /* Right card — editable form */
+        .form-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+        .form-section { padding: 20px 24px; border-bottom: 1px solid var(--border-color); }
+        .form-section:last-child { border-bottom: none; }
+        .form-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 600px) { .form-row { grid-template-columns: 1fr; } }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-group label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+        .form-input { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); padding: 9px 12px; border-radius: 7px; font-size: 13px; outline: none; transition: border-color 0.15s; width: 100%; }
+        .form-input:focus { border-color: var(--accent-blue); background: #fff; }
+        .form-input:read-only { color: var(--text-muted); cursor: not-allowed; background: var(--bg-base); }
+        textarea.form-input { resize: vertical; min-height: 72px; font-family: inherit; }
+        .form-hint { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+        /* Toggle switch */
+        .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+        .toggle-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .toggle-info .ti-title { font-size: 13px; font-weight: 600; color: var(--text-main); }
+        .toggle-info .ti-desc  { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+        .toggle { position: relative; width: 40px; height: 22px; flex-shrink: 0; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; inset: 0; background: var(--border-color); border-radius: 22px; cursor: pointer; transition: background 0.2s; }
+        .toggle-slider:before { content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+        .toggle input:checked + .toggle-slider { background: var(--accent-blue); }
+        .toggle input:checked + .toggle-slider:before { transform: translateX(18px); }
+
+        /* Save / action buttons */
+        .form-actions { display: flex; align-items: center; gap: 10px; padding: 16px 24px; background: var(--bg-card); border-top: 1px solid var(--border-color); }
+        .btn-save { padding: 9px 22px; background: var(--accent-blue); color: #fff; border: none; border-radius: 7px; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+        .btn-save:hover { opacity: 0.88; }
+        .btn-cancel { padding: 9px 18px; background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .btn-cancel:hover { color: var(--text-main); border-color: var(--text-muted); }
+        .save-msg { font-size: 12px; margin-left: 8px; font-weight: 600; }
+        .save-msg.ok  { color: var(--up-green); }
+        .save-msg.err { color: var(--down-red); }
+
+        /* Danger zone */
+        .danger-zone { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 14px 18px; margin-top: 6px; }
+        .danger-zone p { font-size: 12px; color: #7f1d1d; margin-bottom: 10px; }
+        .btn-danger { padding: 8px 18px; background: #DC2626; color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer; }
+
+        ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══ -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-logo">ORB</div>
+        <span class="brand-text">Architecture</span>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-section-label">Main</div>
+        <a href="/" class="nav-item"><span class="nav-icon">📊</span><span class="nav-text">Dashboard</span></a>
+        <a href="/analytics" class="nav-item"><span class="nav-icon">📈</span><span class="nav-text">Analytics</span></a>
+        <a href="/strategy-builder" class="nav-item"><span class="nav-icon">⚡</span><span class="nav-text">Strategies</span></a>
+        <div class="nav-section-label">Account</div>
+        <a href="/profile" class="nav-item active"><span class="nav-icon">👤</span><span class="nav-text">Profile</span></a>
+    </nav>
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">◀</button>
+</aside>
+
+<!-- ═══ MAIN AREA ═══ -->
+<div class="main-wrap">
+    <header class="topbar">
+        <div class="topbar-left">
+            <button class="hamburger" onclick="toggleSidebar()">☰</button>
+            <div>
+                <div class="topbar-title">Profile</div>
+                <div class="topbar-sub">Manage your account and preferences</div>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="user-menu" id="userMenu">
+                <button class="user-btn" onclick="toggleUserDropdown()">
+                    <div class="user-avatar-wrap" id="userAvatar">U</div>
+                    <span class="user-name" id="userNameDisplay">User</span>
+                    <span class="user-chevron">▾</span>
+                </button>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="dropdown-header">
+                        <div class="dropdown-avatar" id="dropdownAvatar">U</div>
+                        <div>
+                            <div class="dropdown-name" id="dropdownName">—</div>
+                            <div class="dropdown-email" id="dropdownEmail">—</div>
+                        </div>
+                    </div>
+                    <div class="dropdown-section">
+                        <a href="/" class="dropdown-item">📊&nbsp; Dashboard</a>
+                        <a href="/analytics" class="dropdown-item">📈&nbsp; Analytics</a>
+                        <a href="/strategy-builder" class="dropdown-item">⚡&nbsp; Strategies</a>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section">
+                        <button class="dropdown-item danger" id="logoutBtn">⏻&nbsp; Sign Out</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="page-content">
+        <div class="profile-grid">
+
+            <!-- ── Left: Avatar + quick info ── -->
+            <div>
+                <div class="profile-card">
+                    <div class="avatar-ring">
+                        <div class="avatar-img" id="avatarDisplay">
+                            <span id="avatarInitials">U</span>
+                            <img id="avatarImg" src="" alt="">
+                        </div>
+                        <label class="avatar-edit-btn" for="photoInput" title="Upload photo">📷</label>
+                        <input type="file" id="photoInput" accept="image/jpeg,image/png,image/webp">
+                    </div>
+                    <div class="profile-name" id="profileNameDisplay">—</div>
+                    <div class="profile-email" id="profileEmailDisplay">—</div>
+                    <div class="profile-since" id="profileSince">Member since —</div>
+
+                    <div class="profile-stat-row" id="profileStats">
+                        <div class="profile-stat">
+                            <div class="ps-val" id="statTrades">—</div>
+                            <div class="ps-lbl">Trades</div>
+                        </div>
+                        <div class="profile-stat">
+                            <div class="ps-val" id="statWinRate">—</div>
+                            <div class="ps-lbl">Win Rate</div>
+                        </div>
+                        <div class="profile-stat">
+                            <div class="ps-val" id="statStrategies">—</div>
+                            <div class="ps-lbl">Strategies</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Right: Editable form ── -->
+            <div class="form-card">
+                <!-- Personal Info -->
+                <div class="form-section">
+                    <div class="form-section-title">👤 Personal Info</div>
+                    <div class="form-row" style="margin-bottom:14px;">
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input class="form-input" id="fUsername" readonly>
+                            <div class="form-hint">Username cannot be changed</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Display Name</label>
+                            <input class="form-input" id="fDisplayName" placeholder="e.g. Rahul Sharma" maxlength="150">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input class="form-input" id="fEmail" readonly>
+                            <div class="form-hint">Contact support to change email</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Broker Client ID</label>
+                            <input class="form-input" id="fBrokerId" placeholder="e.g. AB1234 (Zerodha)" maxlength="100">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top:14px;">
+                        <label>Bio</label>
+                        <textarea class="form-input" id="fBio" placeholder="A short note about your trading style…" maxlength="500"></textarea>
+                    </div>
+                </div>
+
+                <!-- Preferences -->
+                <div class="form-section">
+                    <div class="form-section-title">⚙ Preferences</div>
+                    <div class="toggle-row">
+                        <div class="toggle-info">
+                            <div class="ti-title">Trade Execution Notification</div>
+                            <div class="ti-desc">Show a popup when a trade is executed in Paper or Live mode</div>
+                        </div>
+                        <label class="toggle">
+                            <input type="checkbox" id="fTradeConfirm" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Change Password -->
+                <div class="form-section">
+                    <div class="form-section-title">🔒 Change Password</div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Current Password</label>
+                            <input class="form-input" type="password" id="fOldPw" placeholder="Current password" autocomplete="current-password">
+                        </div>
+                        <div class="form-group">
+                            <label>New Password</label>
+                            <input class="form-input" type="password" id="fNewPw" placeholder="Min 8 characters" autocomplete="new-password">
+                        </div>
+                    </div>
+                    <div class="form-hint" style="margin-top:6px;">Leave both fields empty to keep your current password.</div>
+                </div>
+
+                <!-- Actions -->
+                <div class="form-actions">
+                    <button class="btn-save" onclick="saveProfile()">Save Changes</button>
+                    <button class="btn-cancel" onclick="loadProfile()">Discard</button>
+                    <span class="save-msg" id="saveMsg"></span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Auth guard ──
+const TOKEN = localStorage.getItem('orb_token');
+if (!TOKEN) window.location.href = '/login';
+const USER = JSON.parse(localStorage.getItem('orb_user') || '{}');
+
+function hdrs() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }; }
+
+// ── Sidebar ──
+let sidebarCollapsed = false;
+function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+    document.getElementById('sidebarToggle').textContent = sidebarCollapsed ? '▶' : '◀';
+}
+
+// ── User dropdown ──
+function toggleUserDropdown() { document.getElementById('userMenu').classList.toggle('open'); }
+document.addEventListener('click', e => {
+    const m = document.getElementById('userMenu');
+    if (m && !m.contains(e.target)) m.classList.remove('open');
+});
+document.getElementById('logoutBtn').onclick = () => {
+    localStorage.removeItem('orb_token');
+    localStorage.removeItem('orb_user');
+    window.location.href = '/login';
+};
+
+// ── Set avatar helper ──
+function setAvatarFromBase64(b64) {
+    const img = document.getElementById('avatarImg');
+    const initials = document.getElementById('avatarInitials');
+    if (b64) {
+        img.src = b64;
+        img.style.display = 'block';
+        initials.style.display = 'none';
+    } else {
+        img.style.display = 'none';
+        initials.style.display = '';
+    }
+}
+
+function setDropdownAvatar(b64, initials) {
+    const el = document.getElementById('dropdownAvatar');
+    if (b64) {
+        el.innerHTML = `<img src="${b64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    } else {
+        el.textContent = initials;
+    }
+    const ua = document.getElementById('userAvatar');
+    if (b64) {
+        ua.innerHTML = `<img src="${b64}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    } else {
+        ua.textContent = initials;
+    }
+}
+
+// ── Load profile from API ──
+async function loadProfile() {
+    const r = await fetch('/api/auth/profile', { headers: hdrs() });
+    const d = await r.json();
+    if (!d.ok) return;
+    const u = d.user;
+
+    // Left card
+    const initials = (u.display_name || u.username || 'U').charAt(0).toUpperCase();
+    document.getElementById('avatarInitials').textContent = initials;
+    setAvatarFromBase64(u.photo_base64);
+    document.getElementById('profileNameDisplay').textContent = u.display_name || u.username;
+    document.getElementById('profileEmailDisplay').textContent = u.email;
+    const joined = u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+    document.getElementById('profileSince').textContent = 'Member since ' + joined;
+
+    // Topbar
+    document.getElementById('userNameDisplay').textContent = u.display_name || u.username;
+    document.getElementById('dropdownName').textContent = u.display_name || u.username;
+    document.getElementById('dropdownEmail').textContent = u.email;
+    setDropdownAvatar(u.photo_base64, initials);
+
+    // Form fields
+    document.getElementById('fUsername').value    = u.username;
+    document.getElementById('fDisplayName').value = u.display_name || '';
+    document.getElementById('fEmail').value       = u.email;
+    document.getElementById('fBrokerId').value    = u.broker_id || '';
+    document.getElementById('fBio').value         = u.bio || '';
+    document.getElementById('fTradeConfirm').checked = u.trade_confirm_modal !== false;
+
+    // Save to localStorage for other pages
+    localStorage.setItem('orb_user', JSON.stringify({ ...USER, ...u }));
+
+    // Load quick stats
+    loadStats();
+}
+
+async function loadStats() {
+    try {
+        const [sR, aR] = await Promise.all([
+            fetch('/api/strategies', { headers: hdrs() }),
+            fetch('/api/analytics/summary', { headers: hdrs() }).catch(() => null),
+        ]);
+        const sD = await sR.json();
+        document.getElementById('statStrategies').textContent = (sD.strategies || []).length;
+
+        if (aR) {
+            const aD = await aR.json();
+            if (aD.ok || aD.total_trades !== undefined) {
+                document.getElementById('statTrades').textContent   = aD.total_trades || 0;
+                document.getElementById('statWinRate').textContent  = aD.win_rate != null ? aD.win_rate.toFixed(1) + '%' : '—';
+            }
+        }
+    } catch (_) {}
+}
+
+// ── Photo upload ──
+document.getElementById('photoInput').addEventListener('change', function () {
+    const file = this.files[0];
+    if (!file) return;
+    if (file.size > 500_000) { showMsg('Photo must be under 500 KB', true); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+        const b64 = e.target.result;
+        setAvatarFromBase64(b64);
+        // Will be saved when user clicks Save
+        document.getElementById('photoInput').dataset.pending = b64;
+    };
+    reader.readAsDataURL(file);
+});
+
+// ── Save profile ──
+async function saveProfile() {
+    const payload = {
+        display_name:        document.getElementById('fDisplayName').value.trim(),
+        bio:                 document.getElementById('fBio').value.trim(),
+        broker_id:           document.getElementById('fBrokerId').value.trim(),
+        trade_confirm_modal: document.getElementById('fTradeConfirm').checked,
+    };
+
+    const pendingPhoto = document.getElementById('photoInput').dataset.pending;
+    if (pendingPhoto) payload.photo_base64 = pendingPhoto;
+
+    const oldPw = document.getElementById('fOldPw').value;
+    const newPw = document.getElementById('fNewPw').value;
+    if (newPw) {
+        if (!oldPw) { showMsg('Enter your current password to change it', true); return; }
+        payload.old_password = oldPw;
+        payload.new_password = newPw;
+    }
+
+    const r = await fetch('/api/auth/profile', { method: 'POST', headers: hdrs(), body: JSON.stringify(payload) });
+    const d = await r.json();
+    if (d.ok) {
+        showMsg('Saved ✓', false);
+        document.getElementById('fOldPw').value = '';
+        document.getElementById('fNewPw').value = '';
+        delete document.getElementById('photoInput').dataset.pending;
+        localStorage.setItem('orb_user', JSON.stringify({ ...USER, ...d.user }));
+        loadProfile();
+    } else {
+        showMsg(d.error || 'Save failed', true);
+    }
+}
+
+function showMsg(msg, isErr) {
+    const el = document.getElementById('saveMsg');
+    el.textContent = msg;
+    el.className = 'save-msg ' + (isErr ? 'err' : 'ok');
+    setTimeout(() => { el.textContent = ''; el.className = 'save-msg'; }, 3500);
+}
+
+// Init
+loadProfile();
+</script>
+</body>
+</html>

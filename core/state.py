@@ -22,8 +22,21 @@ class BotState:
     pnl: float = 0.0
     brokerage_breakdown: dict = field(default_factory=dict)
 
+    # --- LIVE / PAPER MTM (unrealised while position is open) ---
+    live_pnl: float = 0.0            # unrealised net P&L (after charges estimate)
+    live_option_price: float = 0.0   # current option LTP
+
+    # --- ACCOUNT ---
+    balance: float = 0.0             # available cash balance (fetched from Kite or paper)
+
+    def __post_init__(self):
+        # Give paper mode a default simulated balance on first creation
+        if self.app_mode == "PAPER" and self.balance == 0.0:
+            self.balance = 100_000.0
+
     option_prices: List[dict] = field(default_factory=list)   # {"time": int, "value": float}
-    option_label: str = ""                                     # e.g. "NIFTY26APR24000CE"
+    option_label: str = ""                                     # e.g. "NIFTY 24000 CE"
+    option_expiry: str = ""                                    # e.g. "Exp 8 May"
     target_prem: float = 0.0
     used_real_options: bool = False   # True when real Kite NFO prices were used
     logs: List[str] = field(default_factory=list)
@@ -49,8 +62,16 @@ class BotState:
         self.net_pnl = 0.0
         self.pnl = 0.0
         self.brokerage_breakdown = {}
+        self.live_pnl = 0.0
+        self.live_option_price = 0.0
+        # Keep existing balance when switching within live modes; seed paper default
+        if new_mode == "PAPER" and self.balance == 0.0:
+            self.balance = 100_000.0
+        elif new_mode == "BACKTEST":
+            self.balance = 0.0   # not applicable in backtest
         self.option_prices = []
         self.option_label = ""
+        self.option_expiry = ""
         self.target_prem = 0.0
         self.used_real_options = False
         self.logs = []
@@ -74,8 +95,12 @@ class BotState:
             "net_pnl": self.net_pnl,
             "pnl": self.net_pnl,
             "brokerage_breakdown": self.brokerage_breakdown,
+            "live_pnl": self.live_pnl,
+            "live_option_price": self.live_option_price,
+            "balance": self.balance,
             "option_prices": list(self.option_prices),
             "option_label": self.option_label,
+            "option_expiry": self.option_expiry,
             "target_prem": self.target_prem,
             "used_real_options": self.used_real_options,
             "logs": list(self.logs),

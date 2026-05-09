@@ -6,6 +6,24 @@ from db.models import Strategy
 
 strategy_bp = Blueprint("strategy", __name__)
 
+# ── Default ORB strategy seeded for every new user ────────────────────────────
+_ORB_DEFAULT_RULES = {
+    "entry": {
+        "conditions": [
+            {"indicator": "PRICE", "condition": "CROSSES_ABOVE", "reference": "OR_HIGH", "action": "BUY_CALL"},
+            {"indicator": "PRICE", "condition": "CROSSES_BELOW", "reference": "OR_LOW",  "action": "BUY_PUT"},
+        ],
+        "operator": "OR",
+        "time_filter": {"start": "09:20", "end": "10:30"},
+    },
+    "exit": {
+        "take_profit": {"type": "PREMIUM_POINTS", "value": 130},
+        "stop_loss":   {"type": "FIB_TRAIL",      "value": 0.7},
+        "time_exit":   {"time": "12:30"},
+    },
+    "position": {"lot_size": 25, "lots": 2},
+}
+
 _VALID_INDICATORS = {"PRICE","RSI_14","EMA_9","EMA_21","VWAP","OR_HIGH","OR_LOW"}
 _VALID_CONDITIONS = {"CROSSES_ABOVE","CROSSES_BELOW","GREATER_THAN","LESS_THAN"}
 _VALID_REFERENCES = {"OR_HIGH","OR_LOW","VWAP","NUMERIC"}
@@ -51,7 +69,23 @@ def builder_page():
 def list_strategies():
     db = SessionLocal()
     try:
-        strategies = db.query(Strategy).filter_by(user_id=_uid()).order_by(Strategy.updated_at.desc()).all()
+        uid = _uid()
+        strategies = db.query(Strategy).filter_by(user_id=uid).order_by(Strategy.updated_at.desc()).all()
+
+        # ── Auto-seed ORB strategy for brand-new users ────────────────────────
+        if not strategies:
+            seed = Strategy(
+                user_id=uid,
+                name="ORB Breakout (Default)",
+                description="Opening Range Breakout — buy CALL on OR High breakout, PUT on OR Low breakdown.",
+                is_active=True,
+            )
+            seed.set_rules(_ORB_DEFAULT_RULES)
+            db.add(seed)
+            db.commit()
+            db.refresh(seed)
+            strategies = [seed]
+
         return jsonify({"ok": True, "strategies": [s.to_dict() for s in strategies]})
     finally:
         db.close()

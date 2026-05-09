@@ -19,12 +19,28 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     created_at    = Column(DateTime, default=datetime.datetime.utcnow)
 
+    # Profile extras (nullable so existing rows are not broken)
+    display_name        = Column(String(150), nullable=True)
+    bio                 = Column(Text,        nullable=True)
+    photo_base64        = Column(Text,        nullable=True)   # data:image/…;base64,…
+    trade_confirm_modal = Column(Boolean,     default=True)    # show modal on trade exec
+    broker_id           = Column(String(100), nullable=True)   # Zerodha client ID etc.
+
     trades     = relationship("Trade",    back_populates="user", lazy="dynamic")
     strategies = relationship("Strategy", back_populates="user", lazy="dynamic")
 
     def to_dict(self):
-        return {"id": self.id, "email": self.email, "username": self.username,
-                "created_at": self.created_at.isoformat() if self.created_at else None}
+        return {
+            "id":                 self.id,
+            "email":              self.email,
+            "username":           self.username,
+            "display_name":       self.display_name or self.username,
+            "bio":                self.bio or "",
+            "photo_base64":       self.photo_base64 or "",
+            "trade_confirm_modal": self.trade_confirm_modal if self.trade_confirm_modal is not None else True,
+            "broker_id":          self.broker_id or "",
+            "created_at":         self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class Trade(Base):

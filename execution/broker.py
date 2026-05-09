@@ -75,6 +75,27 @@ class KiteBroker:
 
     # ── Market data ────────────────────────────────────────────────────────────
 
+    def get_funds(self) -> dict:
+        """
+        Returns available cash and used margin from Kite.
+        Format: {"available": float, "used": float, "total": float}
+        Returns zeros on failure (e.g. not authenticated).
+        """
+        try:
+            margins = self.kite.margins(segment="equity")
+            available = margins.get("available", {}).get("cash", 0.0)
+            used      = margins.get("utilised",  {}).get("exposure", 0.0)
+            # For commodity / NFO segments, check that segment too
+            nfo = self.kite.margins(segment="commodity")
+            nfo_available = nfo.get("available", {}).get("cash", 0.0)
+            # Return whichever has data
+            best_available = max(available, nfo_available)
+            return {"available": round(best_available, 2), "used": round(used, 2),
+                    "total": round(best_available + used, 2)}
+        except Exception as e:
+            logger.warning(f"get_funds failed: {e}")
+            return {"available": 0.0, "used": 0.0, "total": 0.0}
+
     def get_ltp(self, symbol: str) -> float:
         quote = self.kite.quote(symbol)
         return quote[symbol]["last_price"]

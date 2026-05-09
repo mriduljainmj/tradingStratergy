@@ -227,8 +227,9 @@ class ORBStrategy:
         # Derive trade date from unix_time so expiry works correctly in backtest
         trade_date = datetime.datetime.fromtimestamp(unix_time).date()
         expiry     = OptionsMath.get_expiry_date(trade_date)
-        expiry_str = f"{expiry.day} {expiry.strftime('%b')}"   # e.g. "26 Apr"
-        self.state.option_label = f"NIFTY {self.strike} {suffix}  ·  Exp {expiry_str}"
+        expiry_str = f"Exp {expiry.day} {expiry.strftime('%b')}"   # e.g. "Exp 26 Apr"
+        self.state.option_label  = f"NIFTY {self.strike} {suffix}"
+        self.state.option_expiry = expiry_str
         ep = round(entry_prem, 2)
         self.state.option_prices = [{"time": unix_time, "open": ep, "high": ep, "low": ep, "close": ep}]
 

@@ -41,5 +41,28 @@ def get_db():
 
 
 def init_db():
-    """Create all tables if they don't exist."""
+    """Create all tables if they don't exist, then add any new columns."""
     Base.metadata.create_all(bind=engine)
+    _migrate_add_columns()
+
+
+def _migrate_add_columns():
+    """Add new columns to existing tables without destroying data (SQLite safe)."""
+    _new_cols = [
+        ("users", "display_name",        "VARCHAR(150)"),
+        ("users", "bio",                 "TEXT"),
+        ("users", "photo_base64",        "TEXT"),
+        ("users", "trade_confirm_modal", "BOOLEAN DEFAULT 1"),
+        ("users", "broker_id",           "VARCHAR(100)"),
+    ]
+    with engine.connect() as conn:
+        for table, col, col_type in _new_cols:
+            try:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"
+                    )
+                )
+                conn.commit()
+            except Exception:
+                pass  # column already exists — ignore

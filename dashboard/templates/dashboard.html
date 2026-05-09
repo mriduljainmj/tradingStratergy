@@ -4,60 +4,148 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>ORB Enterprise Console</title>
+    <!-- Flatpickr date-picker (disable weekends + holidays) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <style>
         :root {
-            --bg-base: #0B0E14; --bg-surface: #131722; --bg-card: #1E222D;
-            --text-main: #D1D4DC; --text-muted: #787B86;
-            --accent-blue: #2962FF; --up-green: #089981; --down-red: #F23645;
-            --border-color: #2A2E39; --warning-yellow: #E6A23C;
+            --bg-base:    #F0F2F5;
+            --bg-surface: #FFFFFF;
+            --bg-card:    #F8FAFC;
+            --text-main:  #1E2328;
+            --text-muted: #6B7280;
+            --accent-blue:    #2563EB;
+            --up-green:       #059669;
+            --down-red:       #DC2626;
+            --border-color:   #E4E8EF;
+            --warning-yellow: #D97706;
+            --sidebar-bg:     #1A1D2E;
+            --sidebar-text:   #A9B1D6;
         }
         * { box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background-color: var(--bg-base);
+            background: var(--bg-base);
             color: var(--text-main);
             margin: 0;
-            padding: 15px 20px;
-            height: 100vh;
-            width: 100vw;
             display: flex;
-            flex-direction: column;
+            flex-direction: row;
+            height: 100vh;
             overflow: hidden;
         }
 
-        /* ── Header Area ── */
-        .header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding-bottom: 12px; border-bottom: 1px solid var(--border-color);
-            margin-bottom: 12px;
-            flex-shrink: 0;
-        }
-        .header h1 { margin: 0; font-size: 22px; font-weight: 600; }
-        .mode-badge { padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-left: 15px; text-transform: uppercase; }
-        .mode-BACKTEST { background-color: #4CAF50; color: white; }
-        .mode-PAPER { background-color: var(--warning-yellow); color: #000; }
-        .mode-LIVE { background-color: var(--down-red); color: white; }
-        .badge { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; }
-        .active-call { border-color: var(--accent-blue); color: var(--accent-blue); }
-        .active-put { border-color: var(--down-red); color: var(--down-red); }
+        /* SIDEBAR */
+        .sidebar { width: 220px; background: var(--sidebar-bg); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.22s cubic-bezier(0.4,0,0.2,1); overflow: hidden; z-index: 100; }
+        .sidebar.collapsed { width: 52px; }
+        .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 52px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
+        .brand-logo { width: 28px; height: 28px; border-radius: 6px; background: var(--accent-blue); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; color: #fff; flex-shrink: 0; }
+        .brand-text { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; transition: opacity 0.15s; }
+        .sidebar.collapsed .brand-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-nav { flex: 1; padding: 10px 0; display: flex; flex-direction: column; gap: 2px; }
+        .nav-section-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(169,177,214,0.45); padding: 10px 16px 4px; white-space: nowrap; overflow: hidden; transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-section-label { opacity: 0; }
+        .nav-item { display: flex; align-items: center; gap: 11px; padding: 9px 14px; margin: 0 6px; border-radius: 6px; text-decoration: none; color: var(--sidebar-text); font-size: 13px; font-weight: 500; transition: background 0.15s, color 0.15s; white-space: nowrap; overflow: hidden; cursor: pointer; }
+        .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .nav-item.active { background: rgba(37,99,235,0.2); color: #60a5fa; }
+        .nav-icon { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; }
+        .nav-text { transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-modes { padding: 8px 6px 6px; border-top: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
+        .modes-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(169,177,214,0.45); padding: 4px 10px 6px; white-space: nowrap; overflow: hidden; transition: opacity 0.15s; }
+        .sidebar.collapsed .modes-label { opacity: 0; }
+        .mode-btn { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border-radius: 6px; background: none; border: none; cursor: pointer; color: var(--sidebar-text); font-size: 12px; font-weight: 600; text-align: left; transition: background 0.15s, color 0.15s; white-space: nowrap; overflow: hidden; margin-bottom: 2px; }
+        .mode-btn:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .mode-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: rgba(169,177,214,0.4); transition: background 0.15s; }
+        .mode-btn-text { transition: opacity 0.15s; }
+        .sidebar.collapsed .mode-btn-text { opacity: 0; width: 0; overflow: hidden; }
+        .mode-btn.active-BACKTEST { background: rgba(16,185,129,0.15); color: #34d399; }
+        .mode-btn.active-BACKTEST .mode-dot { background: #10b981; }
+        .mode-btn.active-PAPER { background: rgba(217,119,6,0.15); color: #fbbf24; }
+        .mode-btn.active-PAPER .mode-dot { background: #f59e0b; }
+        .mode-btn.active-LIVE { background: rgba(220,38,38,0.15); color: #f87171; }
+        .mode-btn.active-LIVE .mode-dot { background: #ef4444; }
+        .sidebar-toggle { display: flex; align-items: center; justify-content: center; padding: 10px; background: none; border: none; border-top: 1px solid rgba(255,255,255,0.07); color: rgba(169,177,214,0.5); cursor: pointer; font-size: 13px; transition: color 0.15s; flex-shrink: 0; width: 100%; }
+        .sidebar-toggle:hover { color: #fff; }
 
-        /* ── Controls Bar ── */
-        .mode-switcher { display: flex; gap: 6px; align-items: center; }
-        .mode-btn {
-            padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: 700;
-            text-transform: uppercase; cursor: pointer; border: 1px solid var(--border-color);
-            background: var(--bg-card); color: var(--text-muted); transition: all 0.15s;
-        }
-        .mode-btn:hover { color: var(--text-main); border-color: var(--text-muted); }
-        .mode-btn.active-BACKTEST { background: #4CAF50; color: #fff; border-color: #4CAF50; }
-        .mode-btn.active-PAPER    { background: var(--warning-yellow); color: #000; border-color: var(--warning-yellow); }
-        .mode-btn.active-LIVE     { background: var(--down-red); color: #fff; border-color: var(--down-red); }
-        .mode-btn:disabled        { opacity: 0.4; cursor: not-allowed; }
+        /* ── Mode chip in topbar ── */
+        .mode-chip { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+        .mode-chip-BACKTEST { background: #f0fdf4; color: #059669; border: 1px solid #bbf7d0; }
+        .mode-chip-PAPER    { background: #fffbeb; color: #D97706; border: 1px solid #fde68a; }
+        .mode-chip-LIVE     { background: #fef2f2; color: #DC2626; border: 1px solid #fecaca; }
 
+        /* ── Backtest date-prompt overlay ── */
+        .date-prompt-overlay {
+            display: none; position: absolute; inset: 0; z-index: 50;
+            background: rgba(240,242,245,0.82); backdrop-filter: blur(4px);
+            align-items: center; justify-content: center;
+        }
+        .date-prompt-overlay.visible { display: flex; }
+        .date-prompt-card {
+            background: var(--bg-surface); border: 1px solid var(--border-color);
+            border-radius: 14px; padding: 36px 40px; text-align: center;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.1); max-width: 400px; width: 90%;
+        }
+        .dpc-icon { font-size: 40px; margin-bottom: 12px; }
+        .date-prompt-card h3 { font-size: 18px; font-weight: 700; color: var(--text-main); margin-bottom: 8px; }
+        .date-prompt-card p  { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+        .dpc-tab-row { display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
+        .dpc-tab { flex: 1; padding: 7px; font-size: 12px; font-weight: 700; background: var(--bg-card); color: var(--text-muted); border: none; cursor: pointer; transition: all 0.15s; }
+        .dpc-tab.active { background: #2563EB; color: #fff; }
+        .dpc-inputs { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+        .dpc-input-row { display: flex; align-items: center; gap: 10px; }
+        .dpc-input-row label { font-size: 12px; color: var(--text-muted); width: 38px; text-align: right; flex-shrink: 0; }
+        .dpc-date { flex: 1; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+        .dpc-run { width: 100%; padding: 11px; background: #2563EB; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+        .dpc-run:hover { opacity: 0.9; }
+
+        /* MAIN WRAP + TOPBAR */
+        .main-wrap { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; min-width: 0; }
+        .topbar { height: 52px; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .topbar-left { display: flex; align-items: center; gap: 12px; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .hamburger { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background 0.15s, color 0.15s; line-height: 1; }
+        .hamburger:hover { background: var(--bg-card); color: var(--text-main); }
+
+        /* USER MENU */
+        .user-menu { position: relative; }
+        .user-btn { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 5px 10px 5px 6px; border-radius: 8px; cursor: pointer; transition: all 0.15s; color: var(--text-main); }
+        .user-btn:hover { border-color: var(--accent-blue); background: #eff6ff; }
+        .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .user-name { font-size: 12px; font-weight: 600; color: var(--text-main); }
+        .user-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+        .user-menu.open .user-chevron { transform: rotate(180deg); }
+        .user-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); width: 240px; z-index: 500; overflow: hidden; }
+        .user-menu.open .user-dropdown { display: block; }
+        .dropdown-header { padding: 14px 16px; background: linear-gradient(135deg, rgba(37,99,235,0.06), rgba(124,58,237,0.06)); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
+        .dropdown-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .dropdown-name { font-size: 13px; font-weight: 700; color: var(--text-main); }
+        .dropdown-email { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .dropdown-divider { height: 1px; background: var(--border-color); }
+        .dropdown-section { padding: 6px 8px; }
+        .dropdown-section-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); padding: 6px 10px 4px; }
+        .dropdown-mode-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-muted); text-align: left; transition: all 0.15s; }
+        .dropdown-mode-btn:hover { background: var(--bg-card); color: var(--text-main); }
+        .dropdown-mode-btn.dm-active-BACKTEST { background: #f0fdf4; color: #059669; }
+        .dropdown-mode-btn.dm-active-PAPER { background: #fffbeb; color: #D97706; }
+        .dropdown-mode-btn.dm-active-LIVE { background: #fef2f2; color: #DC2626; }
+        .dm-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+        .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-muted); text-align: left; transition: all 0.15s; }
+        .dropdown-item:hover { background: var(--bg-card); color: var(--text-main); }
+        .dropdown-item.danger:hover { background: #fef2f2; color: #DC2626; }
+
+        /* PAGE CONTENT */
+        .page-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 12px 16px; min-height: 0; gap: 10px; }
+
+        /* ── Badge ── */
+        .badge { background: var(--bg-card); border: 1px solid var(--border-color); padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+        .active-call { border-color: #93c5fd; color: #2563EB; background: #eff6ff; }
+        .active-put  { border-color: #fca5a5; color: #DC2626; background: #fef2f2; }
+
+        /* ── BT Controls ── */
         .bt-controls {
             display: none; background: var(--bg-surface); border: 1px solid var(--border-color);
-            border-radius: 6px; padding: 10px 16px; margin-bottom: 12px;
+            border-radius: 6px; padding: 10px 16px; margin-bottom: 0;
             align-items: center; gap: 20px; flex-wrap: wrap; flex-shrink: 0;
         }
         .bt-controls.visible { display: flex; }
@@ -67,12 +155,13 @@
         .bt-input-group { display: flex; align-items: center; gap: 8px; }
         .bt-input-group label { font-size: 11px; color: var(--text-muted); }
         .bt-date { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-        .bt-date::-webkit-calendar-picker-indicator { filter: invert(0.6); }
+        .bt-date::-webkit-calendar-picker-indicator { filter: none; }
         .bt-run { padding: 5px 16px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer; }
         .bt-run:disabled { opacity: 0.4; cursor: not-allowed; }
         .bt-status { font-size: 11px; color: var(--text-muted); margin-left: auto; }
 
-        .range-results { display: none; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; margin-bottom: 12px; flex-shrink: 0; max-height: 35vh; overflow: hidden; flex-direction: column;}
+        /* ── Range Results ── */
+        .range-results { display: none; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; flex-shrink: 0; max-height: 35vh; overflow: hidden; flex-direction: column;}
         .range-results.visible { display: flex; }
         .range-stats { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 12px; flex-shrink: 0;}
         .range-stat { text-align: center; }
@@ -82,11 +171,9 @@
         .pnl-table { width: 100%; border-collapse: collapse; font-size: 11px; }
         .pnl-table th { text-align: left; padding: 4px 8px; color: var(--text-muted); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; background: var(--bg-surface); z-index: 10;}
         .pnl-table td { padding: 4px 8px; border-bottom: 1px solid var(--border-color); }
-
         .pnl-table tr.clickable-row { cursor: pointer; transition: background 0.1s; }
-        .pnl-table tr.clickable-row:hover td { background: var(--border-color); }
+        .pnl-table tr.clickable-row:hover td { background: #f0f7ff; }
         .pnl-table tr.no-trade { opacity: 0.5; }
-
         .pnl-pos { color: var(--up-green); font-weight: 600; }
         .pnl-neg { color: var(--down-red); font-weight: 600; }
 
@@ -109,12 +196,12 @@
         .collapsed .chart-header { border-bottom: none; }
 
         /* ── Grid Layout ── */
-        .grid-container { display: grid; grid-template-columns: 2.5fr 1fr; gap: 16px; flex-grow: 1; min-height: 0; }
+        .grid-container { display: grid; grid-template-columns: 2.5fr 1fr; gap: 16px; flex-grow: 1; min-height: 0; position: relative; }
         .charts-column { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
         .chart-wrapper, .options-wrapper { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; transition: flex 0.2s ease;}
         .options-wrapper { display: none; }
         .options-wrapper.visible { display: flex; }
-        .chart-header { padding: 8px 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+        .chart-header { padding: 8px 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: var(--bg-card); }
         .chart-header .ch-title { color: var(--text-main); font-size: 11px; }
         .chart-header .ch-sub   { color: var(--text-muted); font-size: 10px; }
 
@@ -164,13 +251,13 @@
         /* ── Settings Modal ── */
         .modal-overlay {
             display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center;
         }
         .modal-overlay.open { display: flex; }
         .modal {
             background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px;
             width: 580px; max-width: 95vw; max-height: 88vh; display: flex; flex-direction: column;
-            box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
         }
         .modal-header {
             display: flex; justify-content: space-between; align-items: center;
@@ -193,18 +280,18 @@
             letter-spacing: 0.06em; text-align: center; position: relative; top: 1px;
         }
         .modal-tab:hover { color: var(--text-main); }
-        /* Active tab states — full background + white text */
+        /* Active tab states */
         .modal-tab.is-active-BACKTEST {
-            background: #2e7d32; color: #fff; border-color: #2e7d32;
-            box-shadow: 0 -2px 0 0 #4CAF50 inset;
+            background: #f0fdf4; color: #059669; border-color: #bbf7d0;
+            box-shadow: 0 -2px 0 0 #059669 inset;
         }
         .modal-tab.is-active-PAPER {
-            background: #7a5c00; color: #ffe082; border-color: #7a5c00;
-            box-shadow: 0 -2px 0 0 var(--warning-yellow) inset;
+            background: #fffbeb; color: #D97706; border-color: #fde68a;
+            box-shadow: 0 -2px 0 0 #D97706 inset;
         }
         .modal-tab.is-active-LIVE {
-            background: #7f1d1d; color: #fca5a5; border-color: #7f1d1d;
-            box-shadow: 0 -2px 0 0 var(--down-red) inset;
+            background: #fef2f2; color: #DC2626; border-color: #fecaca;
+            box-shadow: 0 -2px 0 0 #DC2626 inset;
         }
 
         /* divider line under tab strip */
@@ -218,7 +305,7 @@
         .pane-banner {
             display: flex; align-items: center; gap: 10px;
             padding: 10px 18px; margin-bottom: 0; font-weight: 700; font-size: 13px;
-            border-bottom: 1px solid rgba(255,255,255,0.06); letter-spacing: 0.04em;
+            border-bottom: 1px solid var(--border-color); letter-spacing: 0.04em;
         }
         .pane-banner .banner-dot {
             width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
@@ -226,12 +313,12 @@
         .pane-banner .banner-subtitle {
             font-size: 10px; font-weight: 400; opacity: 0.7; margin-left: auto;
         }
-        .pane-banner-BACKTEST { background: rgba(76,175,80,0.12); color: #81c784; }
-        .pane-banner-PAPER    { background: rgba(230,162,60,0.12); color: #e6a23c; }
-        .pane-banner-LIVE     { background: rgba(242,54,69,0.12);  color: #ef9a9a; }
-        .pane-banner-BACKTEST .banner-dot { background: #4CAF50; }
-        .pane-banner-PAPER    .banner-dot { background: var(--warning-yellow); }
-        .pane-banner-LIVE     .banner-dot { background: var(--down-red); }
+        .pane-banner-BACKTEST { background: #f0fdf4; color: #059669; }
+        .pane-banner-PAPER    { background: #fffbeb; color: #D97706; }
+        .pane-banner-LIVE     { background: #fef2f2; color: #DC2626; }
+        .pane-banner-BACKTEST .banner-dot { background: #059669; }
+        .pane-banner-PAPER    .banner-dot { background: #D97706; }
+        .pane-banner-LIVE     .banner-dot { background: #DC2626; }
 
         .pane-inner { padding: 16px 18px; }
 
@@ -299,7 +386,9 @@
         .log-box {
             border-radius: 6px;
             flex-grow: 1; overflow-y: auto; min-height: 0;
-            font-family: "SF Mono", "Fira Code", monospace; font-size: 11px; line-height: 1.5; color: #A9B1D6;
+            font-family: "SF Mono", "Fira Code", monospace; font-size: 11px; line-height: 1.5;
+            color: var(--text-muted);
+            background: var(--bg-card); padding: 8px;
         }
 
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -308,40 +397,31 @@
         ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
         /* ════════════════════════════════════════════════
-           MOBILE — single-column, scrollable, touch-friendly
+           MOBILE — sidebar overlays, single-column content
            ════════════════════════════════════════════════ */
         @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                top: 0; left: 0; bottom: 0;
+                width: 220px;
+                transform: translateX(0);
+                transition: transform 0.22s cubic-bezier(0.4,0,0.2,1);
+                z-index: 200;
+            }
+            .sidebar.collapsed {
+                width: 220px;
+                transform: translateX(-100%);
+            }
 
-            /* Body: allow vertical scroll instead of fixed viewport */
-            body {
-                height: auto;
-                min-height: 100vh;
+            .main-wrap {
+                height: 100vh;
                 overflow-y: auto;
                 overflow-x: hidden;
-                padding: 10px 12px 20px;
             }
 
-            /* ── Header ── */
-            .header {
-                flex-wrap: wrap;
-                gap: 6px;
-                padding-bottom: 8px;
-                margin-bottom: 8px;
+            .page-content {
+                padding: 10px 12px 20px;
             }
-            .header h1 { font-size: 17px; }
-            /* badge moves to end of first row */
-            .badge { margin-left: auto; font-size: 11px; padding: 4px 10px; }
-            /* mode switcher wraps to full second row */
-            .mode-switcher {
-                order: 4;
-                width: 100%;
-                border-top: 1px solid var(--border-color);
-                padding-top: 8px;
-                justify-content: center;
-                flex-wrap: wrap;
-            }
-            .mode-btn { padding: 7px 14px; font-size: 12px; flex: 1; text-align: center; }
-            .gear-btn { padding: 7px 12px; font-size: 16px; }
 
             /* ── BT Controls bar ── */
             .bt-controls { flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
@@ -401,449 +481,731 @@
 
         /* ── Tablet: keep 2 cols but loosen touch targets ── */
         @media (min-width: 769px) and (max-width: 1024px) {
-            body { padding: 12px 16px; }
             .grid-container { grid-template-columns: 1.8fr 1fr; gap: 12px; }
             .tf-btn { padding: 4px 8px; font-size: 10px; }
             .mode-btn { padding: 6px 13px; }
         }
+        /* ── Live MTM card ── */
+        .live-mtm-card {
+            background: var(--bg-surface); border-radius: 8px;
+            border: 1px solid var(--border-color);
+            padding: 14px 16px; display: none; flex-direction: column; gap: 10px;
+        }
+        .live-mtm-card.visible { display: flex; }
+        .live-mtm-header {
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .live-mtm-title {
+            font-size: 11px; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.06em;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .live-dot {
+            width: 7px; height: 7px; border-radius: 50%; background: #22C55E;
+            animation: livePulse 1.2s ease-in-out infinite;
+        }
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.4; transform: scale(0.7); }
+        }
+        .live-mode-tag {
+            font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+        }
+        .live-mode-tag.paper { background: #fffbeb; color: #D97706; border: 1px solid #fde68a; }
+        .live-mode-tag.live  { background: #fef2f2; color: #DC2626; border: 1px solid #fecaca; }
+        .live-mtm-body {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        }
+        .live-stat { display: flex; flex-direction: column; gap: 2px; }
+        .live-stat .ls-lbl { font-size: 10px; color: var(--text-muted); font-weight: 600; }
+        .live-stat .ls-val { font-size: 13px; font-weight: 700; color: var(--text-main); font-family: monospace; }
+        .live-pnl-display {
+            text-align: right;
+        }
+        .live-pnl-display .lp-label { font-size: 10px; color: var(--text-muted); font-weight: 600; margin-bottom: 2px; }
+        .live-pnl-display .lp-amount {
+            font-size: 22px; font-weight: 800; font-family: monospace;
+            transition: color 0.3s;
+        }
+        .lp-amount.pos { color: var(--up-green); }
+        .lp-amount.neg { color: var(--down-red); }
+        .lp-amount.zero{ color: var(--text-muted); }
+        /* flash animation when value changes */
+        @keyframes flashGreen { 0%,100%{background:transparent} 50%{background:rgba(8,153,129,0.12)} }
+        @keyframes flashRed   { 0%,100%{background:transparent} 50%{background:rgba(242,54,69,0.12)} }
+        .flash-green { animation: flashGreen 0.4s ease; border-radius: 4px; }
+        .flash-red   { animation: flashRed   0.4s ease; border-radius: 4px; }
+
+        /* ── Balance row in profile dropdown ── */
+        .dropdown-balance {
+            padding: 10px 16px;
+            background: var(--bg-card);
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .dropdown-balance .db-label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .dropdown-balance .db-amount { font-size: 16px; font-weight: 800; color: var(--text-main); font-family: monospace; }
+        .dropdown-balance .db-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+
+        /* ── Chart loader overlay ── */
+        .chart-loader-overlay {
+            position: absolute; inset: 0; z-index: 40;
+            background: rgba(240,242,245,0.82);
+            backdrop-filter: blur(3px);
+            display: none; align-items: center; justify-content: center;
+            flex-direction: column; gap: 14px; border-radius: 8px;
+        }
+        .chart-loader-spinner {
+            width: 42px; height: 42px;
+            border: 3px solid var(--border-color);
+            border-top-color: #2563EB;
+            border-radius: 50%;
+            animation: chartSpin 0.65s linear infinite;
+        }
+        @keyframes chartSpin { to { transform: rotate(360deg); } }
+        .chart-loader-text {
+            font-size: 13px; font-weight: 600; color: var(--text-muted);
+            letter-spacing: 0.02em;
+        }
+        /* ── Viewing-date badge on chart header ── */
+        .viewing-date-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            font-size: 11px; font-weight: 700; color: #2563EB;
+            background: #EFF6FF; border: 1px solid #BFDBFE;
+            border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+        }
+        /* ── Range table row highlight when selected ── */
+        .pnl-table tbody tr.row-selected td {
+            background: #EFF6FF !important;
+        }
+        /* ── Flatpickr light-theme overrides ── */
+        .flatpickr-calendar {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+            font-family: inherit;
+        }
+        .flatpickr-day { color: var(--text-main); border-radius: 6px; }
+        .flatpickr-day.selected, .flatpickr-day.selected:hover {
+            background: #2563EB; border-color: #2563EB; color: #fff;
+        }
+        .flatpickr-day:hover { background: #EFF6FF; }
+        .flatpickr-day.disabled, .flatpickr-day.disabled:hover {
+            color: #CBD5E1 !important; background: transparent !important;
+            cursor: not-allowed; text-decoration: line-through;
+        }
+        .flatpickr-day.flatpickr-disabled { color: #CBD5E1 !important; }
+        .flatpickr-months { background: var(--bg-card); border-radius: 8px 8px 0 0; padding: 4px; }
+        .flatpickr-month { color: var(--text-main); }
+        .flatpickr-current-month { color: var(--text-main); font-weight: 700; }
+        .flatpickr-current-month .numInputWrapper input { color: var(--text-main); }
+        .flatpickr-weekday { color: var(--text-muted); font-weight: 600; }
+        .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--text-main); }
+        .flatpickr-prev-month:hover svg, .flatpickr-next-month:hover svg { fill: #2563EB; }
+        .numInputWrapper:hover { background: var(--bg-card); }
+        /* Hide the native calendar icon since flatpickr has its own */
+        .bt-date::-webkit-calendar-picker-indicator,
+        .dpc-date::-webkit-calendar-picker-indicator { display: none; }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 <body>
-    <div class="header">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <h1>ORB Architecture</h1>
-            <a href="/analytics" style="font-size:12px; color:var(--text-muted); text-decoration:none; padding:4px 10px; border:1px solid var(--border-color); border-radius:4px; transition:all 0.15s;" onmouseover="this.style.color='var(--text-main)'" onmouseout="this.style.color='var(--text-muted)'">Analytics 📊</a>
-            <a href="/strategy-builder" style="font-size:12px; color:var(--text-muted); text-decoration:none; padding:4px 10px; border:1px solid var(--border-color); border-radius:4px; transition:all 0.15s;" onmouseover="this.style.color='var(--text-main)'" onmouseout="this.style.color='var(--text-muted)'">Strategies ⚡</a>
-        </div>
-        <div class="mode-switcher">
-            <button class="mode-btn" id="btn-BACKTEST" onclick="switchMode('BACKTEST')">Backtest</button>
-            <button class="mode-btn" id="btn-PAPER"    onclick="switchMode('PAPER')">Paper</button>
-            <button class="mode-btn" id="btn-LIVE"     onclick="switchMode('LIVE')">Live</button>
-            <button class="gear-btn" onclick="openSettings()" title="Settings">⚙</button>
-        </div>
+  <!-- SIDEBAR (dark, collapsible) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-logo">ORB</div>
+      <span class="brand-text">Architecture</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Main</div>
+      <a href="/" class="nav-item active">
+        <span class="nav-icon">📊</span><span class="nav-text">Dashboard</span>
+      </a>
+      <a href="/analytics" class="nav-item">
+        <span class="nav-icon">📈</span><span class="nav-text">Analytics</span>
+      </a>
+      <a href="/strategy-builder" class="nav-item">
+        <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
+      </a>
+      <div class="nav-section-label">Account</div>
+      <a href="/profile" class="nav-item">
+        <span class="nav-icon">👤</span><span class="nav-text">Profile</span>
+      </a>
+    </nav>
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">◀</button>
+  </aside>
+
+  <!-- MAIN AREA -->
+  <div class="main-wrap">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="hamburger" onclick="toggleSidebar()">☰</button>
         <div class="badge" id="tradeBadge">Booting Engine...</div>
+        <div class="mode-chip" id="modeChip" style="display:none"></div>
+      </div>
+      <!-- Hidden mode buttons required by switchMode() JS -->
+      <div style="display:none">
+        <button id="btn-BACKTEST" onclick="switchMode('BACKTEST')"></button>
+        <button id="btn-PAPER"    onclick="switchMode('PAPER')"></button>
+        <button id="btn-LIVE"     onclick="switchMode('LIVE')"></button>
+      </div>
+      <div class="topbar-right">
+        <div class="user-menu" id="userMenu">
+          <button class="user-btn" onclick="toggleUserDropdown()">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span class="user-name" id="userNameDisplay">User</span>
+            <span class="user-chevron">▾</span>
+          </button>
+          <div class="user-dropdown" id="userDropdown">
+            <div class="dropdown-header">
+              <div class="dropdown-avatar" id="dropdownAvatar">U</div>
+              <div>
+                <div class="dropdown-name" id="dropdownName">—</div>
+                <div class="dropdown-email" id="dropdownEmail">—</div>
+              </div>
+            </div>
+            <!-- Balance section -->
+            <div class="dropdown-balance" id="dropdownBalance">
+              <div class="db-label">Available Balance</div>
+              <div class="db-amount" id="balanceAmount">—</div>
+              <div class="db-sub" id="balanceSub">Fetching…</div>
+            </div>
+            <div class="dropdown-section">
+              <div class="dropdown-section-label">Switch Mode</div>
+              <button class="dropdown-mode-btn" id="dm-BACKTEST" onclick="switchMode('BACKTEST');toggleUserDropdown()">
+                <span class="dm-dot"></span>Backtest
+              </button>
+              <button class="dropdown-mode-btn" id="dm-PAPER" onclick="switchMode('PAPER');toggleUserDropdown()">
+                <span class="dm-dot"></span>Paper Trading
+              </button>
+              <button class="dropdown-mode-btn" id="dm-LIVE" onclick="switchMode('LIVE');toggleUserDropdown()">
+                <span class="dm-dot"></span>Live Trading
+              </button>
+            </div>
+            <div class="dropdown-divider"></div>
+            <div class="dropdown-section">
+              <a class="dropdown-item" href="/profile">👤&nbsp; My Profile</a>
+              <button class="dropdown-item" onclick="openSettings();toggleUserDropdown()">⚙&nbsp; Strategy Settings</button>
+              <button class="dropdown-item danger" id="logoutBtn">⏻&nbsp; Sign Out</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <div class="page-content">
+
+      <!-- Settings Modal -->
+      <div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this) closeSettings()">
+          <div class="modal">
+              <div class="modal-header">
+                  <h2>⚙ Strategy Configuration</h2>
+                  <button class="modal-close" onclick="closeSettings()">✕</button>
+              </div>
+              <!-- Tab strip -->
+              <div class="modal-tabs">
+                  <button class="modal-tab" id="stab-BACKTEST" onclick="switchSettingsTab('BACKTEST')">📊 Backtest</button>
+                  <button class="modal-tab" id="stab-PAPER"    onclick="switchSettingsTab('PAPER')">📋 Paper</button>
+                  <button class="modal-tab" id="stab-LIVE"     onclick="switchSettingsTab('LIVE')">⚡ Live</button>
+              </div>
+              <div class="modal-tab-divider"></div>
+              <div class="modal-body">
+
+                  <!-- ── BACKTEST PANE ── -->
+                  <div class="modal-tab-pane" id="spane-BACKTEST">
+                      <div class="pane-banner pane-banner-BACKTEST">
+                          <span class="banner-dot"></span>
+                          BACKTEST MODE
+                          <span class="banner-subtitle">Replay historical data — no real orders</span>
+                      </div>
+                      <div class="pane-inner">
+                          <div class="settings-section">
+                              <div class="settings-section-title">🎯 Trade Rules</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Profit Target</label>
+                                      <div class="field-hint">Exit when option gains this many ₹ in premium</div>
+                                      <input class="settings-input" id="sf-target_pts" type="number" placeholder="e.g. 30">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Trail SL — Fibonacci Level</label>
+                                      <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
+                                      <input class="settings-input" id="sf-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Last Entry Time</label>
+                                      <div class="field-hint">No new trades after this time</div>
+                                      <input class="settings-input" id="sf-entry_end_time" type="time">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Force-Close Time (EOD)</label>
+                                      <div class="field-hint">Close open position at this time regardless</div>
+                                      <input class="settings-input" id="sf-eod_exit_time" type="time">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Strike Spacing (index pts)</label>
+                                      <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
+                                      <input class="settings-input" id="sf-strike_spacing" type="number" placeholder="50">
+                                  </div>
+                              </div>
+                          </div>
+                          <div class="settings-section">
+                              <div class="settings-section-title">📦 Position Sizing</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Lot Size</label>
+                                      <div class="field-hint">Units per lot (NIFTY = 25)</div>
+                                      <input class="settings-input" id="sf-lot_size" type="number" placeholder="25">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Number of Lots</label>
+                                      <div class="field-hint">How many lots to trade</div>
+                                      <input class="settings-input" id="sf-qty_multiplier" type="number" step="1" placeholder="1">
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- ── PAPER PANE ── -->
+                  <div class="modal-tab-pane" id="spane-PAPER">
+                      <div class="pane-banner pane-banner-PAPER">
+                          <span class="banner-dot"></span>
+                          PAPER TRADING MODE
+                          <span class="banner-subtitle">Live market feed — simulated orders only</span>
+                      </div>
+                      <div class="pane-inner">
+                          <div class="settings-section">
+                              <div class="settings-section-title">🎯 Trade Rules</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Profit Target</label>
+                                      <div class="field-hint">Exit when option gains this many ₹ in premium</div>
+                                      <input class="settings-input" id="sf2-target_pts" type="number" placeholder="e.g. 30">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Trail SL — Fibonacci Level</label>
+                                      <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
+                                      <input class="settings-input" id="sf2-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Last Entry Time</label>
+                                      <div class="field-hint">No new trades after this time</div>
+                                      <input class="settings-input" id="sf2-entry_end_time" type="time">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Force-Close Time (EOD)</label>
+                                      <div class="field-hint">Close open position at this time regardless</div>
+                                      <input class="settings-input" id="sf2-eod_exit_time" type="time">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Strike Spacing (index pts)</label>
+                                      <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
+                                      <input class="settings-input" id="sf2-strike_spacing" type="number" placeholder="50">
+                                  </div>
+                              </div>
+                          </div>
+                          <div class="settings-section">
+                              <div class="settings-section-title">📐 Options Pricing (Black-Scholes)</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Risk-Free Rate</label>
+                                      <div class="field-hint">Annual rate as decimal (e.g. 0.065 = 6.5%)</div>
+                                      <input class="settings-input" id="sf2-risk_free_rate" type="number" step="0.001" placeholder="0.065">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Assumed IV (Implied Volatility)</label>
+                                      <div class="field-hint">As decimal (e.g. 0.15 = 15% IV)</div>
+                                      <input class="settings-input" id="sf2-assumed_iv" type="number" step="0.01" placeholder="0.15">
+                                  </div>
+                              </div>
+                          </div>
+                          <div class="settings-section">
+                              <div class="settings-section-title">📦 Position Sizing</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Lot Size</label>
+                                      <div class="field-hint">Units per lot (NIFTY = 25)</div>
+                                      <input class="settings-input" id="sf2-lot_size" type="number" placeholder="25">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Number of Lots</label>
+                                      <div class="field-hint">How many lots to trade</div>
+                                      <input class="settings-input" id="sf2-qty_multiplier" type="number" step="1" placeholder="1">
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- ── LIVE PANE ── -->
+                  <div class="modal-tab-pane" id="spane-LIVE">
+                      <div class="pane-banner pane-banner-LIVE">
+                          <span class="banner-dot"></span>
+                          LIVE TRADING MODE
+                          <span class="banner-subtitle">⚠ Real orders will be placed on Kite</span>
+                      </div>
+                      <div class="pane-inner">
+                          <div class="settings-section">
+                              <div class="settings-section-title">🎯 Trade Rules</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Profit Target</label>
+                                      <div class="field-hint">Exit when option gains this many ₹ in premium</div>
+                                      <input class="settings-input" id="sf3-target_pts" type="number" placeholder="e.g. 30">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Trail SL — Fibonacci Level</label>
+                                      <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
+                                      <input class="settings-input" id="sf3-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Last Entry Time</label>
+                                      <div class="field-hint">No new trades after this time</div>
+                                      <input class="settings-input" id="sf3-entry_end_time" type="time">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Force-Close Time (EOD)</label>
+                                      <div class="field-hint">Close open position at this time regardless</div>
+                                      <input class="settings-input" id="sf3-eod_exit_time" type="time">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Strike Spacing (index pts)</label>
+                                      <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
+                                      <input class="settings-input" id="sf3-strike_spacing" type="number" placeholder="50">
+                                  </div>
+                              </div>
+                          </div>
+                          <div class="settings-section">
+                              <div class="settings-section-title">📐 Options Pricing (Black-Scholes)</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Risk-Free Rate</label>
+                                      <div class="field-hint">Annual rate as decimal (e.g. 0.065 = 6.5%)</div>
+                                      <input class="settings-input" id="sf3-risk_free_rate" type="number" step="0.001" placeholder="0.065">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Assumed IV (Implied Volatility)</label>
+                                      <div class="field-hint">As decimal (e.g. 0.15 = 15% IV)</div>
+                                      <input class="settings-input" id="sf3-assumed_iv" type="number" step="0.01" placeholder="0.15">
+                                  </div>
+                              </div>
+                          </div>
+                          <div class="settings-section">
+                              <div class="settings-section-title">📦 Position Sizing</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Lot Size</label>
+                                      <div class="field-hint">Units per lot (NIFTY = 25)</div>
+                                      <input class="settings-input" id="sf3-lot_size" type="number" placeholder="25">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Number of Lots</label>
+                                      <div class="field-hint">How many lots to trade</div>
+                                      <input class="settings-input" id="sf3-qty_multiplier" type="number" step="1" placeholder="1">
+                                  </div>
+                              </div>
+                          </div>
+                          <div class="settings-section">
+                              <div class="settings-section-title">💸 Brokerage &amp; Statutory Charges</div>
+                              <div class="settings-grid">
+                                  <div class="settings-field">
+                                      <label>Brokerage per Order (₹)</label>
+                                      <div class="field-hint">Flat fee per order leg (e.g. ₹20)</div>
+                                      <input class="settings-input" id="sf3-brokerage_per_order" type="number" step="0.01" placeholder="20">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>STT — Securities Transaction Tax</label>
+                                      <div class="field-hint">% of sell-side value (e.g. 0.000625)</div>
+                                      <input class="settings-input" id="sf3-stt_pct" type="number" step="0.000001" placeholder="0.000625">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Exchange Transaction Charges</label>
+                                      <div class="field-hint">% of total turnover (e.g. 0.00053)</div>
+                                      <input class="settings-input" id="sf3-exchange_charges_pct" type="number" step="0.000001" placeholder="0.00053">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>GST on Brokerage + Exchange</label>
+                                      <div class="field-hint">% (e.g. 0.18 = 18%)</div>
+                                      <input class="settings-input" id="sf3-gst_pct" type="number" step="0.001" placeholder="0.18">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>SEBI Regulatory Fee</label>
+                                      <div class="field-hint">% of turnover (e.g. 0.000001 = ₹10/Cr)</div>
+                                      <input class="settings-input" id="sf3-sebi_charges_pct" type="number" step="0.0000001" placeholder="0.000001">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>Stamp Duty</label>
+                                      <div class="field-hint">% of buy-side value (e.g. 0.00003)</div>
+                                      <input class="settings-input" id="sf3-stamp_duty_pct" type="number" step="0.000001" placeholder="0.00003">
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+              </div>
+              <div class="modal-footer">
+                  <p class="settings-note">⚡ Changes apply to the running engine immediately.</p>
+                  <div style="display:flex;gap:8px;">
+                      <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
+                      <button class="btn-save" id="saveBtn" onclick="saveSettings()">Save Changes</button>
+                  </div>
+              </div>
+          </div>
+      </div>
+
+      <!-- BT Controls -->
+      <div class="bt-controls" id="btControls">
+          <div class="bt-tab-group">
+              <button class="bt-tab active" id="tabSingle" onclick="setBtTab('single')">Single Day</button>
+              <button class="bt-tab"        id="tabRange"  onclick="setBtTab('range')">Date Range</button>
+          </div>
+
+          <div class="bt-input-group" id="singleInputs">
+              <label>Date</label>
+              <input type="date" class="bt-date" id="btDate">
+          </div>
+
+          <div class="bt-input-group" id="rangeInputs" style="display:none;">
+              <label>From</label>
+              <input type="date" class="bt-date" id="btFrom">
+              <label>To</label>
+              <input type="date" class="bt-date" id="btTo">
+          </div>
+
+          <button class="bt-run" id="btRun" onclick="runBacktest()">Run</button>
+          <span class="bt-status" id="btStatus"></span>
+      </div>
+
+      <!-- Range Results -->
+      <div class="range-results" id="rangeResults">
+          <div class="panel-header-row" style="margin-bottom: 0;">
+              <span style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase;">Range Results</span>
+              <div style="display:flex; align-items:center; gap:10px;">
+                  <button class="collapse-btn" onclick="togglePanel('rangeResults')">−</button>
+                  <button onclick="closeRangeResults()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
+              </div>
+          </div>
+          <div class="collapsible-content" style="display:flex; flex-direction:column; flex-grow:1; min-height:0; margin-top:10px;">
+              <div class="range-stats" id="rangeStats"></div>
+              <div class="range-scroll">
+                  <table class="pnl-table">
+                      <thead><tr><th>Date</th><th>Position</th><th>Entry ₹</th><th>Exit ₹</th><th>Net P&L</th><th>Cumulative</th></tr></thead>
+                      <tbody id="rangeTableBody"></tbody>
+                  </table>
+              </div>
+          </div>
+      </div>
+
+      <!-- Grid Container -->
+      <div class="grid-container">
+
+          <!-- Chart loader overlay (shown while backtest fetch is in-flight) -->
+          <div class="chart-loader-overlay" id="chartLoader">
+            <div class="chart-loader-spinner"></div>
+            <div class="chart-loader-text" id="chartLoaderText">Loading chart data…</div>
+          </div>
+
+          <!-- Date-prompt overlay (shown in BACKTEST mode before first run) -->
+          <div class="date-prompt-overlay" id="datePromptOverlay" style="position:absolute;inset:0;z-index:50;background:rgba(240,242,245,0.88);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;border-radius:8px;">
+            <div class="date-prompt-card">
+              <div class="dpc-icon">📅</div>
+              <h3>Select a Date to Run</h3>
+              <p>Pick a trading day or date range to replay the ORB strategy on historical data.</p>
+              <div class="dpc-tab-row">
+                <button class="dpc-tab active" id="dpcTabSingle" onclick="dpcSetTab('single')">Single Day</button>
+                <button class="dpc-tab"        id="dpcTabRange"  onclick="dpcSetTab('range')">Date Range</button>
+              </div>
+              <div class="dpc-inputs" id="dpcSingleInputs">
+                <div class="dpc-input-row">
+                  <label>Date</label>
+                  <input type="date" class="dpc-date" id="dpcDate">
+                </div>
+              </div>
+              <div class="dpc-inputs" id="dpcRangeInputs" style="display:none">
+                <div class="dpc-input-row">
+                  <label>From</label>
+                  <input type="date" class="dpc-date" id="dpcFrom">
+                </div>
+                <div class="dpc-input-row">
+                  <label>To</label>
+                  <input type="date" class="dpc-date" id="dpcTo">
+                </div>
+              </div>
+              <button class="dpc-run" onclick="runFromPrompt()">▶ Run Backtest</button>
+            </div>
+          </div>
+
+          <div class="charts-column">
+              <div class="chart-wrapper" id="niftyPanel">
+                  <div class="chart-header">
+                      <div style="display:flex; align-items:center; gap:8px;">
+                          <button class="collapse-btn" onclick="togglePanel('niftyPanel')" style="margin-right:0;">−</button>
+                          <span class="ch-title">NIFTY 50</span>
+                          <div class="tf-group" id="niftyTfGroup">
+                              <button class="tf-btn" onclick="setNiftyTf(1)">1m</button>
+                              <button class="tf-btn active" onclick="setNiftyTf(5)">5m</button>
+                              <button class="tf-btn" onclick="setNiftyTf(15)">15m</button>
+                              <button class="tf-btn" onclick="setNiftyTf(30)">30m</button>
+                              <button class="tf-btn" onclick="setNiftyTf('D')">D</button>
+                          </div>
+                          <label class="fib-toggle" title="Toggle Fibonacci Levels">
+                              <input type="checkbox" id="fibToggle" checked onchange="toggleFibLines(this.checked)">
+                              <span>FIB</span>
+                          </label>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:8px;">
+                          <span id="viewingDateBadge" class="viewing-date-badge" style="display:none;"></span>
+                          <div id="indexBadge"></div>
+                      </div>
+                  </div>
+                  <div class="collapsible-content chart-inner">
+                      <div id="chart"></div>
+                  </div>
+              </div>
+
+              <div class="options-wrapper" id="optionsWrapper">
+                  <div class="chart-header">
+                      <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+                          <button class="collapse-btn" onclick="togglePanel('optionsWrapper')" style="margin-right:0; flex-shrink:0;">−</button>
+                          <span class="ch-title" id="optLabel" style="white-space:nowrap;">OPTIONS</span>
+                          <span id="optExpiryTag" style="display:none; color:var(--text-muted); font-size:10px; border:1px solid var(--border-color); padding:2px 7px; border-radius:3px; white-space:nowrap; flex-shrink:0;"></span>
+                          <button class="sync-btn synced" id="syncBtn" onclick="toggleOptSync()" title="Unlink from NIFTY timeframe" style="flex-shrink:0;">⛓</button>
+                          <div class="opt-tf-wrap" id="optTfWrap">
+                              <div class="tf-group" id="optTfGroup">
+                                  <button class="tf-btn" onclick="setOptTf(1)">1m</button>
+                                  <button class="tf-btn active" onclick="setOptTf(5)">5m</button>
+                                  <button class="tf-btn" onclick="setOptTf(15)">15m</button>
+                                  <button class="tf-btn" onclick="setOptTf(30)">30m</button>
+                                  <button class="tf-btn" onclick="setOptTf('D')">D</button>
+                              </div>
+                          </div>
+                      </div>
+                      <div id="optionsBadge" style="flex-shrink:0; margin-left:8px;"></div>
+                  </div>
+                  <div class="collapsible-content chart-inner">
+                      <div id="optionsChart"></div>
+                  </div>
+              </div>
+          </div>
+          <div class="side-panel">
+
+              <!-- Live MTM — shown only in PAPER / LIVE mode while in position -->
+              <div class="live-mtm-card" id="liveMtmCard">
+                  <div class="live-mtm-header">
+                      <div class="live-mtm-title">
+                          <span class="live-dot"></span>
+                          Live P&amp;L
+                      </div>
+                      <span class="live-mode-tag" id="liveModeTag">PAPER</span>
+                  </div>
+                  <div class="live-mtm-body">
+                      <div style="display:flex; gap:16px;">
+                          <div class="live-stat">
+                              <div class="ls-lbl">Entry</div>
+                              <div class="ls-val" id="liveEntry">—</div>
+                          </div>
+                          <div class="live-stat">
+                              <div class="ls-lbl">Current LTP</div>
+                              <div class="ls-val" id="liveLtp">—</div>
+                          </div>
+                          <div class="live-stat">
+                              <div class="ls-lbl">Qty</div>
+                              <div class="ls-val" id="liveQty">—</div>
+                          </div>
+                      </div>
+                      <div class="live-pnl-display">
+                          <div class="lp-label">Unrealised P&amp;L</div>
+                          <div class="lp-amount zero" id="livePnlAmount">₹0</div>
+                      </div>
+                  </div>
+              </div>
+
+              <div class="card summary-card" id="summaryPanel">
+                  <div class="panel-header-row">
+                      <h3>Trade Summary</h3>
+                      <button class="collapse-btn" onclick="togglePanel('summaryPanel')">−</button>
+                  </div>
+                  <div class="collapsible-content">
+                      <div class="stat-row"><span class="stat-lbl">OR High</span><span class="stat-val" id="orh">-</span></div>
+                      <div class="stat-row"><span class="stat-lbl">OR Low</span><span class="stat-val" id="orl">-</span></div>
+                      <div class="divider"></div>
+                      <div class="stat-row"><span class="stat-lbl">Swing High</span><span class="stat-val" id="h">-</span></div>
+                      <div class="stat-row"><span class="stat-lbl">Swing Low</span><span class="stat-val" id="l">-</span></div>
+                      <div class="divider"></div>
+                      <div class="stat-row"><span class="stat-lbl">Entry Prem</span><span class="stat-val" id="en">-</span></div>
+                      <div class="stat-row"><span class="stat-lbl">Target</span><span class="stat-val" id="tgt" style="color:var(--up-green)">-</span></div>
+                      <div class="stat-row"><span class="stat-lbl">Exit Prem</span><span class="stat-val" id="ex">-</span></div>
+                      <div class="divider"></div>
+                      <div class="stat-row"><span class="stat-lbl">Gross P&L</span><span class="stat-val" id="gpnl">-</span></div>
+
+                      <div class="stat-row clickable-row-tax" onclick="document.getElementById('taxDetails').classList.toggle('open')">
+                          <span class="stat-lbl" style="border-bottom: 1px dashed var(--text-muted);">Taxes & Brokerage ▾</span>
+                          <span class="stat-val" id="chrg" style="color:var(--down-red)">-</span>
+                      </div>
+
+                      <div class="tax-breakdown" id="taxDetails"></div>
+
+                      <div class="pnl-display">
+                          <div class="label">Net P&amp;L</div>
+                          <div class="amount" id="npnl">₹0.00</div>
+                      </div>
+                  </div>
+              </div>
+
+              <div class="card logs-card" id="logsPanel">
+                  <div class="panel-header-row">
+                      <h3>System Logs</h3>
+                      <button class="collapse-btn" onclick="togglePanel('logsPanel')">−</button>
+                  </div>
+                  <div class="collapsible-content log-box" id="logs"></div>
+              </div>
+
+          </div>
+      </div>
+
     </div>
-
-    <!-- ── Settings Modal ── -->
-    <div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this) closeSettings()">
-        <div class="modal">
-            <div class="modal-header">
-                <h2>⚙ Strategy Configuration</h2>
-                <button class="modal-close" onclick="closeSettings()">✕</button>
-            </div>
-            <!-- Tab strip -->
-            <div class="modal-tabs">
-                <button class="modal-tab" id="stab-BACKTEST" onclick="switchSettingsTab('BACKTEST')">📊 Backtest</button>
-                <button class="modal-tab" id="stab-PAPER"    onclick="switchSettingsTab('PAPER')">📋 Paper</button>
-                <button class="modal-tab" id="stab-LIVE"     onclick="switchSettingsTab('LIVE')">⚡ Live</button>
-            </div>
-            <div class="modal-tab-divider"></div>
-            <div class="modal-body">
-
-                <!-- ── BACKTEST PANE ── -->
-                <div class="modal-tab-pane" id="spane-BACKTEST">
-                    <div class="pane-banner pane-banner-BACKTEST">
-                        <span class="banner-dot"></span>
-                        BACKTEST MODE
-                        <span class="banner-subtitle">Replay historical data — no real orders</span>
-                    </div>
-                    <div class="pane-inner">
-                        <div class="settings-section">
-                            <div class="settings-section-title">🎯 Trade Rules</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Profit Target</label>
-                                    <div class="field-hint">Exit when option gains this many ₹ in premium</div>
-                                    <input class="settings-input" id="sf-target_pts" type="number" placeholder="e.g. 30">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Trail SL — Fibonacci Level</label>
-                                    <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
-                                    <input class="settings-input" id="sf-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Last Entry Time</label>
-                                    <div class="field-hint">No new trades after this time</div>
-                                    <input class="settings-input" id="sf-entry_end_time" type="time">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Force-Close Time (EOD)</label>
-                                    <div class="field-hint">Close open position at this time regardless</div>
-                                    <input class="settings-input" id="sf-eod_exit_time" type="time">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Strike Spacing (index pts)</label>
-                                    <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
-                                    <input class="settings-input" id="sf-strike_spacing" type="number" placeholder="50">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="settings-section">
-                            <div class="settings-section-title">📦 Position Sizing</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Lot Size</label>
-                                    <div class="field-hint">Units per lot (NIFTY = 25)</div>
-                                    <input class="settings-input" id="sf-lot_size" type="number" placeholder="25">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Number of Lots</label>
-                                    <div class="field-hint">How many lots to trade</div>
-                                    <input class="settings-input" id="sf-qty_multiplier" type="number" step="1" placeholder="1">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ── PAPER PANE ── -->
-                <div class="modal-tab-pane" id="spane-PAPER">
-                    <div class="pane-banner pane-banner-PAPER">
-                        <span class="banner-dot"></span>
-                        PAPER TRADING MODE
-                        <span class="banner-subtitle">Live market feed — simulated orders only</span>
-                    </div>
-                    <div class="pane-inner">
-                        <div class="settings-section">
-                            <div class="settings-section-title">🎯 Trade Rules</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Profit Target</label>
-                                    <div class="field-hint">Exit when option gains this many ₹ in premium</div>
-                                    <input class="settings-input" id="sf2-target_pts" type="number" placeholder="e.g. 30">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Trail SL — Fibonacci Level</label>
-                                    <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
-                                    <input class="settings-input" id="sf2-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Last Entry Time</label>
-                                    <div class="field-hint">No new trades after this time</div>
-                                    <input class="settings-input" id="sf2-entry_end_time" type="time">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Force-Close Time (EOD)</label>
-                                    <div class="field-hint">Close open position at this time regardless</div>
-                                    <input class="settings-input" id="sf2-eod_exit_time" type="time">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Strike Spacing (index pts)</label>
-                                    <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
-                                    <input class="settings-input" id="sf2-strike_spacing" type="number" placeholder="50">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="settings-section">
-                            <div class="settings-section-title">📐 Options Pricing (Black-Scholes)</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Risk-Free Rate</label>
-                                    <div class="field-hint">Annual rate as decimal (e.g. 0.065 = 6.5%)</div>
-                                    <input class="settings-input" id="sf2-risk_free_rate" type="number" step="0.001" placeholder="0.065">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Assumed IV (Implied Volatility)</label>
-                                    <div class="field-hint">As decimal (e.g. 0.15 = 15% IV)</div>
-                                    <input class="settings-input" id="sf2-assumed_iv" type="number" step="0.01" placeholder="0.15">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="settings-section">
-                            <div class="settings-section-title">📦 Position Sizing</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Lot Size</label>
-                                    <div class="field-hint">Units per lot (NIFTY = 25)</div>
-                                    <input class="settings-input" id="sf2-lot_size" type="number" placeholder="25">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Number of Lots</label>
-                                    <div class="field-hint">How many lots to trade</div>
-                                    <input class="settings-input" id="sf2-qty_multiplier" type="number" step="1" placeholder="1">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ── LIVE PANE ── -->
-                <div class="modal-tab-pane" id="spane-LIVE">
-                    <div class="pane-banner pane-banner-LIVE">
-                        <span class="banner-dot"></span>
-                        LIVE TRADING MODE
-                        <span class="banner-subtitle">⚠ Real orders will be placed on Kite</span>
-                    </div>
-                    <div class="pane-inner">
-                        <div class="settings-section">
-                            <div class="settings-section-title">🎯 Trade Rules</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Profit Target</label>
-                                    <div class="field-hint">Exit when option gains this many ₹ in premium</div>
-                                    <input class="settings-input" id="sf3-target_pts" type="number" placeholder="e.g. 30">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Trail SL — Fibonacci Level</label>
-                                    <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
-                                    <input class="settings-input" id="sf3-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Last Entry Time</label>
-                                    <div class="field-hint">No new trades after this time</div>
-                                    <input class="settings-input" id="sf3-entry_end_time" type="time">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Force-Close Time (EOD)</label>
-                                    <div class="field-hint">Close open position at this time regardless</div>
-                                    <input class="settings-input" id="sf3-eod_exit_time" type="time">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Strike Spacing (index pts)</label>
-                                    <div class="field-hint">NIFTY = 50, BANKNIFTY = 100</div>
-                                    <input class="settings-input" id="sf3-strike_spacing" type="number" placeholder="50">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="settings-section">
-                            <div class="settings-section-title">📐 Options Pricing (Black-Scholes)</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Risk-Free Rate</label>
-                                    <div class="field-hint">Annual rate as decimal (e.g. 0.065 = 6.5%)</div>
-                                    <input class="settings-input" id="sf3-risk_free_rate" type="number" step="0.001" placeholder="0.065">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Assumed IV (Implied Volatility)</label>
-                                    <div class="field-hint">As decimal (e.g. 0.15 = 15% IV)</div>
-                                    <input class="settings-input" id="sf3-assumed_iv" type="number" step="0.01" placeholder="0.15">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="settings-section">
-                            <div class="settings-section-title">📦 Position Sizing</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Lot Size</label>
-                                    <div class="field-hint">Units per lot (NIFTY = 25)</div>
-                                    <input class="settings-input" id="sf3-lot_size" type="number" placeholder="25">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Number of Lots</label>
-                                    <div class="field-hint">How many lots to trade</div>
-                                    <input class="settings-input" id="sf3-qty_multiplier" type="number" step="1" placeholder="1">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="settings-section">
-                            <div class="settings-section-title">💸 Brokerage &amp; Statutory Charges</div>
-                            <div class="settings-grid">
-                                <div class="settings-field">
-                                    <label>Brokerage per Order (₹)</label>
-                                    <div class="field-hint">Flat fee per order leg (e.g. ₹20)</div>
-                                    <input class="settings-input" id="sf3-brokerage_per_order" type="number" step="0.01" placeholder="20">
-                                </div>
-                                <div class="settings-field">
-                                    <label>STT — Securities Transaction Tax</label>
-                                    <div class="field-hint">% of sell-side value (e.g. 0.000625)</div>
-                                    <input class="settings-input" id="sf3-stt_pct" type="number" step="0.000001" placeholder="0.000625">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Exchange Transaction Charges</label>
-                                    <div class="field-hint">% of total turnover (e.g. 0.00053)</div>
-                                    <input class="settings-input" id="sf3-exchange_charges_pct" type="number" step="0.000001" placeholder="0.00053">
-                                </div>
-                                <div class="settings-field">
-                                    <label>GST on Brokerage + Exchange</label>
-                                    <div class="field-hint">% (e.g. 0.18 = 18%)</div>
-                                    <input class="settings-input" id="sf3-gst_pct" type="number" step="0.001" placeholder="0.18">
-                                </div>
-                                <div class="settings-field">
-                                    <label>SEBI Regulatory Fee</label>
-                                    <div class="field-hint">% of turnover (e.g. 0.000001 = ₹10/Cr)</div>
-                                    <input class="settings-input" id="sf3-sebi_charges_pct" type="number" step="0.0000001" placeholder="0.000001">
-                                </div>
-                                <div class="settings-field">
-                                    <label>Stamp Duty</label>
-                                    <div class="field-hint">% of buy-side value (e.g. 0.00003)</div>
-                                    <input class="settings-input" id="sf3-stamp_duty_pct" type="number" step="0.000001" placeholder="0.00003">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-            <div class="modal-footer">
-                <p class="settings-note">⚡ Changes apply to the running engine immediately.</p>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn-cancel" onclick="closeSettings()">Cancel</button>
-                    <button class="btn-save" id="saveBtn" onclick="saveSettings()">Save Changes</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="bt-controls" id="btControls">
-        <div class="bt-tab-group">
-            <button class="bt-tab active" id="tabSingle" onclick="setBtTab('single')">Single Day</button>
-            <button class="bt-tab"        id="tabRange"  onclick="setBtTab('range')">Date Range</button>
-        </div>
-
-        <div class="bt-input-group" id="singleInputs">
-            <label>Date</label>
-            <input type="date" class="bt-date" id="btDate">
-        </div>
-
-        <div class="bt-input-group" id="rangeInputs" style="display:none;">
-            <label>From</label>
-            <input type="date" class="bt-date" id="btFrom">
-            <label>To</label>
-            <input type="date" class="bt-date" id="btTo">
-        </div>
-
-        <button class="bt-run" id="btRun" onclick="runBacktest()">Run</button>
-        <span class="bt-status" id="btStatus"></span>
-    </div>
-
-    <div class="range-results" id="rangeResults">
-        <div class="panel-header-row" style="margin-bottom: 0;">
-            <span style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase;">Range Results</span>
-            <div style="display:flex; align-items:center; gap:10px;">
-                <button class="collapse-btn" onclick="togglePanel('rangeResults')">−</button>
-                <button onclick="closeRangeResults()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">✕</button>
-            </div>
-        </div>
-        <div class="collapsible-content" style="display:flex; flex-direction:column; flex-grow:1; min-height:0; margin-top:10px;">
-            <div class="range-stats" id="rangeStats"></div>
-            <div class="range-scroll">
-                <table class="pnl-table">
-                    <thead><tr><th>Date</th><th>Position</th><th>Entry ₹</th><th>Exit ₹</th><th>Net P&L</th><th>Cumulative</th></tr></thead>
-                    <tbody id="rangeTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div class="grid-container">
-        <div class="charts-column">
-            <div class="chart-wrapper" id="niftyPanel">
-                <div class="chart-header">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <button class="collapse-btn" onclick="togglePanel('niftyPanel')" style="margin-right:0;">−</button>
-                        <span class="ch-title">NIFTY 50</span>
-                        <div class="tf-group" id="niftyTfGroup">
-                            <button class="tf-btn" onclick="setNiftyTf(1)">1m</button>
-                            <button class="tf-btn active" onclick="setNiftyTf(5)">5m</button>
-                            <button class="tf-btn" onclick="setNiftyTf(15)">15m</button>
-                            <button class="tf-btn" onclick="setNiftyTf(30)">30m</button>
-                            <button class="tf-btn" onclick="setNiftyTf('D')">D</button>
-                        </div>
-                        <label class="fib-toggle" title="Toggle Fibonacci Levels">
-                            <input type="checkbox" id="fibToggle" checked onchange="toggleFibLines(this.checked)">
-                            <span>FIB</span>
-                        </label>
-                    </div>
-                    <div id="indexBadge"></div>
-                </div>
-                <div class="collapsible-content chart-inner">
-                    <div id="chart"></div>
-                </div>
-            </div>
-
-            <div class="options-wrapper" id="optionsWrapper">
-                <div class="chart-header">
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <button class="collapse-btn" onclick="togglePanel('optionsWrapper')" style="margin-right:0;">−</button>
-                        <span class="ch-title" id="optLabel">OPTIONS</span>
-                        <button class="sync-btn synced" id="syncBtn" onclick="toggleOptSync()" title="Unlink from NIFTY timeframe">⛓</button>
-                        <div class="opt-tf-wrap" id="optTfWrap">
-                            <div class="tf-group" id="optTfGroup">
-                                <button class="tf-btn" onclick="setOptTf(1)">1m</button>
-                                <button class="tf-btn active" onclick="setOptTf(5)">5m</button>
-                                <button class="tf-btn" onclick="setOptTf(15)">15m</button>
-                                <button class="tf-btn" onclick="setOptTf(30)">30m</button>
-                                <button class="tf-btn" onclick="setOptTf('D')">D</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="optionsBadge"></div>
-                </div>
-                <div class="collapsible-content chart-inner">
-                    <div id="optionsChart"></div>
-                </div>
-            </div>
-        </div>
-        <div class="side-panel">
-
-            <div class="card summary-card" id="summaryPanel">
-                <div class="panel-header-row">
-                    <h3>Trade Summary</h3>
-                    <button class="collapse-btn" onclick="togglePanel('summaryPanel')">−</button>
-                </div>
-                <div class="collapsible-content">
-                    <div class="stat-row"><span class="stat-lbl">OR High</span><span class="stat-val" id="orh">-</span></div>
-                    <div class="stat-row"><span class="stat-lbl">OR Low</span><span class="stat-val" id="orl">-</span></div>
-                    <div class="divider"></div>
-                    <div class="stat-row"><span class="stat-lbl">Swing High</span><span class="stat-val" id="h">-</span></div>
-                    <div class="stat-row"><span class="stat-lbl">Swing Low</span><span class="stat-val" id="l">-</span></div>
-                    <div class="divider"></div>
-                    <div class="stat-row"><span class="stat-lbl">Entry Prem</span><span class="stat-val" id="en">-</span></div>
-                    <div class="stat-row"><span class="stat-lbl">Target</span><span class="stat-val" id="tgt" style="color:var(--up-green)">-</span></div>
-                    <div class="stat-row"><span class="stat-lbl">Exit Prem</span><span class="stat-val" id="ex">-</span></div>
-                    <div class="divider"></div>
-                    <div class="stat-row"><span class="stat-lbl">Gross P&L</span><span class="stat-val" id="gpnl">-</span></div>
-
-                    <div class="stat-row clickable-row-tax" onclick="document.getElementById('taxDetails').classList.toggle('open')">
-                        <span class="stat-lbl" style="border-bottom: 1px dashed var(--text-muted);">Taxes & Brokerage ▾</span>
-                        <span class="stat-val" id="chrg" style="color:var(--down-red)">-</span>
-                    </div>
-
-                    <div class="tax-breakdown" id="taxDetails"></div>
-
-                    <div class="pnl-display">
-                        <div class="label">Net P&amp;L</div>
-                        <div class="amount" id="npnl">₹0.00</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card logs-card" id="logsPanel">
-                <div class="panel-header-row">
-                    <h3>System Logs</h3>
-                    <button class="collapse-btn" onclick="togglePanel('logsPanel')">−</button>
-                </div>
-                <div class="collapsible-content log-box" id="logs"></div>
-            </div>
-
-        </div>
-    </div>
+  </div>
 
     <script>
         // ── Auth guard — redirect to /login if not authenticated ──────────────
         (function() {
             const token = localStorage.getItem('orb_token');
-            if (!token) { window.location.replace('/login'); }
+            if (!token) { window.location.replace('/login'); return; }
             const user = JSON.parse(localStorage.getItem('orb_user') || '{}');
-            if (user.username) {
-                const lbl = document.createElement('span');
-                lbl.style.cssText = 'font-size:12px;color:var(--text-muted);margin-right:6px';
-                lbl.textContent = user.username;
-                const logoutBtn = document.createElement('button');
-                logoutBtn.className = 'gear-btn';
-                logoutBtn.title = 'Logout';
-                logoutBtn.textContent = '⏻';
-                logoutBtn.style.fontSize = '13px';
-                logoutBtn.onclick = () => {
-                    localStorage.removeItem('orb_token');
-                    localStorage.removeItem('orb_user');
-                    window.location.href = '/login';
-                };
-                const switcher = document.querySelector('.mode-switcher');
-                if (switcher) { switcher.appendChild(lbl); switcher.appendChild(logoutBtn); }
-            }
+            const initials = (user.username || 'U').charAt(0).toUpperCase();
+            document.getElementById('userAvatar').textContent = initials;
+            document.getElementById('dropdownAvatar').textContent = initials;
+            document.getElementById('userNameDisplay').textContent = user.username || 'User';
+            document.getElementById('dropdownName').textContent = user.username || 'User';
+            document.getElementById('dropdownEmail').textContent = user.email || '';
         })();
+
+        function toggleUserDropdown() {
+            document.getElementById('userMenu').classList.toggle('open');
+        }
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('userMenu');
+            if (menu && !menu.contains(e.target)) menu.classList.remove('open');
+        });
+        document.getElementById('logoutBtn').onclick = function() {
+            localStorage.removeItem('orb_token');
+            localStorage.removeItem('orb_user');
+            window.location.href = '/login';
+        };
+
+        let sidebarCollapsed = false;
+        function toggleSidebar() {
+            sidebarCollapsed = !sidebarCollapsed;
+            document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+            document.getElementById('sidebarToggle').textContent = sidebarCollapsed ? '▶' : '◀';
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 250);
+        }
 
         function togglePanel(panelId) {
             const panel = document.getElementById(panelId);
@@ -871,8 +1233,8 @@
         }
 
         const commonChartConfig = {
-            layout: { textColor: '#D1D4DC', background: { type: 'solid', color: '#131722' } },
-            grid: { vertLines: { color: '#2A2E39' }, horzLines: { color: '#2A2E39' } },
+            layout: { textColor: '#1E2328', background: { type: 'solid', color: '#FFFFFF' } },
+            grid: { vertLines: { color: '#E4E8EF' }, horzLines: { color: '#E4E8EF' } },
             timeScale: {
                 timeVisible: true, rightOffset: 12,
                 tickMarkFormatter: formatIST
@@ -927,6 +1289,16 @@
             wrapper.classList.add('visible');
             document.getElementById('optLabel').innerText = state.option_label || 'OPTIONS';
 
+            // Expiry tag — sits right after the label in the left group
+            const expiryEl = document.getElementById('optExpiryTag');
+            if (state.option_expiry) {
+                expiryEl.innerText = state.option_expiry;
+                expiryEl.style.display = 'inline-block';
+            } else {
+                expiryEl.style.display = 'none';
+            }
+
+            // CALL / PUT badge on the right
             const pos = state.position_type;
             document.getElementById('optionsBadge').innerHTML = pos === 'CALL'
                 ? '<span style="color:#2962FF; font-weight:bold; font-size:10px; border:1px solid rgba(41,98,255,0.3); padding:2px 8px; border-radius:3px; background:rgba(41,98,255,0.15);">CALL</span>'
@@ -1104,7 +1476,7 @@
             document.getElementById('stab-' + tab).classList.add('is-active-' + tab);
             document.getElementById('spane-' + tab).classList.add('active');
             // Update save button color to match mode
-            const colors = { BACKTEST: '#2e7d32', PAPER: '#7a5c00', LIVE: '#b91c1c' };
+            const colors = { BACKTEST: '#059669', PAPER: '#D97706', LIVE: '#DC2626' };
             document.getElementById('saveBtn').style.background = colors[tab] || 'var(--accent-blue)';
         }
 
@@ -1275,14 +1647,76 @@
 
                         document.getElementById('logs').innerHTML = state.logs.map(l => `<div>${l}</div>`).join('');
                         updateOptionsChart(state);
+                        checkTradeNotification(state);
                     }
 
+                    // Update hidden sidebar mode buttons (needed by switchMode JS)
                     ['BACKTEST', 'PAPER', 'LIVE'].forEach(m => {
                         const btn = document.getElementById('btn-' + m);
-                        btn.className = 'mode-btn' + (state.app_mode === m ? ' active-' + m : '');
+                        if (btn) btn.className = 'mode-btn' + (state.app_mode === m ? ' active-' + m : '');
                     });
 
-                    document.getElementById('btControls').classList.toggle('visible', state.app_mode === 'BACKTEST');
+                    // Update dropdown mode buttons
+                    ['BACKTEST', 'PAPER', 'LIVE'].forEach(m => {
+                        const dm = document.getElementById('dm-' + m);
+                        if (dm) dm.className = 'dropdown-mode-btn' + (state.app_mode === m ? ' dm-active-' + m : '');
+                    });
+
+                    // Update topbar mode chip
+                    const chip = document.getElementById('modeChip');
+                    if (chip) {
+                        const labels = { BACKTEST: '📊 Backtest', PAPER: '📋 Paper', LIVE: '⚡ Live' };
+                        chip.textContent = labels[state.app_mode] || state.app_mode;
+                        chip.className = 'mode-chip mode-chip-' + state.app_mode;
+                        chip.style.display = '';
+                    }
+
+                    // Show/hide backtest date-prompt overlay
+                    const isBacktest = state.app_mode === 'BACKTEST';
+                    document.getElementById('btControls').classList.toggle('visible', isBacktest);
+                    const overlay = document.getElementById('datePromptOverlay');
+                    if (overlay) {
+                        // Show prompt when in backtest mode and no trade has been loaded yet
+                        const hasData = (state.candles && state.candles.length > 0) || frozenChart;
+                        overlay.style.display = (isBacktest && !hasData) ? 'flex' : 'none';
+                    }
+
+                    // ── Live MTM card (PAPER / LIVE mode while in position) ───
+                    const isLiveMode = (state.app_mode === 'LIVE' || state.app_mode === 'PAPER');
+                    const inPos      = (state.position_type === 'CALL' || state.position_type === 'PUT');
+                    const mtmCard    = document.getElementById('liveMtmCard');
+                    if (isLiveMode && inPos && state.live_option_price > 0) {
+                        mtmCard.classList.add('visible');
+                        // Mode tag
+                        const modeTag = document.getElementById('liveModeTag');
+                        modeTag.textContent = state.app_mode;
+                        modeTag.className = 'live-mode-tag ' + (state.app_mode === 'LIVE' ? 'live' : 'paper');
+                        // Stats
+                        document.getElementById('liveEntry').textContent = '₹' + state.entry_prem.toFixed(2);
+                        document.getElementById('liveLtp').textContent   = '₹' + state.live_option_price.toFixed(2);
+                        // Qty — read from the config qty or fallback
+                        const qty = (state.live_option_price > 0 && state.entry_prem > 0)
+                            ? Math.round(Math.abs(state.live_pnl) / Math.abs(state.live_option_price - state.entry_prem) || 0)
+                            : 0;
+                        document.getElementById('liveQty').textContent = qty > 0 ? qty : '—';
+                        // P&L amount with flash
+                        const pnlEl = document.getElementById('livePnlAmount');
+                        const prev  = parseFloat(pnlEl.dataset.prev || '0');
+                        const cur   = state.live_pnl || 0;
+                        if (cur !== prev) {
+                            pnlEl.classList.remove('flash-green', 'flash-red');
+                            void pnlEl.offsetWidth; // reflow to restart animation
+                            pnlEl.classList.add(cur > prev ? 'flash-green' : 'flash-red');
+                            pnlEl.dataset.prev = cur;
+                        }
+                        pnlEl.textContent = (cur >= 0 ? '+' : '') + '₹' + cur.toFixed(0);
+                        pnlEl.className = 'lp-amount ' + (cur > 0 ? 'pos' : cur < 0 ? 'neg' : 'zero');
+                    } else {
+                        mtmCard.classList.remove('visible');
+                    }
+
+                    // ── Balance in profile dropdown ────────────────────────────
+                    updateBalanceDisplay(state);
                 });
         }
 
@@ -1299,6 +1733,9 @@
                 clearFibLines();
                 clearOptionsChart();
                 closeRangeResults();
+                // Overlay: hide when leaving backtest, will re-appear via pollData if needed
+                const overlay = document.getElementById('datePromptOverlay');
+                if (overlay && mode !== 'BACKTEST') overlay.style.display = 'none';
             })
             .finally(() => {
                 ['BACKTEST', 'PAPER', 'LIVE'].forEach(m => document.getElementById('btn-' + m).disabled = false);
@@ -1319,21 +1756,24 @@
             const btn = document.getElementById('btRun');
             const status = document.getElementById('btStatus');
             btn.disabled = true;
-            status.innerText = 'Running…';
+            status.innerText = '';
             frozenChart = false;
             clearOptionsChart();
             closeRangeResults();
+            setViewingDate(null);
 
             let body;
             if (btTab === 'single') {
                 const date = document.getElementById('btDate').value;
                 if (!date) { status.innerText = 'Pick a date first.'; btn.disabled = false; return; }
                 body = { mode: 'single', date };
+                showChartLoader('Loading ' + date + '…');
             } else {
                 const from_date = document.getElementById('btFrom').value;
                 const to_date   = document.getElementById('btTo').value;
                 if (!from_date || !to_date) { status.innerText = 'Pick both dates.'; btn.disabled = false; return; }
                 body = { mode: 'range', from_date, to_date };
+                showChartLoader('Running backtest…');
             }
 
             fetch('/api/backtest/run', {
@@ -1343,9 +1783,11 @@
             })
             .then(res => res.json())
             .then(data => {
+                hideChartLoader();
                 if (data.error) { status.innerText = '⚠ ' + data.error; return; }
                 if (btTab === 'single') {
                     displayDayResult(data);
+                    setViewingDate(body.date);
                     status.innerText = data.trade_taken
                         ? `${data.position_type} | P&L ₹${data.pnl.toFixed(2)}`
                         : 'No trade triggered on this day.';
@@ -1354,13 +1796,15 @@
                     status.innerText = `${data.trade_days} trades | ₹${data.total_pnl.toFixed(2)} net`;
                 }
             })
-            .catch(() => { status.innerText = 'Request failed.'; })
+            .catch(() => { hideChartLoader(); status.innerText = 'Request failed.'; })
             .finally(() => { btn.disabled = false; });
         }
 
         function loadSingleDayFromRange(dateStr) {
             const status = document.getElementById('btStatus');
-            status.innerText = `Loading chart for ${dateStr}…`;
+            showChartLoader('Loading ' + dateStr + '…');
+            highlightRangeRow(dateStr);
+            setViewingDate(null);   // clear until data arrives
 
             fetch('/api/backtest/run', {
                 method: 'POST',
@@ -1369,13 +1813,15 @@
             })
             .then(res => res.json())
             .then(data => {
+                hideChartLoader();
                 if (data.error) { status.innerText = '⚠ ' + data.error; return; }
                 displayDayResult(data);
+                setViewingDate(dateStr);
                 status.innerText = data.trade_taken
-                    ? `${data.position_type} loaded | P&L ₹${data.pnl.toFixed(2)}`
-                    : `No trade triggered on ${dateStr}.`;
+                    ? `${data.position_type} | P&L ₹${data.pnl.toFixed(2)}`
+                    : `No trade on ${dateStr}.`;
             })
-            .catch(() => { status.innerText = 'Request failed.'; });
+            .catch(() => { hideChartLoader(); status.innerText = 'Request failed.'; });
         }
 
         function displayDayResult(data) {
@@ -1455,7 +1901,7 @@
                 const clickAttr = row.trade_taken ? `onclick="loadSingleDayFromRange('${row.date}')"` : '';
                 const icon = row.trade_taken ? '<span style="float:right; font-size:12px; color:var(--accent-blue);">📊</span>' : '';
 
-                return `<tr class="${rowClass}" ${clickAttr} title="${row.trade_taken ? 'Click to view chart' : 'No trade'}">
+                return `<tr class="${rowClass}" ${clickAttr} data-date="${row.date}" title="${row.trade_taken ? 'Click to view chart' : 'No trade'}">
                     <td>${row.date} ${icon}</td>
                     <td>${posHtml}</td>
                     <td style="font-family: monospace;">${entry}</td>
@@ -1474,8 +1920,238 @@
             document.getElementById('rangeResults').querySelector('.collapse-btn').innerText = '−';
         }
 
+        // ── Date-prompt overlay helpers ────────────────────────────────────────
+        let dpcTab = 'single';
+        function dpcSetTab(tab) {
+            dpcTab = tab;
+            document.getElementById('dpcTabSingle').classList.toggle('active', tab === 'single');
+            document.getElementById('dpcTabRange').classList.toggle('active',  tab === 'range');
+            document.getElementById('dpcSingleInputs').style.display = tab === 'single' ? 'flex' : 'none';
+            document.getElementById('dpcRangeInputs').style.display  = tab === 'range'  ? 'flex' : 'none';
+            // Also sync the main BT controls tab
+            setBtTab(tab);
+        }
+
+        function runFromPrompt() {
+            // Copy date values from the overlay flatpickr into the sidebar flatpickr
+            // Pass false so onChange doesn't fire and double-trigger runBacktest()
+            if (dpcTab === 'single') {
+                const d = document.getElementById('dpcDate').value;
+                if (!d) { alert('Please pick a trading date.'); return; }
+                document.getElementById('btDate')._flatpickr.setDate(d, false);
+                setBtTab('single');
+            } else {
+                const f = document.getElementById('dpcFrom').value;
+                const t = document.getElementById('dpcTo').value;
+                if (!f || !t) { alert('Please pick both dates.'); return; }
+                document.getElementById('btFrom')._flatpickr.setDate(f, false);
+                document.getElementById('btTo')._flatpickr.setDate(t, false);
+                setBtTab('range');
+            }
+            const overlay = document.getElementById('datePromptOverlay');
+            if (overlay) overlay.style.display = 'none';
+            runBacktest();
+        }
+
+        // ── NSE market holidays — flatpickr only uses these on the overlay ────
+        const NSE_HOLIDAYS = [
+            // 2023
+            '2023-01-26','2023-03-07','2023-03-22','2023-03-30','2023-04-04',
+            '2023-04-07','2023-04-14','2023-04-22','2023-05-01','2023-06-28',
+            '2023-08-15','2023-09-19','2023-10-02','2023-10-24','2023-11-14',
+            '2023-11-27','2023-12-25',
+            // 2024
+            '2024-01-22','2024-01-26','2024-03-25','2024-04-09','2024-04-11',
+            '2024-04-14','2024-04-17','2024-04-21','2024-05-23','2024-06-17',
+            '2024-07-17','2024-08-15','2024-10-02','2024-11-01','2024-11-15',
+            '2024-11-20','2024-12-25',
+            // 2025
+            '2025-01-26','2025-02-26','2025-03-14','2025-04-10','2025-04-14',
+            '2025-04-18','2025-05-01','2025-08-15','2025-08-27','2025-10-02',
+            '2025-10-20','2025-10-21','2025-11-05','2025-12-25',
+            // 2026
+            '2026-01-26','2026-03-20','2026-04-02','2026-04-03','2026-05-01',
+            '2026-08-15','2026-09-16','2026-10-02','2026-11-14','2026-11-25',
+            '2026-12-25',
+        ];
+
+        function isNonTradingDay(date) {
+            const day = date.getDay();
+            if (day === 0 || day === 6) return true;
+            return NSE_HOLIDAYS.includes(date.toISOString().slice(0, 10));
+        }
+
+        // ── Flatpickr on ALL date inputs — weekends + NSE holidays disabled ───
+        const fpOpts = {
+            dateFormat:    'Y-m-d',
+            altInput:      true,
+            altFormat:     'D, d M Y',   // "Mon, 05 May 2025"
+            disable:       [isNonTradingDay],
+            maxDate:       new Date(),
+            minDate:       '2020-01-01',
+            disableMobile: true,
+        };
+
+        // Sidebar inputs — auto-run on date select
+        flatpickr('#btDate', { ...fpOpts, onChange: (_, dateStr) => {
+            if (dateStr) runBacktest();
+        }});
+        flatpickr('#btFrom', { ...fpOpts, onChange: (_, dateStr) => {
+            const t = document.getElementById('btTo').value;
+            if (dateStr && t) runBacktest();
+        }});
+        flatpickr('#btTo', { ...fpOpts, onChange: (_, dateStr) => {
+            const f = document.getElementById('btFrom').value;
+            if (f && dateStr) runBacktest();
+        }});
+
+        // Overlay inputs — same picker, no auto-run (user presses ▶ Run)
+        flatpickr('#dpcDate', fpOpts);
+        flatpickr('#dpcFrom', fpOpts);
+        flatpickr('#dpcTo',   fpOpts);
+
+        // ── Chart loader helpers ───────────────────────────────────────────────
+        function showChartLoader(msg) {
+            const el = document.getElementById('chartLoader');
+            if (el) {
+                document.getElementById('chartLoaderText').textContent = msg || 'Loading chart data…';
+                el.style.display = 'flex';
+            }
+        }
+        function hideChartLoader() {
+            const el = document.getElementById('chartLoader');
+            if (el) el.style.display = 'none';
+        }
+
+        // ── Viewing-date badge on the NIFTY chart header ───────────────────────
+        function setViewingDate(dateStr) {
+            const el = document.getElementById('viewingDateBadge');
+            if (!el) return;
+            if (dateStr) {
+                const d = new Date(dateStr + 'T00:00:00');
+                const fmt = d.toLocaleDateString('en-IN', {
+                    weekday: 'short', day: '2-digit', month: 'short', year: 'numeric'
+                });
+                el.textContent = '📅 ' + fmt;
+                el.style.display = '';
+            } else {
+                el.style.display = 'none';
+            }
+        }
+
+        // ── Range table row highlight ──────────────────────────────────────────
+        function highlightRangeRow(dateStr) {
+            document.querySelectorAll('#rangeTableBody tr').forEach(tr => {
+                tr.classList.toggle('row-selected', tr.dataset.date === dateStr);
+            });
+        }
+
+        // ── Balance display in profile dropdown ────────────────────────────────
+        function updateBalanceDisplay(state) {
+            const amountEl = document.getElementById('balanceAmount');
+            const subEl    = document.getElementById('balanceSub');
+            if (!amountEl) return;
+
+            const bal = state.balance || 0;
+            if (bal > 0) {
+                amountEl.textContent = '₹' + bal.toLocaleString('en-IN', {maximumFractionDigits: 0});
+            } else {
+                amountEl.textContent = '—';
+            }
+
+            if (state.app_mode === 'LIVE') {
+                subEl.textContent = 'Live account · refreshes every 60s';
+                amountEl.style.color = 'var(--text-main)';
+            } else if (state.app_mode === 'PAPER') {
+                subEl.textContent = 'Simulated balance (Paper mode)';
+                amountEl.style.color = '#D97706';
+            } else {
+                subEl.textContent = 'Not applicable in Backtest';
+                amountEl.textContent = '—';
+            }
+        }
+
+        // ── Trade notification modal ───────────────────────────────────────────
+        let _lastMarkerCount = 0;
+        let _tradeConfirmEnabled = true;
+
+        // Read preference from localStorage (synced from profile)
+        (function () {
+            const u = JSON.parse(localStorage.getItem('orb_user') || '{}');
+            _tradeConfirmEnabled = u.trade_confirm_modal !== false;
+        })();
+
+        function checkTradeNotification(state) {
+            const mode = state.app_mode;
+            if (mode !== 'PAPER' && mode !== 'LIVE') return;
+            if (!_tradeConfirmEnabled) return;
+            const markers = state.markers || [];
+            // A new BUY marker was added (marker count grew by 1 and last marker has no exit text)
+            if (markers.length > _lastMarkerCount && markers.length > 0) {
+                const newest = markers[markers.length - 1];
+                // Only notify on BUY (entry) signal, not on EXIT
+                if (newest.text && newest.text.startsWith('BUY')) {
+                    showTradeNotification(state, newest);
+                }
+            }
+            _lastMarkerCount = markers.length;
+        }
+
+        function showTradeNotification(state, marker) {
+            const modal = document.getElementById('tradeNotifModal');
+            const isCall = state.position_type === 'CALL';
+            document.getElementById('tnSymbol').textContent =
+                (state.option_label || 'Option') + ' · ' + (state.option_expiry || '');
+            document.getElementById('tnType').textContent   = state.position_type;
+            document.getElementById('tnType').style.color   = isCall ? '#2562EB' : '#DC2626';
+            document.getElementById('tnEntry').textContent  = state.entry_prem > 0 ? '₹' + state.entry_prem.toFixed(2) : '—';
+            document.getElementById('tnTarget').textContent = state.target_prem > 0 ? '₹' + state.target_prem.toFixed(2) : '—';
+            document.getElementById('tnMode').textContent   = state.app_mode === 'LIVE' ? '⚡ LIVE ORDER PLACED' : '📋 PAPER TRADE';
+            document.getElementById('tnMode').style.color   = state.app_mode === 'LIVE' ? '#DC2626' : '#D97706';
+            modal.style.display = 'flex';
+            // Auto-close after 8 seconds
+            setTimeout(() => { if (modal.style.display !== 'none') closeTradeNotif(); }, 8000);
+        }
+
+        function closeTradeNotif() {
+            document.getElementById('tradeNotifModal').style.display = 'none';
+        }
+
+        // Hook into pollData — call after markers arrive
+        const _origPollData = pollData;
+
         setInterval(pollData, 1000);
         pollData();
     </script>
+
+<!-- ── Trade Execution Notification Modal ── -->
+<div id="tradeNotifModal" style="display:none; position:fixed; inset:0; z-index:9000; align-items:flex-end; justify-content:flex-end; padding:24px; pointer-events:none;">
+    <div style="background:var(--bg-surface); border:1px solid var(--border-color); border-radius:14px; box-shadow:0 16px 48px rgba(0,0,0,0.18); padding:20px 24px; max-width:320px; width:100%; pointer-events:all; animation:slideInUp 0.35s cubic-bezier(0.34,1.56,0.64,1);">
+        <style>@keyframes slideInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}</style>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:20px;">🔔</span>
+                <span style="font-size:13px;font-weight:700;color:var(--text-main);">Trade Executed</span>
+            </div>
+            <button onclick="closeTradeNotif()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:16px;line-height:1;">✕</button>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:4px;" id="tnMode">PAPER TRADE</div>
+        <div style="font-size:14px;font-weight:700;color:var(--text-main);margin-bottom:12px;" id="tnSymbol">NIFTY 24000 CE · Exp 8 May</div>
+        <div style="display:flex;gap:20px;">
+            <div>
+                <div style="font-size:10px;color:var(--text-muted);font-weight:600;">DIRECTION</div>
+                <div style="font-size:16px;font-weight:800;margin-top:3px;" id="tnType">CALL</div>
+            </div>
+            <div>
+                <div style="font-size:10px;color:var(--text-muted);font-weight:600;">ENTRY</div>
+                <div style="font-size:16px;font-weight:800;color:var(--text-main);margin-top:3px;font-family:monospace;" id="tnEntry">—</div>
+            </div>
+            <div>
+                <div style="font-size:10px;color:var(--text-muted);font-weight:600;">TARGET</div>
+                <div style="font-size:16px;font-weight:800;color:var(--up-green);margin-top:3px;font-family:monospace;" id="tnTarget">—</div>
+            </div>
+        </div>
+    </div>
+</div>
 </body>
 </html>

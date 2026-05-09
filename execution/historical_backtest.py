@@ -2,6 +2,7 @@ import datetime
 import logging
 
 from config.settings import TradingConfig
+from core.options_math import OptionsMath
 from core.state import BotState
 from core.strategy import ORBStrategy
 from execution.broker import KiteBroker
@@ -61,14 +62,43 @@ class HistoricalBacktester:
             candles = []
 
         # ── Phase 1: NIFTY replay → find OR + entry (Black-Scholes prices) ────
+        # After exit we keep looping to append BS option prices for the rest of
+        # the day so the options chart shows the full session, not just the trade.
+        exited = False
         for r in records:
             dt = r["date"]
-            signal = strategy.process_tick(
-                int(dt.timestamp()), dt.time(),
-                r["open"], r["high"], r["low"], r["close"],
-            )
-            if signal and signal["action"] == "SELL":
-                break
+
+            if not exited:
+                signal = strategy.process_tick(
+                    int(dt.timestamp()), dt.time(),
+                    r["open"], r["high"], r["low"], r["close"],
+                )
+                if signal and signal["action"] == "SELL":
+                    exited = True
+            else:
+                # Post-exit: compute BS price for this candle and extend chart
+                if strategy.strike is not None:
+                    T   = 4 / 365.25
+                    cfg = self.config
+                    is_call = state.position_type == "CALL"
+                    bs  = OptionsMath.bs_call if is_call else OptionsMath.bs_put
+                    ts  = int(dt.timestamp())
+                    if is_call:
+                        op = bs(r["open"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                        hp = bs(r["high"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                        lp = bs(r["low"],   strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                        cp = bs(r["close"], strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                    else:
+                        # For puts: high NIFTY → low option price, so swap high/low
+                        op = bs(r["open"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                        hp = bs(r["low"],   strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                        lp = bs(r["high"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                        cp = bs(r["close"], strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
+                    state.option_prices.append({
+                        "time":  ts,
+                        "open":  round(op, 2), "high": round(hp, 2),
+                        "low":   round(lp, 2), "close": round(cp, 2),
+                    })
 
         # ── Phase 2: Replace BS option data with real NFO candles if available ─
         if state.position_type != "NONE" and strategy.strike:
@@ -96,6 +126,7 @@ class HistoricalBacktester:
             "current_low":        state.current_low,
             "option_prices":      state.option_prices,
             "option_label":       state.option_label,
+            "option_expiry":      state.option_expiry,
             "target_prem":        state.target_prem,
             "logs":               state.logs,
             "trade_taken":        trade_taken,
@@ -153,13 +184,18 @@ class HistoricalBacktester:
         entry_candle = nearest_candle(entry_unix) if entry_unix else None
         if entry_candle:
             real_entry = entry_candle["close"]
-            state.entry_prem        = round(real_entry, 2)
+            bs_entry   = state.entry_prem          # keep for logging
+            state.entry_prem          = round(real_entry, 2)
             strategy.state.entry_prem = round(real_entry, 2)
-            strategy.target_prem    = real_entry + self.config.target_pts
-            state.target_prem       = round(strategy.target_prem, 2)
+            strategy.target_prem      = real_entry + self.config.target_pts
+            state.target_prem         = round(strategy.target_prem, 2)
+            # Patch the BUY marker text so it shows the real fill price
+            if markers:
+                pos_type = state.position_type
+                markers[0]["text"] = f"BUY {pos_type} @ ₹{real_entry:.0f}"
             logger.info(
                 f"{date}: Real entry premium ₹{real_entry:.2f} "
-                f"(was ₹{state.entry_prem:.2f} BS estimate)"
+                f"(was ₹{bs_entry:.2f} BS estimate)"
             )
 
         # ── Update exit premium + recalculate P&L ─────────────────────────────
@@ -212,20 +248,10 @@ class HistoricalBacktester:
             )
 
         # ── Replace option_prices with real NFO OHLC candles ──────────────────
-        # Only keep candles from entry to exit (inclusive with 1-candle buffer)
+        # Send the full trading session so the options chart shows the entire day.
         all_candles = sorted(nfo.values(), key=lambda c: c["time"])
-        if entry_unix and exit_unix:
-            lo = ((entry_unix // 60) * 60) - 60
-            hi = ((exit_unix  // 60) * 60) + 60
-            option_prices = [c for c in all_candles if lo <= c["time"] <= hi]
-        elif entry_unix:
-            lo = ((entry_unix // 60) * 60) - 60
-            option_prices = [c for c in all_candles if c["time"] >= lo]
-        else:
-            option_prices = all_candles
-
-        if option_prices:
-            state.option_prices = option_prices
+        if all_candles:
+            state.option_prices = all_candles
 
     # ── Range backtest ─────────────────────────────────────────────────────────
 

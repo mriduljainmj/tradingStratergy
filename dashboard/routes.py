@@ -95,6 +95,20 @@ def get_state():
     return jsonify(_state.to_dict())
 
 
+@dashboard_bp.route("/api/balance")
+def get_balance():
+    """Returns real-time funds from Kite (LIVE) or state balance (PAPER)."""
+    if not _broker:
+        return jsonify({"available": 0.0, "used": 0.0, "total": 0.0})
+    if _state and _state.app_mode == "LIVE":
+        funds = _broker.get_funds()
+        _state.balance = funds["available"]
+        return jsonify(funds)
+    # PAPER / BACKTEST — return simulated balance from state
+    return jsonify({"available": _state.balance if _state else 0.0,
+                    "used": 0.0, "total": _state.balance if _state else 0.0})
+
+
 @dashboard_bp.route("/api/settings", methods=["GET"])
 def get_settings():
     if not _trading_config:

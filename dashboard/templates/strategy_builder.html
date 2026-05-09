@@ -2,238 +2,342 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
     <title>ORB — Strategy Builder</title>
     <style>
         :root {
-            --bg-base:#0B0E14; --bg-surface:#131722; --bg-card:#1E222D;
-            --text-main:#D1D4DC; --text-muted:#787B86;
-            --accent-blue:#2962FF; --up-green:#089981; --down-red:#F23645;
-            --border-color:#2A2E39; --warning-yellow:#E6A23C;
+            --bg-base:    #F0F2F5;
+            --bg-surface: #FFFFFF;
+            --bg-card:    #F8FAFC;
+            --text-main:  #1E2328;
+            --text-muted: #6B7280;
+            --accent-blue:    #2563EB;
+            --up-green:       #059669;
+            --down-red:       #DC2626;
+            --border-color:   #E4E8EF;
+            --sidebar-bg:     #1A1D2E;
+            --sidebar-text:   #A9B1D6;
         }
-        * { box-sizing:border-box; margin:0; padding:0; }
-        body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg-base); color:var(--text-main); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg-base); color: var(--text-main); display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
 
-        .nav { display:flex; align-items:center; gap:16px; padding:12px 24px; background:var(--bg-surface); border-bottom:1px solid var(--border-color); flex-wrap:wrap; }
-        .nav .brand { font-size:16px; font-weight:800; }
-        .nav a { color:var(--text-muted); font-size:13px; text-decoration:none; padding:5px 10px; border-radius:4px; border:1px solid transparent; transition:all 0.15s; }
-        .nav a:hover { color:var(--text-main); border-color:var(--border-color); }
-        .nav a.active { color:#fff; background:var(--accent-blue); border-color:var(--accent-blue); }
+        /* ═══ SIDEBAR (shared) ═══ */
+        .sidebar { width: 220px; background: var(--sidebar-bg); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.22s cubic-bezier(0.4,0,0.2,1); overflow: hidden; z-index: 100; }
+        .sidebar.collapsed { width: 52px; }
+        .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 52px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
+        .brand-logo { width: 28px; height: 28px; border-radius: 6px; background: var(--accent-blue); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; color: #fff; flex-shrink: 0; }
+        .brand-text { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; transition: opacity 0.15s; }
+        .sidebar.collapsed .brand-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-nav { flex: 1; padding: 10px 0; display: flex; flex-direction: column; gap: 2px; }
+        .nav-section-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(169,177,214,0.45); padding: 10px 16px 4px; white-space: nowrap; overflow: hidden; }
+        .nav-item { display: flex; align-items: center; gap: 11px; padding: 9px 14px; margin: 0 6px; border-radius: 6px; text-decoration: none; color: var(--sidebar-text); font-size: 13px; font-weight: 500; transition: background 0.15s, color 0.15s; white-space: nowrap; overflow: hidden; cursor: pointer; }
+        .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .nav-item.active { background: rgba(37,99,235,0.2); color: #60a5fa; }
+        .nav-icon { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; }
+        .nav-text { transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-toggle { display: flex; align-items: center; justify-content: center; padding: 10px; background: none; border: none; border-top: 1px solid rgba(255,255,255,0.07); color: rgba(169,177,214,0.5); cursor: pointer; font-size: 13px; transition: color 0.15s; flex-shrink: 0; width: 100%; }
+        .sidebar-toggle:hover { color: #fff; }
 
-        .layout { display:grid; grid-template-columns:260px 1fr; min-height:calc(100vh - 49px); }
+        /* ═══ MAIN AREA (shared) ═══ */
+        .main-wrap { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; min-width: 0; }
+        .topbar { height: 52px; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .topbar-left { display: flex; align-items: center; gap: 12px; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-title { font-size: 15px; font-weight: 700; color: var(--text-main); }
+        .topbar-sub { font-size: 12px; color: var(--text-muted); }
+        .hamburger { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background 0.15s, color 0.15s; line-height: 1; }
+        .hamburger:hover { background: var(--bg-card); color: var(--text-main); }
 
-        /* ── Sidebar ── */
-        .sidebar { background:var(--bg-surface); border-right:1px solid var(--border-color); display:flex; flex-direction:column; }
-        .sidebar-header { padding:14px 16px; border-bottom:1px solid var(--border-color); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); display:flex; align-items:center; justify-content:space-between; }
-        .sidebar-list { overflow-y:auto; flex:1; }
-        .strategy-item { padding:12px 16px; border-bottom:1px solid var(--border-color); cursor:pointer; transition:background 0.15s; }
-        .strategy-item:hover { background:var(--bg-card); }
-        .strategy-item.active { background:rgba(41,98,255,0.12); border-left:3px solid var(--accent-blue); }
-        .strategy-item .si-name { font-size:13px; font-weight:600; }
-        .strategy-item .si-meta { font-size:11px; color:var(--text-muted); margin-top:3px; }
-        .active-badge { display:inline-block; background:rgba(8,153,129,0.2); color:var(--up-green); border:1px solid rgba(8,153,129,0.4); border-radius:10px; padding:1px 7px; font-size:10px; font-weight:700; margin-left:6px; }
-        .btn-new { margin:12px; padding:8px; background:var(--accent-blue); color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; text-align:center; }
-        .btn-new:hover { opacity:0.88; }
+        /* User menu (shared) */
+        .user-menu { position: relative; }
+        .user-btn { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 5px 10px 5px 6px; border-radius: 8px; cursor: pointer; transition: all 0.15s; color: var(--text-main); }
+        .user-btn:hover { border-color: var(--accent-blue); background: #eff6ff; }
+        .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .user-name { font-size: 12px; font-weight: 600; }
+        .user-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+        .user-menu.open .user-chevron { transform: rotate(180deg); }
+        .user-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); width: 220px; z-index: 500; overflow: hidden; }
+        .user-menu.open .user-dropdown { display: block; }
+        .dropdown-header { padding: 14px 16px; background: linear-gradient(135deg, rgba(37,99,235,0.06), rgba(124,58,237,0.06)); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
+        .dropdown-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .dropdown-name { font-size: 13px; font-weight: 700; color: var(--text-main); }
+        .dropdown-email { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .dropdown-divider { height: 1px; background: var(--border-color); }
+        .dropdown-section { padding: 6px 8px; }
+        .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-muted); text-align: left; transition: all 0.15s; text-decoration: none; }
+        .dropdown-item:hover { background: var(--bg-card); color: var(--text-main); }
+        .dropdown-item.danger:hover { background: #fef2f2; color: #DC2626; }
 
-        /* ── Editor ── */
-        .editor { padding:24px; overflow-y:auto; }
-        .editor-header { margin-bottom:20px; }
-        .editor-header h1 { font-size:18px; font-weight:700; }
-        .editor-header p  { font-size:13px; color:var(--text-muted); margin-top:4px; }
+        /* ═══ STRATEGY LAYOUT ═══ */
+        .content-area { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+
+        /* Strategy list panel */
+        .strat-list-panel { width: 260px; background: var(--bg-surface); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; flex-shrink: 0; }
+        .strat-list-header { padding: 14px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-card); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+        .strat-list-header span { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+        .btn-new { margin: 10px 12px; padding: 8px 12px; background: var(--accent-blue); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer; text-align: center; width: calc(100% - 24px); transition: opacity 0.15s; }
+        .btn-new:hover { opacity: 0.88; }
+        .strategy-list { overflow-y: auto; flex: 1; }
+        .strategy-item { padding: 12px 16px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background 0.15s; }
+        .strategy-item:hover { background: var(--bg-card); }
+        .strategy-item.active { background: #eff6ff; border-left: 3px solid var(--accent-blue); }
+        .strategy-item .si-name { font-size: 13px; font-weight: 600; color: var(--text-main); }
+        .strategy-item .si-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+        .active-badge { display: inline-block; background: #f0fdf4; color: var(--up-green); border: 1px solid #bbf7d0; border-radius: 10px; padding: 1px 7px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+
+        /* Editor panel */
+        .editor { flex: 1; overflow-y: auto; padding: 24px; }
+        .editor-header { margin-bottom: 20px; }
+        .editor-header h1 { font-size: 20px; font-weight: 700; color: var(--text-main); }
+        .editor-header p  { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
 
         /* Form sections */
-        .section { background:var(--bg-surface); border:1px solid var(--border-color); border-radius:8px; margin-bottom:16px; overflow:hidden; }
-        .section-title { padding:12px 16px; background:var(--bg-card); border-bottom:1px solid var(--border-color); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-muted); display:flex; align-items:center; gap:8px; }
-        .section-body  { padding:16px; }
+        .section { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .section-title { padding: 12px 16px; background: var(--bg-card); border-bottom: 1px solid var(--border-color); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+        .section-body  { padding: 16px; }
 
-        label { display:block; font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px; }
+        label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px; }
         input[type=text], input[type=number], input[type=time], textarea, select {
-            background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-main);
-            padding:8px 10px; border-radius:4px; font-size:13px; width:100%; outline:none; transition:border-color 0.15s;
+            background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main);
+            padding: 8px 10px; border-radius: 6px; font-size: 13px; width: 100%; outline: none; transition: border-color 0.15s;
         }
-        input:focus, textarea:focus, select:focus { border-color:var(--accent-blue); }
-        textarea { resize:vertical; min-height:60px; }
+        input:focus, textarea:focus, select:focus { border-color: var(--accent-blue); }
+        textarea { resize: vertical; min-height: 60px; }
 
-        .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px; }
-        .form-row.single { grid-template-columns:1fr; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+        .form-row.single { grid-template-columns: 1fr; }
 
         /* Condition rows */
-        .condition-row {
-            display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-            background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px;
-            padding:10px 12px; margin-bottom:8px;
-        }
-        .condition-row select { flex:1; min-width:110px; width:auto; }
-        .condition-row input  { flex:0.7; min-width:80px; width:auto; }
-        .cond-label { font-size:10px; font-weight:700; color:var(--text-muted); text-transform:uppercase; white-space:nowrap; }
-        .del-btn { background:rgba(242,54,69,0.15); border:1px solid rgba(242,54,69,0.3); color:var(--down-red); border-radius:4px; padding:5px 9px; font-size:12px; cursor:pointer; flex-shrink:0; }
-        .del-btn:hover { background:rgba(242,54,69,0.25); }
-        .operator-chip {
-            display:inline-block; background:rgba(41,98,255,0.15); border:1px solid rgba(41,98,255,0.3); color:var(--accent-blue);
-            border-radius:10px; padding:2px 10px; font-size:10px; font-weight:800; cursor:pointer; margin:4px 0;
-            transition:all 0.15s; text-align:center;
-        }
-        .operator-chip:hover { background:rgba(41,98,255,0.3); }
-
-        .add-cond-btn { background:none; border:1px dashed var(--border-color); color:var(--text-muted); border-radius:6px; padding:8px 14px; font-size:12px; cursor:pointer; width:100%; margin-top:4px; transition:all 0.15s; }
-        .add-cond-btn:hover { border-color:var(--accent-blue); color:var(--accent-blue); }
+        .condition-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+        .condition-row select { flex: 1; min-width: 110px; width: auto; }
+        .condition-row input  { flex: 0.7; min-width: 80px; width: auto; }
+        .cond-label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; white-space: nowrap; }
+        .del-btn { background: #fef2f2; border: 1px solid #fecaca; color: var(--down-red); border-radius: 5px; padding: 5px 9px; font-size: 12px; cursor: pointer; flex-shrink: 0; transition: all 0.15s; }
+        .del-btn:hover { background: #fee2e2; }
+        .operator-chip { display: inline-block; background: #eff6ff; border: 1px solid #93c5fd; color: var(--accent-blue); border-radius: 10px; padding: 2px 12px; font-size: 10px; font-weight: 800; cursor: pointer; margin: 4px 0; transition: all 0.15s; text-align: center; }
+        .operator-chip:hover { background: #dbeafe; }
+        .add-cond-btn { background: none; border: 1px dashed var(--border-color); color: var(--text-muted); border-radius: 7px; padding: 9px 14px; font-size: 12px; cursor: pointer; width: 100%; margin-top: 4px; transition: all 0.15s; font-weight: 600; }
+        .add-cond-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: #eff6ff; }
 
         /* Time filter */
-        .time-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-        .time-row label { margin:0; white-space:nowrap; }
+        .time-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .time-row label { margin: 0; white-space: nowrap; }
 
         /* Exit rules */
-        .exit-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
-        .exit-card { background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:12px; }
-        .exit-card .ec-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:10px; }
+        .exit-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+        .exit-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; }
+        .exit-card .ec-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 10px; }
 
         /* Action buttons */
-        .actions { display:flex; gap:10px; flex-wrap:wrap; padding:16px 0 0; }
-        .btn { padding:10px 20px; border:none; border-radius:6px; font-size:13px; font-weight:700; cursor:pointer; transition:opacity 0.15s; }
-        .btn:hover { opacity:0.88; }
-        .btn-primary  { background:var(--accent-blue); color:#fff; }
-        .btn-success  { background:var(--up-green); color:#fff; }
-        .btn-danger   { background:rgba(242,54,69,0.15); border:1px solid rgba(242,54,69,0.3); color:var(--down-red); }
-        .btn-cancel   { background:var(--bg-card); border:1px solid var(--border-color); color:var(--text-muted); }
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; padding: 16px 0 0; }
+        .btn { padding: 10px 20px; border: none; border-radius: 7px; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; }
+        .btn:hover { opacity: 0.88; }
+        .btn-primary { background: var(--accent-blue); color: #fff; }
+        .btn-success { background: var(--up-green); color: #fff; }
+        .btn-danger  { background: #fef2f2; border: 1px solid #fecaca; color: var(--down-red); }
+        .btn-cancel  { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-muted); }
 
         /* Toast */
-        .toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:8px; font-size:13px; font-weight:600; opacity:0; transition:opacity 0.3s; z-index:9999; pointer-events:none; }
-        .toast.show { opacity:1; }
-        .toast.ok  { background:rgba(8,153,129,0.9); color:#fff; }
-        .toast.err { background:rgba(242,54,69,0.9);  color:#fff; }
+        .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.3s; z-index: 9999; pointer-events: none; }
+        .toast.show { opacity: 1; }
+        .toast.ok  { background: var(--up-green); color: #fff; }
+        .toast.err { background: var(--down-red); color: #fff; }
 
-        @media (max-width:900px) {
-            .layout { grid-template-columns:1fr; }
-            .sidebar { max-height:220px; }
-            .exit-grid { grid-template-columns:1fr; }
-            .form-row { grid-template-columns:1fr; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+        @media (max-width: 900px) {
+            .sidebar { position: fixed; left: 0; top: 0; height: 100vh; z-index: 200; }
+            .sidebar.collapsed { transform: translateX(-100%); width: 220px; }
+            .strat-list-panel { width: 200px; }
+            .exit-grid { grid-template-columns: 1fr; }
+            .form-row { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+            .content-area { flex-direction: column; }
+            .strat-list-panel { width: 100%; max-height: 200px; border-right: none; border-bottom: 1px solid var(--border-color); }
         }
     </style>
 </head>
 <body>
-<nav class="nav">
-    <span class="brand">ORB 📈</span>
-    <a href="/">Dashboard</a>
-    <a href="/analytics">Analytics</a>
-    <a href="/strategy-builder" class="active">Strategies ⚡</a>
-    <span style="margin-left:auto;font-size:12px;color:var(--text-muted)" id="userLabel"></span>
-    <a href="#" onclick="logout();" style="color:var(--down-red);">Logout</a>
-</nav>
 
-<div class="layout">
-    <!-- Sidebar: strategy list -->
-    <div class="sidebar">
-        <div class="sidebar-header">
-            My Strategies
-        </div>
-        <button class="btn-new" onclick="newStrategy()">+ New Strategy</button>
-        <div class="sidebar-list" id="strategyList">
-            <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Loading…</div>
-        </div>
+<!-- ═══ SIDEBAR ═══ -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-logo">ORB</div>
+        <span class="brand-text">Architecture</span>
     </div>
+    <nav class="sidebar-nav">
+        <div class="nav-section-label">Main</div>
+        <a href="/" class="nav-item">
+            <span class="nav-icon">📊</span><span class="nav-text">Dashboard</span>
+        </a>
+        <a href="/analytics" class="nav-item">
+            <span class="nav-icon">📈</span><span class="nav-text">Analytics</span>
+        </a>
+        <a href="/strategy-builder" class="nav-item active">
+            <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
+        </a>
+    </nav>
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">◀</button>
+</aside>
 
-    <!-- Main editor -->
-    <div class="editor">
-        <div class="editor-header">
-            <h1 id="editorTitle">Create New Strategy</h1>
-            <p id="editorSub">Define entry/exit rules with the visual builder below.</p>
+<!-- ═══ MAIN AREA ═══ -->
+<div class="main-wrap">
+    <header class="topbar">
+        <div class="topbar-left">
+            <button class="hamburger" onclick="toggleSidebar()">☰</button>
+            <div>
+                <div class="topbar-title">Strategy Builder</div>
+                <div class="topbar-sub">Define and manage your trading strategies</div>
+            </div>
         </div>
-
-        <!-- Name & description -->
-        <div class="section">
-            <div class="section-title">📋 Strategy Info</div>
-            <div class="section-body">
-                <div class="form-row">
-                    <div>
-                        <label>Strategy Name</label>
-                        <input type="text" id="stratName" placeholder="e.g. ORB Breakout v2">
+        <div class="topbar-right">
+            <div class="user-menu" id="userMenu">
+                <button class="user-btn" onclick="toggleUserDropdown()">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                    <span class="user-name" id="userNameDisplay">User</span>
+                    <span class="user-chevron">▾</span>
+                </button>
+                <div class="user-dropdown" id="userDropdown">
+                    <div class="dropdown-header">
+                        <div class="dropdown-avatar" id="dropdownAvatar">U</div>
+                        <div>
+                            <div class="dropdown-name" id="dropdownName">—</div>
+                            <div class="dropdown-email" id="dropdownEmail">—</div>
+                        </div>
                     </div>
-                    <div>
-                        <label>Description (optional)</label>
-                        <input type="text" id="stratDesc" placeholder="Short description of this strategy">
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section">
+                        <a class="dropdown-item" href="/">📊&nbsp; Dashboard</a>
+                        <a class="dropdown-item" href="/analytics">📈&nbsp; Analytics</a>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <div class="dropdown-section">
+                        <button class="dropdown-item danger" id="logoutBtn">⏻&nbsp; Sign Out</button>
                     </div>
                 </div>
             </div>
         </div>
+    </header>
 
-        <!-- Entry Conditions -->
-        <div class="section">
-            <div class="section-title">🟢 Entry Conditions</div>
-            <div class="section-body">
-                <div id="conditionRows"></div>
-                <button class="add-cond-btn" onclick="addCondition()">+ Add Condition</button>
-
-                <div style="margin-top:16px">
-                    <label style="margin-bottom:8px">Entry Time Window (skip trades outside this window)</label>
-                    <div class="time-row">
-                        <label>Start</label>
-                        <input type="time" id="timeStart" value="09:20" style="width:120px">
-                        <label>End</label>
-                        <input type="time" id="timeEnd" value="10:30" style="width:120px">
-                    </div>
-                </div>
+    <!-- Content: strategy list + editor -->
+    <div class="content-area">
+        <!-- Strategy list -->
+        <div class="strat-list-panel">
+            <div class="strat-list-header">
+                <span>My Strategies</span>
+            </div>
+            <button class="btn-new" onclick="newStrategy()">+ New Strategy</button>
+            <div class="strategy-list" id="strategyList">
+                <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:12px">Loading…</div>
             </div>
         </div>
 
-        <!-- Exit Rules -->
-        <div class="section">
-            <div class="section-title">🔴 Exit Rules</div>
-            <div class="section-body">
-                <div class="exit-grid">
-                    <div class="exit-card">
-                        <div class="ec-title">🎯 Take Profit</div>
-                        <label>Type</label>
-                        <select id="tpType" onchange="updateExitHints()">
-                            <option value="PREMIUM_POINTS">Premium Points</option>
-                            <option value="PERCENT_GAIN">% Gain on Premium</option>
-                        </select>
-                        <label style="margin-top:10px" id="tpLbl">Points above entry premium</label>
-                        <input type="number" id="tpValue" value="130" min="1" step="1">
-                    </div>
-                    <div class="exit-card">
-                        <div class="ec-title">🛡 Stop Loss</div>
-                        <label>Type</label>
-                        <select id="slType" onchange="updateExitHints()">
-                            <option value="FIB_TRAIL">Fibonacci Trailing SL</option>
-                            <option value="FIXED_PREMIUM">Fixed Premium Loss</option>
-                            <option value="PERCENT_LOSS">% Loss on Premium</option>
-                        </select>
-                        <label style="margin-top:10px" id="slLbl">Fibonacci level (0–1)</label>
-                        <input type="number" id="slValue" value="0.7" min="0.01" max="1" step="0.01">
-                    </div>
-                    <div class="exit-card">
-                        <div class="ec-title">⏰ Time Exit</div>
-                        <label>Force close all positions at</label>
-                        <input type="time" id="timeExit" value="12:30">
-                        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Trade will be closed at market price at this time if still open.</div>
+        <!-- Editor -->
+        <div class="editor">
+            <div class="editor-header">
+                <h1 id="editorTitle">Create New Strategy</h1>
+                <p id="editorSub">Define entry/exit rules with the visual builder below.</p>
+            </div>
+
+            <!-- Name & description -->
+            <div class="section">
+                <div class="section-title">📋 Strategy Info</div>
+                <div class="section-body">
+                    <div class="form-row">
+                        <div>
+                            <label>Strategy Name</label>
+                            <input type="text" id="stratName" placeholder="e.g. ORB Breakout v2">
+                        </div>
+                        <div>
+                            <label>Description (optional)</label>
+                            <input type="text" id="stratDesc" placeholder="Short description">
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Position sizing -->
-        <div class="section">
-            <div class="section-title">📦 Position Sizing</div>
-            <div class="section-body">
-                <div class="form-row">
-                    <div>
-                        <label>Lot Size</label>
-                        <input type="number" id="lotSize" value="25" min="1">
-                    </div>
-                    <div>
-                        <label>Number of Lots</label>
-                        <input type="number" id="numLots" value="2" min="1">
+            <!-- Entry Conditions -->
+            <div class="section">
+                <div class="section-title">🟢 Entry Conditions</div>
+                <div class="section-body">
+                    <div id="conditionRows"></div>
+                    <button class="add-cond-btn" onclick="addCondition()">+ Add Condition</button>
+                    <div style="margin-top:16px">
+                        <label style="margin-bottom:8px">Entry Time Window</label>
+                        <div class="time-row">
+                            <label>Start</label>
+                            <input type="time" id="timeStart" value="09:20" style="width:120px">
+                            <label>End</label>
+                            <input type="time" id="timeEnd" value="10:30" style="width:120px">
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Actions -->
-        <div class="actions">
-            <button class="btn btn-primary" onclick="saveStrategy()">💾 Save Strategy</button>
-            <button class="btn btn-success" onclick="activateStrategy()" id="activateBtn" style="display:none">⚡ Set as Active</button>
-            <button class="btn btn-danger"  onclick="deleteStrategy()"  id="deleteBtn"   style="display:none">🗑 Delete</button>
-            <button class="btn btn-cancel"  onclick="newStrategy()">✕ Clear</button>
+            <!-- Exit Rules -->
+            <div class="section">
+                <div class="section-title">🔴 Exit Rules</div>
+                <div class="section-body">
+                    <div class="exit-grid">
+                        <div class="exit-card">
+                            <div class="ec-title">🎯 Take Profit</div>
+                            <label>Type</label>
+                            <select id="tpType" onchange="updateExitHints()">
+                                <option value="PREMIUM_POINTS">Premium Points</option>
+                                <option value="PERCENT_GAIN">% Gain on Premium</option>
+                            </select>
+                            <label style="margin-top:10px" id="tpLbl">Points above entry premium</label>
+                            <input type="number" id="tpValue" value="130" min="1" step="1">
+                        </div>
+                        <div class="exit-card">
+                            <div class="ec-title">🛡 Stop Loss</div>
+                            <label>Type</label>
+                            <select id="slType" onchange="updateExitHints()">
+                                <option value="FIB_TRAIL">Fibonacci Trailing SL</option>
+                                <option value="FIXED_PREMIUM">Fixed Premium Loss</option>
+                                <option value="PERCENT_LOSS">% Loss on Premium</option>
+                            </select>
+                            <label style="margin-top:10px" id="slLbl">Fibonacci level (0–1)</label>
+                            <input type="number" id="slValue" value="0.7" min="0.01" max="1" step="0.01">
+                        </div>
+                        <div class="exit-card">
+                            <div class="ec-title">⏰ Time Exit</div>
+                            <label>Force close all positions at</label>
+                            <input type="time" id="timeExit" value="12:30">
+                            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Closed at market price if still open.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Position sizing -->
+            <div class="section">
+                <div class="section-title">📦 Position Sizing</div>
+                <div class="section-body">
+                    <div class="form-row">
+                        <div>
+                            <label>Lot Size</label>
+                            <input type="number" id="lotSize" value="25" min="1">
+                        </div>
+                        <div>
+                            <label>Number of Lots</label>
+                            <input type="number" id="numLots" value="2" min="1">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="actions">
+                <button class="btn btn-primary" onclick="saveStrategy()">💾 Save Strategy</button>
+                <button class="btn btn-success" onclick="activateStrategy()" id="activateBtn" style="display:none">⚡ Set as Active</button>
+                <button class="btn btn-danger"  onclick="deleteStrategy()"  id="deleteBtn"   style="display:none">🗑 Delete</button>
+                <button class="btn btn-cancel"  onclick="newStrategy()">✕ Clear</button>
+            </div>
         </div>
     </div>
 </div>
@@ -241,16 +345,33 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ── Auth guard ──
 const TOKEN = localStorage.getItem('orb_token');
 if (!TOKEN) window.location.href = '/login';
 const USER = JSON.parse(localStorage.getItem('orb_user') || '{}');
-document.getElementById('userLabel').textContent = USER.username || '';
-function logout() { localStorage.removeItem('orb_token'); localStorage.removeItem('orb_user'); window.location.href = '/login'; }
+const initials = (USER.username || 'U').charAt(0).toUpperCase();
+document.getElementById('userAvatar').textContent     = initials;
+document.getElementById('dropdownAvatar').textContent = initials;
+document.getElementById('userNameDisplay').textContent = USER.username || 'User';
+document.getElementById('dropdownName').textContent   = USER.username || 'User';
+document.getElementById('dropdownEmail').textContent  = USER.email    || '';
+
+function toggleUserDropdown() { document.getElementById('userMenu').classList.toggle('open'); }
+document.addEventListener('click', e => { const m = document.getElementById('userMenu'); if (m && !m.contains(e.target)) m.classList.remove('open'); });
+document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('orb_token'); localStorage.removeItem('orb_user'); window.location.href = '/login'; };
+
+let sidebarCollapsed = false;
+function toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    document.getElementById('sidebar').classList.toggle('collapsed', sidebarCollapsed);
+    document.getElementById('sidebarToggle').textContent = sidebarCollapsed ? '▶' : '◀';
+}
+
 function hdrs() { return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}; }
 
 let currentId = null;
 let conditionCount = 0;
-let operators = [];   // 'AND' or 'OR' between conditions (length = conditionCount-1)
+let operators = [];
 
 const INDICATORS = ['PRICE','RSI_14','EMA_9','EMA_21','VWAP','OR_HIGH','OR_LOW'];
 const CONDITIONS = ['CROSSES_ABOVE','CROSSES_BELOW','GREATER_THAN','LESS_THAN'];
@@ -265,8 +386,6 @@ function addCondition(data={}) {
     conditionCount++;
     const id = 'cond_'+conditionCount;
     const container = document.getElementById('conditionRows');
-
-    // Add operator chip between conditions
     if (conditionCount > 1) {
         const op = data.operator || 'OR';
         operators.push(op);
@@ -275,7 +394,6 @@ function addCondition(data={}) {
         chip.innerHTML = `<span class="operator-chip" id="op_${conditionCount}" onclick="toggleOp(${conditionCount})">${op}</span>`;
         container.appendChild(chip);
     }
-
     const row = document.createElement('div');
     row.className = 'condition-row';
     row.id = id;
@@ -300,7 +418,7 @@ function updateCondRow(id) {
 }
 
 function toggleOp(idx) {
-    const i = idx - 2;  // operators array index
+    const i = idx - 2;
     operators[i] = operators[i] === 'AND' ? 'OR' : 'AND';
     document.getElementById('op_'+idx).textContent = operators[i];
 }
@@ -308,7 +426,6 @@ function toggleOp(idx) {
 function removeCondition(id) {
     const el = document.getElementById(id);
     if (!el) return;
-    // Remove the preceding operator chip if any
     const prev = el.previousElementSibling;
     if (prev && prev.querySelector('.operator-chip')) prev.remove();
     el.remove();
@@ -369,15 +486,11 @@ function loadPayloadIntoForm(s) {
     document.getElementById('stratName').value = s.name || '';
     document.getElementById('stratDesc').value = s.description || '';
     const r = s.rules || {};
-
-    // Entry
     document.getElementById('conditionRows').innerHTML = '';
     conditionCount = 0; operators = [];
     (r.entry?.conditions || []).forEach((c,i) => addCondition({...c, operator: i>0?operators[i-1]:'OR'}));
     document.getElementById('timeStart').value = r.entry?.time_filter?.start || '09:20';
     document.getElementById('timeEnd').value   = r.entry?.time_filter?.end   || '10:30';
-
-    // Exit
     const tp = r.exit?.take_profit || {};
     const sl = r.exit?.stop_loss   || {};
     document.getElementById('tpType').value  = tp.type  || 'PREMIUM_POINTS';
@@ -385,8 +498,6 @@ function loadPayloadIntoForm(s) {
     document.getElementById('slType').value  = sl.type  || 'FIB_TRAIL';
     document.getElementById('slValue').value = sl.value || 0.7;
     document.getElementById('timeExit').value = r.exit?.time_exit?.time || '12:30';
-
-    // Position
     document.getElementById('lotSize').value = r.position?.lot_size || 25;
     document.getElementById('numLots').value  = r.position?.lots     || 2;
     updateExitHints();
@@ -419,7 +530,6 @@ async function deleteStrategy() {
     else showToast(d.error || 'Delete failed.', true);
 }
 
-// Default ORB strategy values used when creating a brand-new strategy
 const ORB_DEFAULTS = {
     name: 'ORB Breakout (Default)',
     description: 'Opening Range Breakout — buy CALL on OR High breakout, PUT on OR Low breakdown.',
@@ -429,7 +539,7 @@ const ORB_DEFAULTS = {
                 {indicator:'PRICE', condition:'CROSSES_ABOVE', reference:'OR_HIGH', action:'BUY_CALL'},
                 {indicator:'PRICE', condition:'CROSSES_BELOW', reference:'OR_LOW',  action:'BUY_PUT'},
             ],
-            operator:    'OR',
+            operator: 'OR',
             time_filter: {start:'09:20', end:'10:30'},
         },
         exit: {
@@ -443,9 +553,8 @@ const ORB_DEFAULTS = {
 
 function newStrategy() {
     currentId = null;
-    // Pre-fill with ORB defaults so new strategies start from a working baseline
     loadPayloadIntoForm(ORB_DEFAULTS);
-    document.getElementById('stratName').value = '';   // clear name so user must name it
+    document.getElementById('stratName').value = '';
     document.getElementById('editorTitle').textContent = 'New Strategy';
     document.getElementById('editorSub').textContent   = 'Starts from the default ORB template — edit and save.';
     updateButtons();
@@ -492,19 +601,20 @@ function showToast(msg, isErr) {
     setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// ── Init: load list then open the active (or first) strategy automatically ──
 async function init() {
     const strategies = await loadList();
     if (!strategies || !strategies.length) {
-        // No strategies at all — show ORB defaults ready to save
+        // No saved strategies yet — show the ORB default pre-filled so the user
+        // can see exactly what the strategy looks like and save it with one click.
         loadPayloadIntoForm(ORB_DEFAULTS);
-        document.getElementById('stratName').value = '';
-        document.getElementById('editorTitle').textContent = 'New Strategy';
-        document.getElementById('editorSub').textContent   = 'Starts from the default ORB template — name it and save.';
+        document.getElementById('stratName').value       = ORB_DEFAULTS.name;
+        document.getElementById('stratDesc').value       = ORB_DEFAULTS.description;
+        document.getElementById('editorTitle').textContent = 'ORB Strategy (Default)';
+        document.getElementById('editorSub').textContent   = '✨ Pre-filled with the Opening Range Breakout strategy — click Save to add it to your account.';
         updateExitHints();
         return;
     }
-    // Open active strategy first, otherwise the first in the list
+    // Auto-select the active strategy, or fall back to the most-recently-updated one
     const active = strategies.find(s => s.is_active) || strategies[0];
     await selectStrategy(active.id);
     updateExitHints();
