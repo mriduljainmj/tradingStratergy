@@ -47,22 +47,49 @@ def init_db():
 
 
 def _migrate_add_columns():
-    """Add new columns to existing tables without destroying data (SQLite safe)."""
+    """Add new profile columns to existing tables without destroying data.
+
+    PostgreSQL: uses ADD COLUMN IF NOT EXISTS (9.6+) — idempotent, no error.
+    SQLite:     IF NOT EXISTS was added in 3.37 (2021); for older versions we
+                catch the "duplicate column" error and continue.
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
+    # Boolean default must be DB-specific:
+    #   PostgreSQL → TRUE/FALSE   |   SQLite → 1/0
+    bool_true = "TRUE" if not _is_sqlite else "1"
+
     _new_cols = [
         ("users", "display_name",        "VARCHAR(150)"),
         ("users", "bio",                 "TEXT"),
         ("users", "photo_base64",        "TEXT"),
-        ("users", "trade_confirm_modal", "BOOLEAN DEFAULT 1"),
+        ("users", "trade_confirm_modal", f"BOOLEAN DEFAULT {bool_true}"),
         ("users", "broker_id",           "VARCHAR(100)"),
     ]
+
+    from sqlalchemy import text as _text
+
     with engine.connect() as conn:
         for table, col, col_type in _new_cols:
-            try:
-                conn.execute(
-                    __import__("sqlalchemy").text(
-                        f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"
-                    )
-                )
-                conn.commit()
-            except Exception:
-                pass  # column already exists — ignore
+            if _is_sqlite:
+                # SQLite: no IF NOT EXISTS before 3.37 — just catch the error
+                try:
+                    conn.execute(_text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                    conn.commit()
+                    _log.info(f"Migration: added column {table}.{col}")
+                except Exception as e:
+                    if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                        pass  # column already there — ok
+                    else:
+                        _log.warning(f"Migration: unexpected error adding {table}.{col}: {e}")
+            else:
+                # PostgreSQL: IF NOT EXISTS makes it fully idempotent
+                try:
+                    conn.execute(_text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"
+                    ))
+                    conn.commit()
+                    _log.info(f"Migration: ensured column {table}.{col}")
+                except Exception as e:
+                    _log.warning(f"Migration: error adding {table}.{col}: {e}")
