@@ -284,37 +284,57 @@
                 <!-- Kite API Session -->
                 <div class="form-section" id="kiteSection">
                     <div class="form-section-title">🔑 Kite API Session</div>
+
                     <!-- Status banner -->
                     <div id="kiteStatusBanner" style="display:none; align-items:center; gap:10px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:600; margin-bottom:14px;"></div>
-                    <p style="font-size:12px; color:var(--text-muted); margin-bottom:14px; line-height:1.6;">
-                        On serverless deployments the access token is lost on each restart.
-                        Save it encrypted to the database — it will be auto-restored on boot each day.
-                    </p>
-                    <div style="display:flex; gap:10px; margin-bottom:14px;">
-                        <a id="kiteLoginLink" href="#" target="_blank" style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#2563EB; color:#fff; border-radius:6px; font-size:12px; font-weight:700; text-decoration:none; transition:opacity 0.15s;">
-                            🔗 Get Access Token from Kite
-                        </a>
-                        <span style="font-size:11px; color:var(--text-muted); align-self:center;">Log in → copy the token from the redirect URL</span>
-                    </div>
-                    <div class="form-row" style="margin-bottom:14px;">
-                        <div class="form-group">
-                            <label>API Key <span style="font-size:10px;color:#DC2626;font-weight:700;">required</span></label>
-                            <input class="form-input" id="fKiteApiKey" placeholder="Your Kite API Key (e.g. abc123xyz)" autocomplete="off" spellcheck="false">
-                            <div class="form-hint">Found in your Kite Developer app — must match the token you generate</div>
+
+                    <!-- Step 1: permanent credentials -->
+                    <div style="margin-bottom:18px;">
+                        <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">① Save API credentials <span style="font-weight:400; color:var(--text-muted);">— one-time setup</span></div>
+                        <div class="form-row" style="margin-bottom:10px;">
+                            <div class="form-group">
+                                <label>API Key <span style="font-size:10px;color:#DC2626;font-weight:700;">required</span></label>
+                                <input class="form-input" id="fKiteApiKey" placeholder="e.g. abc123xyz" autocomplete="off" spellcheck="false">
+                                <div class="form-hint">Found in your Kite Developer app</div>
+                            </div>
+                            <div class="form-group">
+                                <label>API Secret <span style="font-size:10px;color:#DC2626;font-weight:700;">required</span></label>
+                                <input class="form-input" id="fKiteApiSecret" type="password" placeholder="Your Kite API Secret" autocomplete="off" spellcheck="false">
+                                <div class="form-hint">Stored encrypted — used to exchange login tokens</div>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Access Token <span style="font-size:10px;color:var(--text-muted);">— paste from Kite login redirect</span></label>
-                            <input class="form-input" id="fKiteToken" type="password" placeholder="Paste today's access token here" autocomplete="off" spellcheck="false">
-                            <div class="form-hint">Regenerate daily from the Kite login link above</div>
+                        <button onclick="saveKiteCredentials()" style="padding:7px 16px; background:#2563EB; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">💾 Save Credentials</button>
+                        <span id="kiteCredMsg" style="font-size:12px; margin-left:10px;"></span>
+                    </div>
+
+                    <!-- Step 2: daily login -->
+                    <div style="margin-bottom:18px; padding-top:14px; border-top:1px solid var(--border-color);">
+                        <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">② Get today's access token <span style="font-weight:400; color:var(--text-muted);">— required every trading day</span></div>
+                        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                            <button onclick="kiteOAuthLogin()" id="kiteLoginBtn" style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#2563EB; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">
+                                🔗 Login with Kite &amp; Auto-Save Token
+                            </button>
+                            <span style="font-size:11px; color:var(--text-muted);">Redirects to Kite → comes back automatically</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:8px; line-height:1.7;">
+                            Set your Kite app's redirect URL to:
+                            <code id="callbackUrl" style="background:var(--bg-hover); padding:1px 6px; border-radius:4px; font-size:11px;"></code>
                         </div>
                     </div>
+
+                    <!-- Divider + manual fallback -->
+                    <details style="margin-bottom:14px;">
+                        <summary style="font-size:11px; color:var(--text-muted); cursor:pointer; user-select:none;">▸ Paste access token manually (advanced)</summary>
+                        <div style="margin-top:10px;">
+                            <input class="form-input" id="fKiteToken" type="password" placeholder="Paste raw access_token here" autocomplete="off" spellcheck="false" style="margin-bottom:8px;">
+                            <div class="form-hint" style="margin-bottom:8px;">Only use this if you have a raw access_token from a previous generate_session call — NOT the request_token from the redirect URL.</div>
+                            <button onclick="saveKiteTokenManual()" style="padding:7px 16px; background:#059669; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">🔐 Save Token</button>
+                        </div>
+                    </details>
+
                     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                        <button onclick="saveKiteToken()" style="padding:8px 20px; background:#059669; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; transition:opacity 0.15s;">🔐 Encrypt &amp; Save Token</button>
-                        <button onclick="clearKiteToken()" style="padding:8px 14px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--down-red); border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.15s;">🗑 Clear Saved Token</button>
+                        <button onclick="clearKiteToken()" style="padding:7px 14px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--down-red); border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">🗑 Clear Saved Token</button>
                         <span id="kiteMsg" style="font-size:12px;"></span>
-                    </div>
-                    <div id="kiteTokenInfo" style="display:none; margin-top:12px; padding:10px 14px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; font-size:12px; color:#059669; font-weight:600;">
-                        ✅ Token saved for today — engine will auto-restore on next restart
                     </div>
                 </div>
 
@@ -516,54 +536,104 @@ function showMsg(msg, isErr) {
 }
 
 // ── Kite Token Management ──────────────────────────────────────────────────
+
+// Show callback URL based on current origin
+document.getElementById('callbackUrl').textContent = location.origin + '/kite/callback';
+
+// Handle redirect-back messages from Kite OAuth
+(function() {
+    const params = new URLSearchParams(location.search);
+    if (params.get('kite_ok')) {
+        showKiteMsg('✅ Kite login successful — token saved automatically!', false);
+        history.replaceState({}, '', '/profile');
+    } else if (params.get('kite_error')) {
+        showKiteMsg('❌ ' + decodeURIComponent(params.get('kite_error').replace(/\+/g,' ')), true);
+        history.replaceState({}, '', '/profile');
+    }
+})();
+
 async function loadKiteStatus() {
     try {
         const r = await fetch('/api/auth/kite-token', { headers: hdrs() });
         const d = await r.json();
         if (!d.ok) return;
 
-        // Login URL
-        if (d.login_url) document.getElementById('kiteLoginLink').href = d.login_url;
-
         // Pre-fill API key if stored
         if (d.kite_api_key) document.getElementById('fKiteApiKey').value = d.kite_api_key;
 
+        // Dim login button if credentials not yet saved
+        const loginBtn = document.getElementById('kiteLoginBtn');
+        if (!d.has_api_secret) {
+            loginBtn.disabled = true;
+            loginBtn.title = 'Save your API Key & Secret first (Step ①)';
+            loginBtn.style.opacity = '0.5';
+        } else {
+            loginBtn.disabled = false;
+            loginBtn.title = '';
+            loginBtn.style.opacity = '1';
+        }
+
         // Status banner
         const banner = document.getElementById('kiteStatusBanner');
-        const infoBox = document.getElementById('kiteTokenInfo');
         if (d.has_token) {
             banner.style.display = 'flex';
             banner.style.background = '#f0fdf4';
             banner.style.border = '1px solid #bbf7d0';
             banner.style.color = '#059669';
-            banner.innerHTML = '✅ Valid token saved for today (' + (d.token_date || '') + ') — engine auto-restores on restart';
-            infoBox.style.display = 'block';
+            banner.innerHTML = '✅ Valid token for today (' + (d.token_date || '') + ') — engine auto-restores on restart';
         } else {
             banner.style.display = 'flex';
             banner.style.background = '#fef9ec';
             banner.style.border = '1px solid #fde68a';
             banner.style.color = '#D97706';
-            banner.innerHTML = '⚠ No token saved for today — paste your Kite access token below';
-            infoBox.style.display = 'none';
+            banner.innerHTML = d.has_api_secret
+                ? '⚠ No token for today — click "Login with Kite" to authenticate'
+                : '⚠ No credentials saved — complete Step ① then Step ②';
         }
     } catch (_) {}
 }
 
-async function saveKiteToken() {
+async function saveKiteCredentials() {
+    const api_key    = document.getElementById('fKiteApiKey').value.trim();
+    const api_secret = document.getElementById('fKiteApiSecret').value.trim();
+    if (!api_key)    { showKiteCredMsg('API Key is required', true); return; }
+    if (!api_secret) { showKiteCredMsg('API Secret is required', true); return; }
+
+    const r = await fetch('/api/auth/kite-credentials', {
+        method: 'POST', headers: hdrs(),
+        body: JSON.stringify({ api_key, api_secret }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+        document.getElementById('fKiteApiSecret').value = '';
+        showKiteCredMsg('✅ Credentials saved — now click "Login with Kite"', false);
+        loadKiteStatus();
+    } else {
+        showKiteCredMsg(d.error || 'Failed to save credentials', true);
+    }
+}
+
+async function kiteOAuthLogin() {
+    // Ask backend for the login URL (also stores uid in server session)
+    const r = await fetch('/api/auth/kite-login-url', { headers: hdrs() });
+    const d = await r.json();
+    if (!d.ok) { showKiteMsg(d.error || 'Could not get login URL', true); return; }
+    // Redirect the whole page — Kite will redirect back to /kite/callback
+    window.location.href = d.login_url;
+}
+
+async function saveKiteTokenManual() {
     const access_token = document.getElementById('fKiteToken').value.trim();
-    const api_key      = document.getElementById('fKiteApiKey').value.trim();
     if (!access_token) { showKiteMsg('Paste your access token first', true); return; }
-    if (!api_key) { showKiteMsg('API Key is required — without it the engine cannot authenticate', true); return; }
 
     const r = await fetch('/api/auth/kite-token', {
-        method:  'POST',
-        headers: hdrs(),
-        body:    JSON.stringify({ access_token, api_key }),
+        method: 'POST', headers: hdrs(),
+        body: JSON.stringify({ access_token }),
     });
     const d = await r.json();
     if (d.ok) {
         document.getElementById('fKiteToken').value = '';
-        showKiteMsg('✅ Token saved & encrypted successfully!', false);
+        showKiteMsg('✅ Token saved!', false);
         loadKiteStatus();
     } else {
         showKiteMsg(d.error || 'Failed to save token', true);
@@ -571,20 +641,24 @@ async function saveKiteToken() {
 }
 
 async function clearKiteToken() {
-    if (!confirm('Clear the saved Kite token? You will need to re-enter it after the next server restart.')) return;
+    if (!confirm('Clear the saved Kite token? You will need to log in again tomorrow.')) return;
     const r = await fetch('/api/auth/kite-token', { method: 'DELETE', headers: hdrs() });
     const d = await r.json();
-    if (d.ok) {
-        showKiteMsg('Token cleared', false);
-        loadKiteStatus();
-    }
+    if (d.ok) { showKiteMsg('Token cleared', false); loadKiteStatus(); }
 }
 
 function showKiteMsg(msg, isErr) {
     const el = document.getElementById('kiteMsg');
     el.textContent = msg;
     el.style.color = isErr ? 'var(--down-red)' : 'var(--up-green)';
-    setTimeout(() => { el.textContent = ''; }, 4000);
+    setTimeout(() => { el.textContent = ''; }, 5000);
+}
+
+function showKiteCredMsg(msg, isErr) {
+    const el = document.getElementById('kiteCredMsg');
+    el.textContent = msg;
+    el.style.color = isErr ? 'var(--down-red)' : 'var(--up-green)';
+    setTimeout(() => { el.textContent = ''; }, 5000);
 }
 
 // ── Init

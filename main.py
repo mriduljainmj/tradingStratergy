@@ -94,27 +94,30 @@ def main():
     state  = BotState(app_mode=app_config.mode)
     broker = KiteBroker(trading_config)
 
-    # ── 1. Try env-var / file-cache restore (fastest, works locally) ──────────
-    authenticated = broker.restore_session()
+    # ── 1. DB profile restore — always tried first (profile api_key is source of truth) ──
+    uid = _find_restore_user_id()
+    if uid is not None:
+        db = SessionLocal()
+        try:
+            authenticated = broker.restore_from_db(db, uid)
+            if authenticated:
+                logger.info(f"Session restored from DB profile (user_id={uid}).")
+        finally:
+            db.close()
+    else:
+        authenticated = False
 
-    # ── 2. Try DB profile restore (serverless-safe, profile api_key) ──────────
+    # ── 2. Fall back to env-var / file-cache (local dev without DB token) ──────
     if not authenticated:
-        uid = _find_restore_user_id()
-        if uid is not None:
-            db = SessionLocal()
-            try:
-                authenticated = broker.restore_from_db(db, uid)
-                if authenticated:
-                    logger.info(f"Session restored from DB profile (user_id={uid}).")
-            finally:
-                db.close()
+        authenticated = broker.restore_session()
 
-    # ── 3. Not authenticated — prompt user via profile page ───────────────────
+    # ── 3. Not authenticated — show banner, prompt user via profile page ──────
     if not authenticated:
         logger.warning(
             "No Kite session found. "
             "Open /profile in your browser, enter your API Key + Access Token, and hit Save."
         )
+        state.kite_auth_error = True
         state.logs.append("[--:--:--] ⚠ Not authenticated — open /profile to add your Kite token")
     else:
         logger.info("Session restored — skipping login.")

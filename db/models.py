@@ -26,8 +26,9 @@ class User(Base):
     trade_confirm_modal = Column(Boolean,     default=True)    # show modal on trade exec
     broker_id           = Column(String(100), nullable=True)   # Zerodha client ID etc.
 
-    # Kite session persistence (serverless-safe; token is Fernet-encrypted)
+    # Kite session persistence (serverless-safe; secrets are Fernet-encrypted)
     kite_api_key_stored   = Column(String(100), nullable=True)  # user's api_key
+    kite_api_secret_enc   = Column(Text,        nullable=True)  # encrypted api_secret
     kite_access_token_enc = Column(Text,        nullable=True)  # encrypted access token
     kite_token_date       = Column(Date,        nullable=True)  # token valid for this date
 
@@ -51,6 +52,7 @@ class User(Base):
             "broker_id":          self.broker_id or "",
             "created_at":         self.created_at.isoformat() if self.created_at else None,
             "kite_api_key_stored": self.kite_api_key_stored or "",
+            "has_kite_secret":    bool(self.kite_api_secret_enc),
             "has_kite_token":     has_kite_token,
             "kite_token_date":    self.kite_token_date.isoformat() if self.kite_token_date else None,
         }

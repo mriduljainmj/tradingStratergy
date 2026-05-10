@@ -136,13 +136,23 @@ def run_historical_backtest():
     data = request.json or {}
     mode = data.get("mode", "single")
 
+    def _check_auth_error(result: dict):
+        """If the backtest failed with a Kite auth error, flag it on shared state."""
+        err = result.get("error", "")
+        if err and _state and _broker:
+            from execution.broker import is_kite_auth_error
+            if is_kite_auth_error(Exception(err)):
+                _state.kite_auth_error = True
+
     if mode == "single":
         date_str = data.get("date", "")
         try:
             date = datetime.date.fromisoformat(date_str)
         except ValueError:
             return jsonify({"error": "Invalid date. Use YYYY-MM-DD format."}), 400
-        return jsonify(_backtester.run_day(date))
+        result = _backtester.run_day(date)
+        _check_auth_error(result)
+        return jsonify(result)
 
     elif mode == "range":
         try:
@@ -150,7 +160,9 @@ def run_historical_backtest():
             to_date = datetime.date.fromisoformat(data.get("to_date", ""))
         except ValueError:
             return jsonify({"error": "Invalid dates. Use YYYY-MM-DD format."}), 400
-        return jsonify(_backtester.run_range(from_date, to_date))
+        result = _backtester.run_range(from_date, to_date)
+        _check_auth_error(result)
+        return jsonify(result)
 
     return jsonify({"error": "mode must be 'single' or 'range'"}), 400
 

@@ -71,8 +71,10 @@ def create_app(state: BotState, mode_switcher=None, backtester=None,
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     app = Flask(__name__, template_folder=template_dir)
 
-    # JWT — use a strong random secret in production (set JWT_SECRET_KEY env var)
-    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "orb-dev-secret-change-in-prod")
+    # JWT + Flask session secret (share the same key)
+    _secret = os.getenv("JWT_SECRET_KEY", "orb-dev-secret-change-in-prod")
+    app.config["SECRET_KEY"]          = _secret   # Flask session (used by /kite/callback)
+    app.config["JWT_SECRET_KEY"]      = _secret
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
     JWTManager(app)
 

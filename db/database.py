@@ -67,6 +67,7 @@ def _migrate_add_columns():
         ("users",  "trade_confirm_modal",    f"BOOLEAN DEFAULT {bool_true}"),
         ("users",  "broker_id",              "VARCHAR(100)"),
         ("users",  "kite_api_key_stored",    "VARCHAR(100)"),
+        ("users",  "kite_api_secret_enc",    "TEXT"),
         ("users",  "kite_access_token_enc",  "TEXT"),
         ("users",  "kite_token_date",        "DATE"),
         ("trades", "trade_mode",             "VARCHAR(10) DEFAULT 'PAPER'"),
