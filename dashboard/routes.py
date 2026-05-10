@@ -1,7 +1,7 @@
 import datetime
 import logging
 
-from flask import Blueprint, jsonify, render_template, request, redirect, url_for
+from flask import Blueprint, jsonify, render_template, request
 
 logger = logging.getLogger(__name__)
 
@@ -167,22 +167,6 @@ def switch_mode():
     return jsonify({"mode": new_mode, "changed": True})
 
 
-# ── Kite Web Authentication (used on Render / cloud) ──────────────────────────
-
-@dashboard_bp.route("/auth")
-def auth_page():
-    """Show Kite login URL so user can authenticate from a browser."""
-    if not _broker:
-        return "Broker not initialised.", 503
-    login_url = _broker.login_url()
-    is_authenticated = False
-    try:
-        _broker.kite.profile()
-        is_authenticated = True
-    except Exception:
-        pass
-    return render_template("auth.html", login_url=login_url, authenticated=is_authenticated)
-
 
 @dashboard_bp.route("/api/option-chart")
 def option_chart():
@@ -280,23 +264,3 @@ def nifty_history():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@dashboard_bp.route("/auth", methods=["POST"])
-def auth_submit():
-    """Accept request_token from the form, authenticate, and start the engine."""
-    if not _broker:
-        return "Broker not initialised.", 503
-    request_token = (request.form.get("request_token") or "").strip()
-    if not request_token:
-        return redirect(url_for("dashboard.auth_page"))
-    ok = _broker.authenticate(request_token)
-    if ok:
-        if _state:
-            _state.logs.append("[--:--:--] ✅ Kite authentication successful")
-        # Start the engine now that we have a valid session
-        if _start_engine_fn:
-            _start_engine_fn(_initial_mode)
-        return redirect(url_for("dashboard.index"))
-    # Auth failed — go back with error
-    login_url = _broker.login_url()
-    return render_template("auth.html", login_url=login_url, authenticated=False,
-                           error="Authentication failed — invalid or expired token. Try again.")

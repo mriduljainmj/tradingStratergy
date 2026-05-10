@@ -9,19 +9,23 @@ Set APP_MODE in .env (or Render env vars):
     PAPER     — live market feed, no real orders placed
     LIVE      — live market feed, real orders placed on Kite
 
-Authentication on Render / cloud:
-    The app starts without blocking for a login prompt.
-    Visit  /auth  in your browser to authenticate with Kite each trading day.
-    Alternatively set  KITE_ACCESS_TOKEN  in your Render env vars.
+Authentication:
+    API key and access token come exclusively from the user's profile in the DB.
+    Set them once on the /profile page — no env vars, no restart required.
+
+    KITE_API_KEY / KITE_API_SECRET env vars are fully optional and ignored when
+    a profile token is found in the DB.
 """
 
 import logging
-import sys
 import threading
+from typing import Optional
 
 from config.settings import AppConfig, TradingConfig
 from core.state import BotState
 from dashboard import create_app
+from db.database import init_db, SessionLocal
+from db.models import User
 from execution.broker import KiteBroker
 from execution.historical_backtest import HistoricalBacktester
 from execution.trading_engine import TradingEngine
@@ -33,49 +37,85 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Shared mutable references so the /auth route can start the engine after login
+# Shared mutable references so the engine can be started after token is saved via profile
 _current_engine: TradingEngine = None
 _engine_thread: threading.Thread = None
+
+
+def _find_restore_user_id() -> Optional[int]:
+    """
+    Return the user_id whose DB profile has a valid today Kite token.
+    Preference order:
+      1. User matching DEFAULT_USER_EMAIL env var
+      2. First user in DB that has a valid today token
+    Returns None if no eligible user is found.
+    """
+    import datetime as _dt
+    import os
+    from execution.broker import _IST
+
+    today = _dt.datetime.now(tz=_IST).date()
+    db = SessionLocal()
+    try:
+        default_email = os.getenv("DEFAULT_USER_EMAIL", "").strip().lower()
+        if default_email:
+            u = db.query(User).filter_by(email=default_email).first()
+            if u and u.kite_access_token_enc and u.kite_token_date == today:
+                return u.id
+
+        # Fall back: any user with a valid today token
+        u = (db.query(User)
+               .filter(User.kite_access_token_enc.isnot(None),
+                       User.kite_token_date == today)
+               .first())
+        return u.id if u else None
+    except Exception as e:
+        logger.warning(f"_find_restore_user_id failed: {e}")
+        return None
+    finally:
+        db.close()
 
 
 def main():
     global _current_engine, _engine_thread
 
-    app_config = AppConfig()
+    app_config     = AppConfig()
     trading_config = TradingConfig()
 
-    if not trading_config.api_key or not trading_config.api_secret:
-        logger.error("KITE_API_KEY / KITE_API_SECRET not set in .env / env vars")
-        sys.exit(1)
+    # KITE_API_KEY / KITE_API_SECRET are now optional.
+    # The broker will be re-initialised with the profile-stored api_key when
+    # restore_from_db() succeeds.
+    if not trading_config.api_key:
+        logger.info("KITE_API_KEY not set — will rely on profile-stored api_key from DB.")
 
-    state = BotState(app_mode=app_config.mode)
+    # Initialise DB early so we can try profile-based restore.
+    init_db()
+
+    state  = BotState(app_mode=app_config.mode)
     broker = KiteBroker(trading_config)
 
+    # ── 1. Try env-var / file-cache restore (fastest, works locally) ──────────
     authenticated = broker.restore_session()
 
+    # ── 2. Try DB profile restore (serverless-safe, profile api_key) ──────────
     if not authenticated:
-        # Running on a server (Render) — don't block with input().
-        # The user will authenticate via the /auth web page.
-        import sys as _sys
-        interactive = _sys.stdin.isatty()
-        if interactive:
-            # Local dev: fall back to terminal prompt
-            print("═" * 60)
-            print("  KITE AUTHENTICATION")
-            print("═" * 60)
-            print("1. Open:", broker.login_url())
+        uid = _find_restore_user_id()
+        if uid is not None:
+            db = SessionLocal()
             try:
-                request_token = input("2. Paste request_token here: ").strip()
-                if broker.authenticate(request_token):
-                    authenticated = True
-                else:
-                    logger.error("Authentication failed. Exiting.")
-                    sys.exit(1)
-            except EOFError:
-                pass  # non-interactive, fall through to web auth
-        if not authenticated:
-            logger.warning("No Kite session found. Visit /auth in your browser to log in.")
-            state.logs.append("[--:--:--] ⚠ Not authenticated — visit /auth to log in")
+                authenticated = broker.restore_from_db(db, uid)
+                if authenticated:
+                    logger.info(f"Session restored from DB profile (user_id={uid}).")
+            finally:
+                db.close()
+
+    # ── 3. Not authenticated — prompt user via profile page ───────────────────
+    if not authenticated:
+        logger.warning(
+            "No Kite session found. "
+            "Open /profile in your browser, enter your API Key + Access Token, and hit Save."
+        )
+        state.logs.append("[--:--:--] ⚠ Not authenticated — open /profile to add your Kite token")
     else:
         logger.info("Session restored — skipping login.")
 

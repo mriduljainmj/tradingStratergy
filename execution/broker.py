@@ -65,18 +65,6 @@ class KiteBroker:
 
     # ── Authentication ─────────────────────────────────────────────────────────
 
-    def authenticate(self, request_token: str) -> bool:
-        try:
-            data = self.kite.generate_session(request_token, api_secret=self.config.api_secret)
-            access_token = data["access_token"]
-            self.kite.set_access_token(access_token)
-            self._save_token(access_token)
-            logger.info("Kite authentication successful.")
-            return True
-        except Exception as e:
-            logger.error(f"Kite authentication failed: {e}")
-            return False
-
     def restore_session(self) -> bool:
         """Reuse today's cached access token — checks env var first, then local file."""
         env_token = os.getenv("KITE_ACCESS_TOKEN", "").strip()
@@ -111,6 +99,7 @@ class KiteBroker:
     def restore_from_db(self, db_session, user_id: int) -> bool:
         """
         Try to restore today's Kite session from the encrypted token saved in the DB.
+        Also updates the broker's api_key from the user's stored api_key (profile-first).
         Suitable for serverless environments where the file-system cache is lost on restart.
         Returns True on success.
         """
@@ -126,10 +115,16 @@ class KiteBroker:
             plain = decrypt_token(user.kite_access_token_enc)
             if not plain:
                 return False
+
+            # ── Use the profile-stored api_key if available ──────────────────
+            if user.kite_api_key_stored:
+                self.kite = KiteConnect(api_key=user.kite_api_key_stored)
+                self.config.api_key = user.kite_api_key_stored
+                logger.info(f"Using profile api_key for user {user_id}.")
+
             self.kite.set_access_token(plain)
-            # Quick validation
-            self.kite.profile()
-            logger.info(f"Kite session restored from DB for user {user_id}.")
+            self.kite.profile()   # validate
+            logger.info(f"Kite session restored from DB profile for user {user_id}.")
             return True
         except Exception as e:
             logger.warning(f"restore_from_db failed: {e}")
