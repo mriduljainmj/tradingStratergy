@@ -288,6 +288,21 @@
                     <!-- Status banner -->
                     <div id="kiteStatusBanner" style="display:none; align-items:center; gap:10px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:600; margin-bottom:14px;"></div>
 
+                    <!-- Local-dev pending banner (shown when ?kite_pending=TOKEN) -->
+                    <div id="kitePendingBanner" style="display:none; background:#f5f3ff; border:1px solid #c4b5fd; border-radius:8px; padding:14px 16px; margin-bottom:14px;">
+                        <div style="font-size:13px; font-weight:700; color:#5b21b6; margin-bottom:6px;">📋 Your request_token is ready</div>
+                        <div style="font-size:12px; color:#6b21a8; margin-bottom:10px; line-height:1.6;">
+                            Kite redirected here (production) but your login was initiated from a different server (local dev).
+                            The token below has <strong>not been used yet</strong> — copy it and paste it into your
+                            <strong>local server's</strong> Profile → Advanced → Exchange request_token field.
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input id="kitePendingToken" readonly style="flex:1; background:#ede9fe; border:1px solid #c4b5fd; border-radius:6px; padding:8px 10px; font-family:monospace; font-size:12px; color:#4c1d95; outline:none;">
+                            <button onclick="copyPendingToken()" style="padding:8px 14px; background:#7c3aed; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;">📋 Copy</button>
+                        </div>
+                        <div style="font-size:11px; color:#7c3aed; margin-top:8px;">⚠ This token expires in a few minutes — use it immediately on your local server.</div>
+                    </div>
+
                     <!-- Step 1: permanent credentials -->
                     <div style="margin-bottom:18px;">
                         <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">① Save API credentials <span style="font-weight:400; color:var(--text-muted);">— one-time setup</span></div>
@@ -323,12 +338,31 @@
                     </div>
 
                     <!-- Divider + manual fallback -->
-                    <details style="margin-bottom:14px;">
-                        <summary style="font-size:11px; color:var(--text-muted); cursor:pointer; user-select:none;">▸ Paste access token manually (advanced)</summary>
-                        <div style="margin-top:10px;">
-                            <input class="form-input" id="fKiteToken" type="password" placeholder="Paste raw access_token here" autocomplete="off" spellcheck="false" style="margin-bottom:8px;">
-                            <div class="form-hint" style="margin-bottom:8px;">Only use this if you have a raw access_token from a previous generate_session call — NOT the request_token from the redirect URL.</div>
-                            <button onclick="saveKiteTokenManual()" style="padding:7px 16px; background:#059669; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">🔐 Save Token</button>
+                    <details id="kiteAdvancedDetails" style="margin-bottom:14px;">
+                        <summary style="font-size:11px; color:var(--text-muted); cursor:pointer; user-select:none;">▸ Advanced / local dev options</summary>
+                        <div style="margin-top:12px; display:flex; flex-direction:column; gap:14px;">
+
+                            <!-- Option A: Exchange request_token (local dev) -->
+                            <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:12px 14px;">
+                                <div style="font-size:11px; font-weight:700; color:var(--text-main); margin-bottom:4px;">🔄 Exchange request_token <span style="font-weight:400; color:var(--text-muted);">— for local development</span></div>
+                                <div class="form-hint" style="margin-bottom:10px; line-height:1.6;">
+                                    <strong>Workflow:</strong> Click "Login with Kite" on your <em>local</em> server →
+                                    Kite redirects to <em>production</em> → production shows a purple banner with the request_token →
+                                    copy it → paste here → click Exchange.
+                                </div>
+                                <input class="form-input" id="fKiteReqToken" placeholder="Paste request_token from production banner" autocomplete="off" spellcheck="false" style="margin-bottom:8px; font-family:monospace; font-size:12px;">
+                                <button onclick="exchangeRequestToken()" style="padding:7px 16px; background:#7c3aed; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">🔄 Exchange &amp; Save Token</button>
+                                <span id="kiteExchangeMsg" style="font-size:12px; margin-left:10px;"></span>
+                            </div>
+
+                            <!-- Option B: Paste raw access_token -->
+                            <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; padding:12px 14px;">
+                                <div style="font-size:11px; font-weight:700; color:var(--text-main); margin-bottom:4px;">🔐 Paste raw access_token <span style="font-weight:400; color:var(--text-muted);">— if you already have one</span></div>
+                                <div class="form-hint" style="margin-bottom:10px;">Only use this if you have an access_token from a prior <code>generate_session</code> call. Do NOT paste the request_token here.</div>
+                                <input class="form-input" id="fKiteToken" type="password" placeholder="Paste raw access_token here" autocomplete="off" spellcheck="false" style="margin-bottom:8px;">
+                                <button onclick="saveKiteTokenManual()" style="padding:7px 16px; background:#059669; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">💾 Save Token</button>
+                            </div>
+
                         </div>
                     </details>
 
@@ -546,6 +580,15 @@ document.getElementById('callbackUrl').textContent = location.origin + '/kite/ca
     if (params.get('kite_ok')) {
         showKiteMsg('✅ Kite login successful — token saved automatically!', false);
         history.replaceState({}, '', '/profile');
+    } else if (params.get('kite_pending')) {
+        // The OAuth came from a different server (e.g. local dev hitting production callback).
+        // request_token is unconsumed — show it so the user can take it to their local server.
+        const rt = params.get('kite_pending');
+        showKitePendingBanner(rt);
+        // Also pre-fill the exchange field in case they're already on the right server
+        const fld = document.getElementById('fKiteReqToken');
+        if (fld) fld.value = rt;
+        history.replaceState({}, '', '/profile');
     } else if (params.get('kite_error')) {
         showKiteMsg('❌ ' + decodeURIComponent(params.get('kite_error').replace(/\+/g,' ')), true);
         history.replaceState({}, '', '/profile');
@@ -622,6 +665,46 @@ async function kiteOAuthLogin() {
     window.location.href = d.login_url;
 }
 
+function copyPendingToken() {
+    const el = document.getElementById('kitePendingToken');
+    if (!el) return;
+    el.select();
+    navigator.clipboard.writeText(el.value).then(() => {
+        const btn = el.nextElementSibling;
+        const orig = btn.textContent;
+        btn.textContent = '✅ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+    }).catch(() => {
+        document.execCommand('copy');
+    });
+}
+
+async function exchangeRequestToken() {
+    const request_token = document.getElementById('fKiteReqToken').value.trim();
+    if (!request_token) { showKiteExchangeMsg('Paste a request_token first', true); return; }
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '⏳ Exchanging…';
+    try {
+        const r = await fetch('/api/auth/kite-exchange', {
+            method: 'POST', headers: hdrs(),
+            body: JSON.stringify({ request_token }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+            document.getElementById('fKiteReqToken').value = '';
+            showKiteExchangeMsg('✅ Token exchanged and saved!', false);
+            loadKiteStatus();
+        } else {
+            showKiteExchangeMsg(d.error || 'Exchange failed', true);
+        }
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Exchange & Save Token';
+    }
+}
+
 async function saveKiteTokenManual() {
     const access_token = document.getElementById('fKiteToken').value.trim();
     if (!access_token) { showKiteMsg('Paste your access token first', true); return; }
@@ -637,6 +720,26 @@ async function saveKiteTokenManual() {
         loadKiteStatus();
     } else {
         showKiteMsg(d.error || 'Failed to save token', true);
+    }
+}
+
+function showKiteExchangeMsg(msg, isErr) {
+    const el = document.getElementById('kiteExchangeMsg');
+    el.textContent = msg;
+    el.style.color = isErr ? 'var(--down-red)' : 'var(--up-green)';
+    setTimeout(() => { el.textContent = ''; }, 5000);
+}
+
+function showKitePendingBanner(requestToken) {
+    // Show a prominent banner with the unconsumed request_token
+    const banner = document.getElementById('kitePendingBanner');
+    const tokenEl = document.getElementById('kitePendingToken');
+    if (banner && tokenEl) {
+        tokenEl.value = requestToken;
+        banner.style.display = 'block';
+        // Expand the advanced section so the exchange field is visible
+        const details = document.getElementById('kiteAdvancedDetails');
+        if (details) details.open = true;
     }
 }
 

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import re
 
 import bcrypt
@@ -7,6 +8,8 @@ from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_requir
 
 from db.database import SessionLocal
 from db.models import User, Strategy
+
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -362,7 +365,11 @@ def kite_callback():
 
     uid = session.get("kite_oauth_uid")
     if not uid:
-        return redirect("/profile?kite_error=Session+expired+—+open+profile+and+try+again")
+        # No server session — likely triggered from a different server (e.g. local dev
+        # while the Kite redirect URL points to production).  The request_token is still
+        # unconsumed, so surface it so the user can paste it into their local server's
+        # "Exchange request_token" field rather than showing a useless error.
+        return redirect(f"/profile?kite_pending={request_token}")
 
     db = SessionLocal()
     try:
@@ -394,6 +401,62 @@ def kite_callback():
         logger.error(f"Kite OAuth callback failed: {e}")
         msg = str(e).replace(" ", "+")[:120]
         return redirect(f"/profile?kite_error={msg}")
+    finally:
+        db.close()
+
+
+@auth_bp.route("/api/auth/kite-exchange", methods=["POST"])
+@jwt_required()
+def exchange_kite_token():
+    """
+    Exchange a request_token (from the Kite OAuth redirect URL) for an
+    access_token using the stored api_secret.
+
+    Useful for local development where the Kite redirect URL points to the
+    production server (/kite/callback).  The user copies the request_token
+    query-param from the production redirect and pastes it here — the local
+    server does the exchange itself without needing its own callback URL.
+    """
+    from execution.broker import decrypt_token, encrypt_token
+
+    uid  = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    request_token = (data.get("request_token") or "").strip()
+
+    if not request_token:
+        return _bad("request_token is required.")
+
+    db = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if not user:
+            return _bad("User not found.", 404)
+        if not user.kite_api_key_stored:
+            return _bad("Save your API Key & Secret first (Step ①).")
+        if not user.kite_api_secret_enc:
+            return _bad("Save your API Secret first (Step ①).")
+
+        api_key    = user.kite_api_key_stored
+        api_secret = decrypt_token(user.kite_api_secret_enc)
+
+        from kiteconnect import KiteConnect
+        kite     = KiteConnect(api_key=api_key)
+        kite_data = kite.generate_session(request_token, api_secret=api_secret)
+        access_token = kite_data["access_token"]
+
+        user.kite_access_token_enc = encrypt_token(access_token)
+        user.kite_token_date       = datetime.date.today()
+        db.commit()
+        db.refresh(user)
+
+        _apply_token_to_broker(api_key, access_token)
+        if _state:
+            _state.logs.append("[--:--:--] ✅ Kite request_token exchanged — session live.")
+
+        return jsonify({"ok": True, "user": user.to_dict()})
+    except Exception as e:
+        db.rollback()
+        return _bad(str(e), 500)
     finally:
         db.close()
 

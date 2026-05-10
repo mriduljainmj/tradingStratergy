@@ -112,6 +112,7 @@ class HistoricalBacktester:
             "candles":            candles,
             "candles_1m":         candles_1m,
             "markers":            state.markers,
+            "option_markers":     state.option_markers,
             "entry_prem":         state.entry_prem,
             "exit_prem":          state.exit_prem,
             "gross_pnl":          state.gross_pnl,
@@ -190,10 +191,12 @@ class HistoricalBacktester:
             strategy.state.entry_prem = round(real_entry, 2)
             strategy.target_prem      = real_entry + self.config.target_pts
             state.target_prem         = round(strategy.target_prem, 2)
-            # Patch the BUY marker text so it shows the real fill price
-            if markers:
-                pos_type = state.position_type
-                markers[0]["text"] = f"BUY {pos_type} @ ₹{real_entry:.0f}"
+            # Patch BUY markers: NIFTY chart → NIFTY price, options chart → real fill price
+            pos_type = state.position_type
+            if markers and state.entry_nifty_px:
+                markers[0]["text"] = f"BUY {pos_type} @ ₹{state.entry_nifty_px:.0f}"
+            if state.option_markers:
+                state.option_markers[0]["text"] = f"BUY {pos_type} @ ₹{real_entry:.0f}"
             logger.info(
                 f"{date}: Real entry premium ₹{real_entry:.2f} "
                 f"(was ₹{bs_entry:.2f} BS estimate)"
@@ -234,14 +237,18 @@ class HistoricalBacktester:
                 "Stamp Duty (0.003% on buy)":   round(stamp,     2),
             }
 
-            # Update exit marker to reflect real P&L
+            # Patch EXIT markers: NIFTY chart → NIFTY price (from Phase 1), options → real premium
+            _epatch = {
+                "position": "belowBar" if net_pnl > 0 else "aboveBar",
+                "color":    "#089981"  if net_pnl > 0 else "#F23645",
+                "shape":    "arrowUp"  if net_pnl > 0 else "arrowDown",
+            }
             if len(state.markers) > 1:
-                state.markers[-1].update({
-                    "position": "belowBar" if net_pnl > 0 else "aboveBar",
-                    "color":    "#089981"  if net_pnl > 0 else "#F23645",
-                    "shape":    "arrowUp"  if net_pnl > 0 else "arrowDown",
-                    "text":     f"EXIT: ₹{net_pnl:.0f}",
-                })
+                # Use NIFTY exit price stored during Phase 1 strategy replay
+                nifty_exit_px = state.exit_nifty_px or exit_candle["close"]
+                state.markers[-1].update({**_epatch, "text": f"EXIT @ ₹{nifty_exit_px:.0f}"})
+            if len(state.option_markers) > 1:
+                state.option_markers[-1].update({**_epatch, "text": f"EXIT @ ₹{real_exit:.0f}"})
 
             logger.info(
                 f"{date}: Real exit premium ₹{real_exit:.2f} | "

@@ -12,6 +12,8 @@ class BotState:
     current_high: float = 0.0
     current_low: float = 0.0
     position_type: str = "NONE"
+    entry_nifty_px: float = 0.0   # NIFTY price at which the trade was triggered
+    exit_nifty_px: float = 0.0    # NIFTY price at which the trade was exited
     entry_prem: float = 0.0
     exit_prem: float = 0.0
 
@@ -43,7 +45,8 @@ class BotState:
     target_prem: float = 0.0
     used_real_options: bool = False   # True when real Kite NFO prices were used
     logs: List[str] = field(default_factory=list)
-    markers: List[dict] = field(default_factory=list)
+    markers: List[dict] = field(default_factory=list)         # NIFTY chart markers
+    option_markers: List[dict] = field(default_factory=list)  # Options chart markers
     candles: List[dict] = field(default_factory=list)
     candles_1m: List[dict] = field(default_factory=list)
 
@@ -58,6 +61,8 @@ class BotState:
         self.current_high = 0.0
         self.current_low = 0.0
         self.position_type = "NONE"
+        self.entry_nifty_px = 0.0
+        self.exit_nifty_px = 0.0
         self.entry_prem = 0.0
         self.exit_prem = 0.0
         self.gross_pnl = 0.0
@@ -80,6 +85,7 @@ class BotState:
         self.used_real_options = False
         self.logs = []
         self.markers = []
+        self.option_markers = []
         self.candles = []
         self.candles_1m = []
 
@@ -110,6 +116,7 @@ class BotState:
             "used_real_options": self.used_real_options,
             "logs": list(self.logs),
             "markers": list(self.markers),
+            "option_markers": list(self.option_markers),
             "candles": list(self.candles),
             "candles_1m": list(self.candles_1m),
         }

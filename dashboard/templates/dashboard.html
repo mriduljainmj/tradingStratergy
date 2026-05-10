@@ -1385,7 +1385,8 @@
         let optSynced    = true;
         let rawNiftyCandles = [];
         let rawOptCandles   = [];
-        let rawMarkers      = [];
+        let rawMarkers      = [];   // NIFTY chart markers
+        let rawOptMarkers   = [];   // Options chart markers
 
         const TF_SECS = { 1: 60, 5: 300, 15: 900, 30: 1800, D: 86400, W: 604800, Mo: 2592000 };
         // Multi-day TFs that need server-side historical fetch (cannot be aggregated from intraday)
@@ -1399,7 +1400,7 @@
                 return;
             }
             optSeries.setData(aggregateCandles(rawOptCandles, tf));
-            optSeries.setMarkers(snapMarkers(rawMarkers, tf));
+            optSeries.setMarkers(snapMarkers(rawOptMarkers, tf));
         }
 
         function snapMarkers(markers, tfKey) {
@@ -1694,7 +1695,8 @@
                     if (!frozenChart) {
                         rawNiftyCandles = state.candles_1m && state.candles_1m.length ? state.candles_1m : state.candles;
                         candleSeries.setData(aggregateCandles(rawNiftyCandles, currentTf));
-                        rawMarkers = state.markers || [];
+                        rawMarkers    = state.markers        || [];
+                        rawOptMarkers = state.option_markers || [];
                         candleSeries.setMarkers(snapMarkers(rawMarkers, currentTf));
                         renderFibLines(state);
                     }
@@ -1941,7 +1943,8 @@
             frozenChart = true;
             rawNiftyCandles = (data.candles_1m && data.candles_1m.length) ? data.candles_1m : (data.candles || []);
             candleSeries.setData(aggregateCandles(rawNiftyCandles, currentTf));
-            rawMarkers = data.markers || [];
+            rawMarkers    = data.markers        || [];
+            rawOptMarkers = data.option_markers || [];
             candleSeries.setMarkers(snapMarkers(rawMarkers, currentTf));
             chart.timeScale().fitContent();
 

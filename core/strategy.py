@@ -175,12 +175,21 @@ class ORBStrategy:
             }
 
             self.state.option_prices[-1]["close"] = round(exit_prem, 2)
-            self.state.markers.append({
-                "time": unix_time,
-                "position": "belowBar" if net_pnl > 0 else "aboveBar",
-                "color": "#089981" if net_pnl > 0 else "#F23645",
-                "shape": "arrowUp" if net_pnl > 0 else "arrowDown",
-                "text": f"EXIT: ₹{net_pnl:.0f}",
+            _exit_color = "#089981" if net_pnl > 0 else "#F23645"
+            _exit_shape = "arrowUp" if net_pnl > 0 else "arrowDown"
+            _exit_pos   = "belowBar" if net_pnl > 0 else "aboveBar"
+            # Determine the NIFTY price at exit and persist on state
+            nifty_exit_px = trail_sl_price if triggered == "Trailing SL Hit" else tick_close
+            self.state.exit_nifty_px = nifty_exit_px
+            self.state.markers.append({        # NIFTY chart — show NIFTY exit price
+                "time": unix_time, "position": _exit_pos,
+                "color": _exit_color, "shape": _exit_shape,
+                "text": f"EXIT @ ₹{nifty_exit_px:.0f}",
+            })
+            self.state.option_markers.append({ # Options chart — show option exit premium
+                "time": unix_time, "position": _exit_pos,
+                "color": _exit_color, "shape": _exit_shape,
+                "text": f"EXIT @ ₹{exit_prem:.0f}",
             })
             self.in_position = False
             return {"action": "SELL", "reason": triggered, "price": exit_prem, "pnl": net_pnl}
@@ -233,12 +242,19 @@ class ORBStrategy:
         ep = round(entry_prem, 2)
         self.state.option_prices = [{"time": unix_time, "open": ep, "high": ep, "low": ep, "close": ep}]
 
+        self.state.entry_nifty_px = entry_px
+
         color = "#2962FF" if self.state.position_type == "CALL" else "#F23645"
         shape = "arrowUp" if self.state.position_type == "CALL" else "arrowDown"
         pos = "belowBar" if self.state.position_type == "CALL" else "aboveBar"
-        self.state.markers.append({
+        pt = self.state.position_type
+        self.state.markers.append({        # NIFTY chart — show NIFTY breakout price
             "time": unix_time, "position": pos, "color": color, "shape": shape,
-            "text": f"BUY {self.state.position_type} @ ₹{entry_prem:.0f}",
+            "text": f"BUY {pt} @ ₹{entry_px:.0f}",
+        })
+        self.state.option_markers.append({ # Options chart — show option premium
+            "time": unix_time, "position": pos, "color": color, "shape": shape,
+            "text": f"BUY {pt} @ ₹{entry_prem:.0f}",
         })
 
         self.in_position = True
