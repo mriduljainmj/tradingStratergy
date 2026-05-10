@@ -1,4 +1,6 @@
+import base64
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -16,6 +18,42 @@ _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 # Module-level NFO instruments cache (refreshed once per trading day)
 _nfo_cache: dict = {"date": None, "data": []}
+
+
+# ── Fernet encryption helpers ────────────────────────────────────────────────
+
+def _fernet_key() -> bytes:
+    """Derive a stable 32-byte Fernet key from env vars."""
+    secret = os.getenv("ENCRYPT_KEY") or os.getenv("JWT_SECRET_KEY") or "orb-default-secret-change-me"
+    return base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
+
+
+def encrypt_token(plain: str) -> str:
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(_fernet_key()).encrypt(plain.encode()).decode()
+    except ImportError:
+        # Fallback: base64 (not secure — install cryptography package)
+        return base64.b64encode(plain.encode()).decode()
+
+
+def decrypt_token(enc: str) -> str:
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(_fernet_key()).decrypt(enc.encode()).decode()
+    except ImportError:
+        return base64.b64decode(enc.encode()).decode()
+    except Exception as e:
+        logger.warning(f"Token decryption failed: {e}")
+        return ""
+
+
+def is_kite_auth_error(e: Exception) -> bool:
+    """Return True if the exception is a Kite 'Incorrect api_key or access_token' error."""
+    msg = str(e).lower()
+    return ("incorrect api_key" in msg or "incorrect access_token" in msg
+            or "invalid api_key" in msg or "invalid access_token" in msg
+            or "TokenException" in str(type(e).__name__))
 
 
 class KiteBroker:
@@ -70,6 +108,44 @@ class KiteBroker:
             json.dump({"date": str(datetime.datetime.now(tz=_IST).date()),
                        "access_token": access_token}, f)
 
+    def restore_from_db(self, db_session, user_id: int) -> bool:
+        """
+        Try to restore today's Kite session from the encrypted token saved in the DB.
+        Suitable for serverless environments where the file-system cache is lost on restart.
+        Returns True on success.
+        """
+        try:
+            from db.models import User
+            user = db_session.get(User, user_id)
+            if not user or not user.kite_access_token_enc:
+                return False
+            today = datetime.datetime.now(tz=_IST).date()
+            if user.kite_token_date != today:
+                logger.info("DB token is from a previous day — skipping.")
+                return False
+            plain = decrypt_token(user.kite_access_token_enc)
+            if not plain:
+                return False
+            self.kite.set_access_token(plain)
+            # Quick validation
+            self.kite.profile()
+            logger.info(f"Kite session restored from DB for user {user_id}.")
+            return True
+        except Exception as e:
+            logger.warning(f"restore_from_db failed: {e}")
+            return False
+
+    def set_token_direct(self, access_token: str) -> bool:
+        """Apply an access token directly (e.g. pasted in the profile page)."""
+        try:
+            self.kite.set_access_token(access_token)
+            self.kite.profile()   # validate immediately
+            self._save_token(access_token)
+            return True
+        except Exception as e:
+            logger.warning(f"set_token_direct validation failed: {e}")
+            return False
+
     def login_url(self) -> str:
         return self.kite.login_url()
 
@@ -101,8 +177,14 @@ class KiteBroker:
         return quote[symbol]["last_price"]
 
     def get_historical_data(self, token: int, from_dt: str, to_dt: str,
-                            interval: str) -> list:
-        return self.kite.historical_data(token, from_dt, to_dt, interval)
+                            interval: str, state=None) -> list:
+        try:
+            return self.kite.historical_data(token, from_dt, to_dt, interval)
+        except Exception as e:
+            if is_kite_auth_error(e) and state is not None:
+                state.kite_auth_error = True
+                logger.error(f"Kite auth error in historical_data: {e}")
+            raise
 
     # ── NFO instrument lookup ──────────────────────────────────────────────────
 

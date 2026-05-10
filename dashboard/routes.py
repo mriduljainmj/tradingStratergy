@@ -1,6 +1,9 @@
 import datetime
+import logging
 
 from flask import Blueprint, jsonify, render_template, request, redirect, url_for
+
+logger = logging.getLogger(__name__)
 
 from config.settings import TradingConfig
 from core.state import BotState
@@ -179,6 +182,102 @@ def auth_page():
     except Exception:
         pass
     return render_template("auth.html", login_url=login_url, authenticated=is_authenticated)
+
+
+@dashboard_bp.route("/api/option-chart")
+def option_chart():
+    """
+    Fetch OHLC candles for any NIFTY option strike on a given date.
+    Query params: strike (int), type (CE|PE), date (YYYY-MM-DD), interval (minute|5minute|day)
+    """
+    if not _broker:
+        return jsonify({"ok": False, "error": "Broker not available"}), 503
+
+    strike   = request.args.get("strike", type=int)
+    opt_type = (request.args.get("type", "CE") or "CE").upper()
+    date_str = request.args.get("date", "")
+    interval = request.args.get("interval", "minute")
+
+    if not strike:
+        return jsonify({"ok": False, "error": "strike is required"}), 400
+    if opt_type not in ("CE", "PE"):
+        return jsonify({"ok": False, "error": "type must be CE or PE"}), 400
+
+    try:
+        trade_date = datetime.date.fromisoformat(date_str) if date_str else datetime.date.today()
+    except ValueError:
+        return jsonify({"ok": False, "error": "Invalid date format"}), 400
+
+    try:
+        records = _broker.get_option_history(strike, opt_type, trade_date, interval)
+        candles = [
+            {
+                "time":  int(r["date"].timestamp()),
+                "open":  r["open"], "high": r["high"],
+                "low":   r["low"],  "close": r["close"],
+            }
+            for r in records
+        ]
+        # Build label
+        label = f"NIFTY {strike} {opt_type}"
+        return jsonify({"ok": True, "data": candles, "label": label})
+    except Exception as e:
+        if _state and _broker:
+            from execution.broker import is_kite_auth_error
+            if is_kite_auth_error(e):
+                _state.kite_auth_error = True
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@dashboard_bp.route("/api/nifty/history")
+def nifty_history():
+    """
+    Fetch NIFTY 50 candles for day / week / month view.
+    Query params:
+      interval = day | week | month
+      from     = YYYY-MM-DD  (default: 365 days ago)
+      to       = YYYY-MM-DD  (default: today)
+    """
+    if not _broker:
+        return jsonify({"ok": False, "error": "Broker not available"}), 503
+
+    interval = (request.args.get("interval", "day") or "day").lower()
+    _kite_interval_map = {"day": "day", "week": "week", "month": "month"}
+    kite_interval = _kite_interval_map.get(interval, "day")
+
+    today = datetime.date.today()
+    default_days = {"day": 365, "week": 730, "month": 1825}
+    default_from = today - datetime.timedelta(days=default_days.get(interval, 365))
+
+    try:
+        from_dt = datetime.date.fromisoformat(request.args.get("from", str(default_from)))
+        to_dt   = datetime.date.fromisoformat(request.args.get("to",   str(today)))
+    except ValueError:
+        return jsonify({"ok": False, "error": "Invalid date format"}), 400
+
+    try:
+        records = _broker.get_historical_data(
+            _trading_config.index_token,
+            f"{from_dt} 09:15:00",
+            f"{to_dt} 15:30:00",
+            kite_interval,
+            state=_state,
+        )
+        candles = [
+            {
+                "time":  int(r["date"].timestamp()),
+                "open":  r["open"], "high": r["high"],
+                "low":   r["low"],  "close": r["close"],
+            }
+            for r in records
+        ]
+        return jsonify({"ok": True, "data": candles, "interval": interval})
+    except Exception as e:
+        if _state:
+            from execution.broker import is_kite_auth_error
+            if is_kite_auth_error(e):
+                _state.kite_auth_error = True
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @dashboard_bp.route("/auth", methods=["POST"])

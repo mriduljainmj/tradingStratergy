@@ -547,6 +547,33 @@
         .dropdown-balance .db-amount { font-size: 16px; font-weight: 800; color: var(--text-main); font-family: monospace; }
         .dropdown-balance .db-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 
+        /* ── Kite Auth Error Banner ── */
+        .kite-auth-banner {
+            display: none; align-items: center; gap: 12px;
+            background: #fef2f2; border: 1px solid #fecaca;
+            border-radius: 8px; padding: 10px 16px; flex-shrink: 0;
+            animation: slideDown 0.3s ease;
+        }
+        @keyframes slideDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
+        .kite-auth-banner.visible { display: flex; }
+        .kite-auth-banner-icon { font-size: 18px; }
+        .kite-auth-banner-text { flex: 1; font-size: 12px; font-weight: 600; color: #991b1b; }
+        .kite-auth-banner-text span { font-weight: 400; color: #b91c1c; }
+        .kite-auth-btn { padding: 5px 14px; background: #DC2626; color: #fff; border: none; border-radius: 5px; font-size: 11px; font-weight: 700; cursor: pointer; text-decoration: none; white-space: nowrap; }
+        .kite-auth-btn:hover { opacity: 0.88; }
+        .kite-auth-dismiss { background: none; border: none; color: #b91c1c; font-size: 16px; cursor: pointer; padding: 0 4px; line-height: 1; }
+
+        /* ── Strike Selector in Options Header ── */
+        .strike-selector { display: flex; align-items: center; gap: 4px; }
+        .strike-adj { width: 20px; height: 20px; border-radius: 3px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-muted); font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; line-height: 1; padding: 0; }
+        .strike-adj:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+        .strike-display { font-size: 10px; font-weight: 700; color: var(--text-main); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 3px; padding: 2px 6px; cursor: pointer; white-space: nowrap; min-width: 64px; text-align: center; }
+        .strike-type-btn { font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 3px; border: none; cursor: pointer; transition: all 0.15s; }
+        .strike-type-btn.ce { background: rgba(41,98,255,0.12); color: #2962FF; }
+        .strike-type-btn.pe { background: rgba(242,54,69,0.12); color: #F23645; }
+        .strike-type-btn.ce.active { background: #2962FF; color: #fff; }
+        .strike-type-btn.pe.active { background: #F23645; color: #fff; }
+
         /* ── Chart loader overlay ── */
         .chart-loader-overlay {
             position: absolute; inset: 0; z-index: 40;
@@ -698,6 +725,17 @@
 
     <!-- Page Content -->
     <div class="page-content">
+
+      <!-- ── Kite Auth Error Banner ── -->
+      <div class="kite-auth-banner" id="kiteAuthBanner">
+          <span class="kite-auth-banner-icon">⚠</span>
+          <div class="kite-auth-banner-text">
+              Kite API Error — <span>Incorrect api_key or access_token.</span>
+              Your daily access token has expired or the server restarted.
+          </div>
+          <a class="kite-auth-btn" href="/profile#kiteSection">🔑 Re-enter Token</a>
+          <button class="kite-auth-dismiss" onclick="dismissAuthBanner()" title="Dismiss">✕</button>
+      </div>
 
       <!-- Settings Modal -->
       <div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this) closeSettings()">
@@ -1053,6 +1091,8 @@
                               <button class="tf-btn" onclick="setNiftyTf(15)">15m</button>
                               <button class="tf-btn" onclick="setNiftyTf(30)">30m</button>
                               <button class="tf-btn" onclick="setNiftyTf('D')">D</button>
+                              <button class="tf-btn" onclick="setNiftyTf('W')">W</button>
+                              <button class="tf-btn" onclick="setNiftyTf('Mo')">Mo</button>
                           </div>
                           <label class="fib-toggle" title="Toggle Fibonacci Levels">
                               <input type="checkbox" id="fibToggle" checked onchange="toggleFibLines(this.checked)">
@@ -1071,10 +1111,19 @@
 
               <div class="options-wrapper" id="optionsWrapper">
                   <div class="chart-header">
-                      <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+                      <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1; flex-wrap:wrap;">
                           <button class="collapse-btn" onclick="togglePanel('optionsWrapper')" style="margin-right:0; flex-shrink:0;">−</button>
                           <span class="ch-title" id="optLabel" style="white-space:nowrap;">OPTIONS</span>
                           <span id="optExpiryTag" style="display:none; color:var(--text-muted); font-size:10px; border:1px solid var(--border-color); padding:2px 7px; border-radius:3px; white-space:nowrap; flex-shrink:0;"></span>
+                          <!-- Strike selector -->
+                          <div class="strike-selector" id="strikeSelectorWrap" style="display:none;">
+                              <button class="strike-adj" onclick="adjustStrike(-1)" title="Lower strike">−</button>
+                              <span class="strike-display" id="strikeDisplay" title="Click to type strike">—</span>
+                              <button class="strike-adj" onclick="adjustStrike(+1)" title="Higher strike">+</button>
+                              <button class="strike-type-btn ce active" id="strikeCeBtn" onclick="setStrikeType('CE')">CE</button>
+                              <button class="strike-type-btn pe" id="strikePeBtn" onclick="setStrikeType('PE')">PE</button>
+                              <button onclick="loadAltStrikeChart()" style="padding:2px 7px; font-size:9px; font-weight:700; background:var(--accent-blue); color:#fff; border:none; border-radius:3px; cursor:pointer; white-space:nowrap;">Load</button>
+                          </div>
                           <button class="sync-btn synced" id="syncBtn" onclick="toggleOptSync()" title="Unlink from NIFTY timeframe" style="flex-shrink:0;">⛓</button>
                           <div class="opt-tf-wrap" id="optTfWrap">
                               <div class="tf-group" id="optTfGroup">
@@ -1338,7 +1387,10 @@
         let rawOptCandles   = [];
         let rawMarkers      = [];
 
-        const TF_SECS = { 1: 60, 5: 300, 15: 900, 30: 1800, D: 86400 };
+        const TF_SECS = { 1: 60, 5: 300, 15: 900, 30: 1800, D: 86400, W: 604800, Mo: 2592000 };
+        // Multi-day TFs that need server-side historical fetch (cannot be aggregated from intraday)
+        const TF_NEEDS_FETCH = new Set(['D', 'W', 'Mo']);
+        let rawNiftyDayCandles = []; // fetched daily/weekly/monthly candles (separate from intraday)
 
         function paintOptionsChart(tf) {
             if (rawOptCandles.length === 0) {
@@ -1386,20 +1438,64 @@
 
         function setActiveTfBtn(groupId, tf) {
             document.querySelectorAll(`#${groupId} .tf-btn`).forEach(btn => {
-                btn.classList.toggle('active', btn.textContent === (tf === 'D' ? 'D' : tf + 'm'));
+                const label = btn.textContent.trim();
+                const match = tf === 'D' ? label === 'D'
+                            : tf === 'W' ? label === 'W'
+                            : tf === 'Mo' ? label === 'Mo'
+                            : label === tf + 'm';
+                btn.classList.toggle('active', match);
             });
         }
 
         function setNiftyTf(tf) {
             currentTf = tf;
             setActiveTfBtn('niftyTfGroup', tf);
-            candleSeries.setData(aggregateCandles(rawNiftyCandles, tf));
-            candleSeries.setMarkers(snapMarkers(rawMarkers, tf));
-            chart.timeScale().fitContent();
-            if (optSynced && rawOptCandles.length > 0) {
-                currentOptTf = tf;
-                paintOptionsChart(tf);
-                optChart.timeScale().fitContent();
+
+            if (TF_NEEDS_FETCH.has(tf)) {
+                // D / W / Mo: fetch multi-day historical data from the server
+                fetchNiftyHistory(tf);
+            } else {
+                // 1m / 5m / 15m / 30m: aggregate from in-memory intraday candles
+                rawNiftyDayCandles = []; // discard any previously fetched day data
+                candleSeries.setData(aggregateCandles(rawNiftyCandles, tf));
+                candleSeries.setMarkers(snapMarkers(rawMarkers, tf));
+                chart.timeScale().fitContent();
+                // Clear the "Daily/Weekly/Monthly View" badge if coming from multi-day TF
+                // (keep a user-set date badge that was set by runBacktest)
+                const badge = document.getElementById('viewingDateBadge');
+                if (badge && badge.textContent.includes('View')) {
+                    badge.style.display = 'none';
+                }
+                if (optSynced && rawOptCandles.length > 0) {
+                    currentOptTf = tf;
+                    paintOptionsChart(tf);
+                    optChart.timeScale().fitContent();
+                }
+            }
+        }
+
+        async function fetchNiftyHistory(tf) {
+            const intervalMap = { D: 'day', W: 'week', Mo: 'month' };
+            const interval = intervalMap[tf] || 'day';
+            try {
+                const r = await fetch(`/api/nifty/history?interval=${interval}`);
+                const d = await r.json();
+                if (d.ok && d.data.length) {
+                    rawNiftyDayCandles = d.data;
+                    candleSeries.setData(d.data);
+                    candleSeries.setMarkers([]);
+                    chart.timeScale().fitContent();
+                    // Show viewing badge
+                    document.getElementById('viewingDateBadge').textContent =
+                        tf === 'Mo' ? '📅 Monthly View' :
+                        tf === 'W'  ? '📅 Weekly View'  : '📅 Daily View';
+                    document.getElementById('viewingDateBadge').style.display = '';
+                } else if (!d.ok) {
+                    console.warn('NIFTY history fetch failed:', d.error);
+                    if (d.error && d.error.toLowerCase().includes('token')) showAuthBanner();
+                }
+            } catch (e) {
+                console.warn('fetchNiftyHistory error:', e);
             }
         }
 
@@ -1717,6 +1813,23 @@
 
                     // ── Balance in profile dropdown ────────────────────────────
                     updateBalanceDisplay(state);
+
+                    // ── Kite auth error → show banner ──────────────────────────
+                    if (state.kite_auth_error) showAuthBanner();
+
+                    // ── Strike selector: init from live option label ────────────
+                    const liveMode = (state.app_mode === 'LIVE' || state.app_mode === 'PAPER');
+                    const optLabel = state.option_label || '';
+                    // parse strike from label e.g. "NIFTY 24000 CE"
+                    const liveMatch = optLabel.match(/(\d{4,6})\s+(CE|PE)/i);
+                    if (liveMode && liveMatch) {
+                        const liveStrike   = parseInt(liveMatch[1]);
+                        const livePosType  = liveMatch[2].toUpperCase() === 'CE' ? 'CALL' : 'PUT';
+                        const today = new Date().toISOString().split('T')[0];
+                        if (liveStrike !== _tradeStrike) initStrikeSelector(liveStrike, livePosType, today);
+                    } else if (!liveMode || !optLabel) {
+                        document.getElementById('strikeSelectorWrap').style.display = 'none';
+                    }
                 });
         }
 
@@ -1873,6 +1986,13 @@
 
             updateOptionsChart(data);
             if ((data.option_prices || []).length > 0) optChart.timeScale().fitContent();
+
+            // ── Strike selector: init from backtest result ──────────────────
+            if (data.strike && data.trade_taken) {
+                initStrikeSelector(data.strike, data.position_type, data.date);
+            } else {
+                document.getElementById('strikeSelectorWrap').style.display = 'none';
+            }
         }
 
         function displayRangeResult(data) {
@@ -2115,6 +2235,81 @@
 
         function closeTradeNotif() {
             document.getElementById('tradeNotifModal').style.display = 'none';
+        }
+
+        // ── Kite Auth Error Banner ─────────────────────────────────────────────
+        let _authBannerDismissed = false;
+        function showAuthBanner() {
+            if (_authBannerDismissed) return;
+            document.getElementById('kiteAuthBanner').classList.add('visible');
+        }
+        function dismissAuthBanner() {
+            _authBannerDismissed = true;
+            document.getElementById('kiteAuthBanner').classList.remove('visible');
+        }
+
+        // ── Strike Selector (Alt Option Charts) ───────────────────────────────
+        let _altStrike    = 0;    // 0 = use trade strike
+        let _altStrikeType = 'CE';
+        let _tradeStrike  = 0;    // set from state/trade
+        let _strikeSpacing = 50;  // NIFTY default spacing (50-point strikes)
+        let _lastTradeDate = '';
+
+        function initStrikeSelector(strike, posType, date) {
+            if (!strike) return;
+            _tradeStrike   = strike;
+            _altStrike     = strike;
+            _altStrikeType = posType === 'PUT' ? 'PE' : 'CE';
+            _lastTradeDate = date || '';
+            _strikeSpacing = 50; // NIFTY
+
+            document.getElementById('strikeSelectorWrap').style.display = 'flex';
+            updateStrikeDisplay();
+        }
+
+        function updateStrikeDisplay() {
+            document.getElementById('strikeDisplay').textContent =
+                _altStrike ? _altStrike.toString() : '—';
+            document.getElementById('strikeCeBtn').classList.toggle('active', _altStrikeType === 'CE');
+            document.getElementById('strikePeBtn').classList.toggle('active', _altStrikeType === 'PE');
+        }
+
+        function adjustStrike(delta) {
+            if (!_altStrike) return;
+            _altStrike = _altStrike + (delta * _strikeSpacing);
+            updateStrikeDisplay();
+        }
+
+        function setStrikeType(t) {
+            _altStrikeType = t;
+            updateStrikeDisplay();
+        }
+
+        async function loadAltStrikeChart() {
+            if (!_altStrike) return;
+            const date = _lastTradeDate || new Date().toISOString().split('T')[0];
+            try {
+                const url = `/api/option-chart?strike=${_altStrike}&type=${_altStrikeType}&date=${date}`;
+                const r   = await fetch(url);
+                const d   = await r.json();
+                if (!d.ok) { alert('Could not load chart: ' + (d.error || 'unknown error')); return; }
+                if (!d.data.length) { alert('No data for ' + _altStrike + ' ' + _altStrikeType + ' on ' + date); return; }
+
+                // Show in the options chart panel
+                const wrapper = document.getElementById('optionsWrapper');
+                wrapper.classList.add('visible');
+                document.getElementById('optLabel').innerText = d.label || (_altStrike + ' ' + _altStrikeType);
+                rawOptCandles = d.data;
+                optSeries.setData(d.data);
+                optSeries.setMarkers([]);
+                optChart.timeScale().fitContent();
+
+                // Clear entry/target lines for alt strikes
+                if (optTargetLine) { try { optSeries.removePriceLine(optTargetLine); } catch(e){} optTargetLine = null; }
+                if (optEntryLine)  { try { optSeries.removePriceLine(optEntryLine);  } catch(e){} optEntryLine  = null; }
+            } catch (e) {
+                console.error('loadAltStrikeChart error:', e);
+            }
         }
 
         // Hook into pollData — call after markers arrive

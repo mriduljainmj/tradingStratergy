@@ -16,7 +16,7 @@ from dashboard.routes import (
     register_broker,
     register_start_engine,
 )
-from dashboard.auth_routes      import auth_bp, _seed_default_strategy
+from dashboard.auth_routes      import auth_bp, _seed_default_strategy, register_broker_ref, register_state_ref
 from dashboard.analytics_routes import analytics_bp
 from dashboard.strategy_routes  import strategy_bp
 from db.database import init_db, SessionLocal
@@ -90,6 +90,8 @@ def create_app(state: BotState, mode_switcher=None, backtester=None,
         register_trading_config(trading_config)
     if broker:
         register_broker(broker)
+        register_broker_ref(broker)   # also expose to auth_routes for kite token ops
+    register_state_ref(state)         # expose state to auth_routes
     if start_engine_fn:
         register_start_engine(start_engine_fn, initial_mode)
 

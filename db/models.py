@@ -26,10 +26,20 @@ class User(Base):
     trade_confirm_modal = Column(Boolean,     default=True)    # show modal on trade exec
     broker_id           = Column(String(100), nullable=True)   # Zerodha client ID etc.
 
+    # Kite session persistence (serverless-safe; token is Fernet-encrypted)
+    kite_api_key_stored   = Column(String(100), nullable=True)  # user's api_key
+    kite_access_token_enc = Column(Text,        nullable=True)  # encrypted access token
+    kite_token_date       = Column(Date,        nullable=True)  # token valid for this date
+
     trades     = relationship("Trade",    back_populates="user", lazy="dynamic")
     strategies = relationship("Strategy", back_populates="user", lazy="dynamic")
 
     def to_dict(self):
+        today = datetime.date.today()
+        has_kite_token = bool(
+            self.kite_access_token_enc
+            and self.kite_token_date == today
+        )
         return {
             "id":                 self.id,
             "email":              self.email,
@@ -40,6 +50,9 @@ class User(Base):
             "trade_confirm_modal": self.trade_confirm_modal if self.trade_confirm_modal is not None else True,
             "broker_id":          self.broker_id or "",
             "created_at":         self.created_at.isoformat() if self.created_at else None,
+            "kite_api_key_stored": self.kite_api_key_stored or "",
+            "has_kite_token":     has_kite_token,
+            "kite_token_date":    self.kite_token_date.isoformat() if self.kite_token_date else None,
         }
 
 
@@ -49,6 +62,7 @@ class Trade(Base):
     id            = Column(Integer, primary_key=True)
     user_id       = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     date          = Column(Date,    nullable=False, index=True)
+    trade_mode    = Column(String(10), default="PAPER", index=True)   # PAPER | LIVE
     symbol        = Column(String(50))
     position_type = Column(String(10))   # CALL | PUT
     entry_time    = Column(DateTime)
@@ -71,6 +85,7 @@ class Trade(Base):
         return {
             "id":            self.id,
             "date":          self.date.isoformat() if self.date else None,
+            "trade_mode":    self.trade_mode or "PAPER",
             "symbol":        self.symbol,
             "position_type": self.position_type,
             "entry_time":    self.entry_time.isoformat() if self.entry_time else None,

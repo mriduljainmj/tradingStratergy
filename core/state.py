@@ -29,6 +29,9 @@ class BotState:
     # --- ACCOUNT ---
     balance: float = 0.0             # available cash balance (fetched from Kite or paper)
 
+    # --- KITE AUTH ---
+    kite_auth_error: bool = False    # True when Kite returns "Incorrect api_key/access_token"
+
     def __post_init__(self):
         # Give paper mode a default simulated balance on first creation
         if self.app_mode == "PAPER" and self.balance == 0.0:
@@ -64,6 +67,7 @@ class BotState:
         self.brokerage_breakdown = {}
         self.live_pnl = 0.0
         self.live_option_price = 0.0
+        self.kite_auth_error = False
         # Keep existing balance when switching within live modes; seed paper default
         if new_mode == "PAPER" and self.balance == 0.0:
             self.balance = 100_000.0
@@ -98,6 +102,7 @@ class BotState:
             "live_pnl": self.live_pnl,
             "live_option_price": self.live_option_price,
             "balance": self.balance,
+            "kite_auth_error": self.kite_auth_error,
             "option_prices": list(self.option_prices),
             "option_label": self.option_label,
             "option_expiry": self.option_expiry,

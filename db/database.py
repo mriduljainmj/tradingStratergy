@@ -61,11 +61,15 @@ def _migrate_add_columns():
     bool_true = "TRUE" if not _is_sqlite else "1"
 
     _new_cols = [
-        ("users", "display_name",        "VARCHAR(150)"),
-        ("users", "bio",                 "TEXT"),
-        ("users", "photo_base64",        "TEXT"),
-        ("users", "trade_confirm_modal", f"BOOLEAN DEFAULT {bool_true}"),
-        ("users", "broker_id",           "VARCHAR(100)"),
+        ("users",  "display_name",           "VARCHAR(150)"),
+        ("users",  "bio",                    "TEXT"),
+        ("users",  "photo_base64",           "TEXT"),
+        ("users",  "trade_confirm_modal",    f"BOOLEAN DEFAULT {bool_true}"),
+        ("users",  "broker_id",              "VARCHAR(100)"),
+        ("users",  "kite_api_key_stored",    "VARCHAR(100)"),
+        ("users",  "kite_access_token_enc",  "TEXT"),
+        ("users",  "kite_token_date",        "DATE"),
+        ("trades", "trade_mode",             "VARCHAR(10) DEFAULT 'PAPER'"),
     ]
 
     from sqlalchemy import text as _text

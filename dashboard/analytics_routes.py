@@ -10,6 +10,8 @@ from db.models import Trade
 
 analytics_bp = Blueprint("analytics", __name__)
 
+VALID_MODES = {"PAPER", "LIVE", "ALL"}
+
 
 def _uid():
     return int(get_jwt_identity())
@@ -17,6 +19,13 @@ def _uid():
 
 def _bad(msg, code=400):
     return jsonify({"ok": False, "error": msg}), code
+
+
+def _mode_filter(q, mode: str):
+    """Apply a trade_mode filter to a SQLAlchemy query."""
+    if mode and mode.upper() in ("PAPER", "LIVE"):
+        q = q.filter(Trade.trade_mode == mode.upper())
+    return q
 
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
@@ -41,9 +50,14 @@ def save_trade():
             except ValueError:
                 pass
 
+        mode = (data.get("trade_mode") or "PAPER").upper()
+        if mode not in ("PAPER", "LIVE"):
+            mode = "PAPER"
+
         trade = Trade(
             user_id       = _uid(),
             date          = date_val,
+            trade_mode    = mode,
             symbol        = data.get("symbol", "NIFTY"),
             position_type = data.get("position_type"),
             entry_time    = _parse_dt(data.get("entry_time")),
@@ -84,14 +98,16 @@ def _parse_dt(val):
 @analytics_bp.route("/api/trades")
 @jwt_required()
 def list_trades():
-    page     = max(1, int(request.args.get("page", 1)))
-    per_page = min(100, int(request.args.get("per_page", 20)))
-    from_dt  = request.args.get("from")
-    to_dt    = request.args.get("to")
+    page      = max(1, int(request.args.get("page", 1)))
+    per_page  = min(100, int(request.args.get("per_page", 20)))
+    from_dt   = request.args.get("from")
+    to_dt     = request.args.get("to")
+    mode      = request.args.get("mode", "ALL").upper()
 
     db = SessionLocal()
     try:
         q = db.query(Trade).filter_by(user_id=_uid())
+        q = _mode_filter(q, mode)
         if from_dt:
             q = q.filter(Trade.date >= datetime.date.fromisoformat(from_dt))
         if to_dt:
@@ -118,10 +134,12 @@ def list_trades():
 def summary():
     from_dt = request.args.get("from")
     to_dt   = request.args.get("to")
+    mode    = request.args.get("mode", "ALL").upper()
 
     db = SessionLocal()
     try:
         q = db.query(Trade).filter_by(user_id=_uid())
+        q = _mode_filter(q, mode)
         if from_dt:
             q = q.filter(Trade.date >= datetime.date.fromisoformat(from_dt))
         if to_dt:
@@ -129,67 +147,69 @@ def summary():
         trades = q.order_by(Trade.date).all()
 
         if not trades:
-            return jsonify({"ok": True, "data": _empty_summary()})
+            empty = _empty_summary()
+            return jsonify({"ok": True, "data": {}, **empty})
 
-        pnls        = [t.net_pnl for t in trades if t.net_pnl is not None]
-        wins        = [p for p in pnls if p > 0]
-        losses      = [p for p in pnls if p <= 0]
-        total       = len(pnls)
-        win_rate    = round(len(wins) / total * 100, 2) if total else 0
-        gross_sum   = sum(t.gross_pnl or 0 for t in trades)
-        charges_sum = sum(t.charges   or 0 for t in trades)
-        net_sum     = sum(pnls)
-        avg_win     = round(sum(wins) / len(wins), 2) if wins else 0
-        avg_loss    = round(sum(losses) / len(losses), 2) if losses else 0
-
-        win_total  = sum(wins)
-        loss_total = abs(sum(losses))
-        profit_factor = round(win_total / loss_total, 2) if loss_total else float("inf")
-
-        # Max drawdown
-        peak = cumulative = 0
-        max_dd = 0
-        for p in pnls:
-            cumulative += p
-            peak = max(peak, cumulative)
-            dd = cumulative - peak
-            max_dd = min(max_dd, dd)
-
-        max_dd_pct = round(max_dd / peak * 100, 2) if peak > 0 else 0
-
-        # Sharpe (annualised, using daily P&L)
-        daily: dict[datetime.date, float] = defaultdict(float)
-        for t in trades:
-            if t.date and t.net_pnl is not None:
-                daily[t.date] += t.net_pnl
-        daily_returns = list(daily.values())
-        sharpe = 0.0
-        if len(daily_returns) > 1:
-            mean = sum(daily_returns) / len(daily_returns)
-            variance = sum((r - mean) ** 2 for r in daily_returns) / (len(daily_returns) - 1)
-            std = math.sqrt(variance)
-            sharpe = round((mean / std) * math.sqrt(252), 2) if std else 0
-
-        return jsonify({"ok": True, "data": {
-            "total_trades":   total,
-            "winning_trades": len(wins),
-            "losing_trades":  len(losses),
-            "win_rate":       win_rate,
-            "total_net_pnl":  round(net_sum, 2),
-            "total_gross_pnl": round(gross_sum, 2),
-            "total_charges":  round(charges_sum, 2),
-            "avg_win":        avg_win,
-            "avg_loss":       avg_loss,
-            "profit_factor":  profit_factor,
-            "max_drawdown":   round(max_dd, 2),
-            "max_drawdown_pct": max_dd_pct,
-            "best_trade":     round(max(pnls), 2) if pnls else 0,
-            "worst_trade":    round(min(pnls), 2) if pnls else 0,
-            "avg_trade":      round(net_sum / total, 2) if total else 0,
-            "sharpe_ratio":   sharpe,
-        }})
+        return jsonify({"ok": True, "data": {}, **_compute_summary(trades)})
     finally:
         db.close()
+
+
+def _compute_summary(trades: list) -> dict:
+    pnls        = [t.net_pnl for t in trades if t.net_pnl is not None]
+    wins        = [p for p in pnls if p > 0]
+    losses      = [p for p in pnls if p <= 0]
+    total       = len(pnls)
+    win_rate    = round(len(wins) / total * 100, 2) if total else 0
+    gross_sum   = sum(t.gross_pnl or 0 for t in trades)
+    charges_sum = sum(t.charges   or 0 for t in trades)
+    net_sum     = sum(pnls)
+    avg_win     = round(sum(wins)   / len(wins),   2) if wins   else 0
+    avg_loss    = round(sum(losses) / len(losses), 2) if losses else 0
+
+    win_total    = sum(wins)
+    loss_total   = abs(sum(losses))
+    profit_factor = round(win_total / loss_total, 2) if loss_total else float("inf")
+
+    # Max drawdown
+    peak = cumulative = max_dd = 0
+    for p in pnls:
+        cumulative += p
+        peak = max(peak, cumulative)
+        max_dd = min(max_dd, cumulative - peak)
+
+    max_dd_pct = round(max_dd / peak * 100, 2) if peak > 0 else 0
+
+    # Sharpe (annualised daily)
+    daily: dict[datetime.date, float] = defaultdict(float)
+    for t in trades:
+        if t.date and t.net_pnl is not None:
+            daily[t.date] += t.net_pnl
+    daily_returns = list(daily.values())
+    sharpe = 0.0
+    if len(daily_returns) > 1:
+        mean = sum(daily_returns) / len(daily_returns)
+        std  = math.sqrt(sum((r - mean) ** 2 for r in daily_returns) / (len(daily_returns) - 1))
+        sharpe = round((mean / std) * math.sqrt(252), 2) if std else 0
+
+    return {
+        "total_trades":    total,
+        "winning_trades":  len(wins),
+        "losing_trades":   len(losses),
+        "win_rate":        win_rate,
+        "total_net_pnl":   round(net_sum, 2),
+        "total_gross_pnl": round(gross_sum, 2),
+        "total_charges":   round(charges_sum, 2),
+        "avg_win":         avg_win,
+        "avg_loss":        avg_loss,
+        "profit_factor":   profit_factor,
+        "max_drawdown":    round(max_dd, 2),
+        "max_drawdown_pct": max_dd_pct,
+        "best_trade":      round(max(pnls), 2) if pnls else 0,
+        "worst_trade":     round(min(pnls), 2) if pnls else 0,
+        "avg_trade":       round(net_sum / total, 2) if total else 0,
+        "sharpe_ratio":    sharpe,
+    }
 
 
 def _empty_summary():
@@ -207,10 +227,12 @@ def _empty_summary():
 def equity_curve():
     from_dt = request.args.get("from")
     to_dt   = request.args.get("to")
+    mode    = request.args.get("mode", "ALL").upper()
 
     db = SessionLocal()
     try:
         q = db.query(Trade).filter_by(user_id=_uid())
+        q = _mode_filter(q, mode)
         if from_dt:
             q = q.filter(Trade.date >= datetime.date.fromisoformat(from_dt))
         if to_dt:
@@ -242,9 +264,12 @@ def equity_curve():
 @analytics_bp.route("/api/analytics/monthly")
 @jwt_required()
 def monthly():
-    db = SessionLocal()
+    mode = request.args.get("mode", "ALL").upper()
+    db   = SessionLocal()
     try:
-        trades = db.query(Trade).filter_by(user_id=_uid()).order_by(Trade.date).all()
+        q = db.query(Trade).filter_by(user_id=_uid())
+        q = _mode_filter(q, mode)
+        trades = q.order_by(Trade.date).all()
 
         months: dict[str, dict] = defaultdict(lambda: {"trades":0,"wins":0,"net_pnl":0.0})
         for t in trades:
@@ -265,6 +290,31 @@ def monthly():
                 "net_pnl":  round(m["net_pnl"], 2),
                 "win_rate": round(m["wins"] / m["trades"] * 100, 1) if m["trades"] else 0,
             })
+        return jsonify({"ok": True, "data": result})
+    finally:
+        db.close()
+
+
+# ── Side-by-side comparison (Paper vs Live) ───────────────────────────────────
+
+@analytics_bp.route("/api/analytics/compare")
+@jwt_required()
+def compare():
+    """Returns summary stats for PAPER and LIVE side-by-side."""
+    from_dt = request.args.get("from")
+    to_dt   = request.args.get("to")
+    db      = SessionLocal()
+    try:
+        result = {}
+        for mode in ("PAPER", "LIVE"):
+            q = db.query(Trade).filter_by(user_id=_uid())
+            q = _mode_filter(q, mode)
+            if from_dt:
+                q = q.filter(Trade.date >= datetime.date.fromisoformat(from_dt))
+            if to_dt:
+                q = q.filter(Trade.date <= datetime.date.fromisoformat(to_dt))
+            trades = q.order_by(Trade.date).all()
+            result[mode.lower()] = _compute_summary(trades) if trades else _empty_summary()
         return jsonify({"ok": True, "data": result})
     finally:
         db.close()

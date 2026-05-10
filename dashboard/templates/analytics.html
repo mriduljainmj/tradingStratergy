@@ -19,11 +19,13 @@
             --warning-yellow: #D97706;
             --sidebar-bg:     #1A1D2E;
             --sidebar-text:   #A9B1D6;
+            --paper-color:    #D97706;
+            --live-color:     #059669;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg-base); color: var(--text-main); display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
 
-        /* ═══ SIDEBAR (shared) ═══ */
+        /* ═══ SIDEBAR ═══ */
         .sidebar { width: 220px; background: var(--sidebar-bg); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.22s cubic-bezier(0.4,0,0.2,1); overflow: hidden; z-index: 100; }
         .sidebar.collapsed { width: 52px; }
         .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 52px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
@@ -42,7 +44,7 @@
         .sidebar-toggle { display: flex; align-items: center; justify-content: center; padding: 10px; background: none; border: none; border-top: 1px solid rgba(255,255,255,0.07); color: rgba(169,177,214,0.5); cursor: pointer; font-size: 13px; transition: color 0.15s; flex-shrink: 0; width: 100%; }
         .sidebar-toggle:hover { color: #fff; }
 
-        /* ═══ MAIN AREA (shared) ═══ */
+        /* ═══ MAIN AREA ═══ */
         .main-wrap { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; min-width: 0; }
         .topbar { height: 52px; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
         .topbar-left { display: flex; align-items: center; gap: 12px; }
@@ -56,24 +58,42 @@
         .user-menu { position: relative; }
         .user-btn { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 5px 10px 5px 6px; border-radius: 8px; cursor: pointer; transition: all 0.15s; color: var(--text-main); }
         .user-btn:hover { border-color: var(--accent-blue); background: #eff6ff; }
-        .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; overflow: hidden; }
+        .user-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
         .user-name { font-size: 12px; font-weight: 600; color: var(--text-main); }
         .user-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
         .user-menu.open .user-chevron { transform: rotate(180deg); }
         .user-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); width: 220px; z-index: 500; overflow: hidden; }
         .user-menu.open .user-dropdown { display: block; }
         .dropdown-header { padding: 14px 16px; background: linear-gradient(135deg, rgba(37,99,235,0.06), rgba(124,58,237,0.06)); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 12px; }
-        .dropdown-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .dropdown-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0; overflow: hidden; }
+        .dropdown-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
         .dropdown-name { font-size: 13px; font-weight: 700; color: var(--text-main); }
         .dropdown-email { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
         .dropdown-divider { height: 1px; background: var(--border-color); }
         .dropdown-section { padding: 6px 8px; }
-        .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-muted); text-align: left; transition: all 0.15s; }
+        .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-muted); text-align: left; transition: all 0.15s; text-decoration: none; }
         .dropdown-item:hover { background: var(--bg-card); color: var(--text-main); }
         .dropdown-item.danger:hover { background: #fef2f2; color: #DC2626; }
 
         /* ═══ PAGE CONTENT ═══ */
         .page-content { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+        /* ── Mode Tabs ── */
+        .mode-tabs { display: flex; align-items: center; gap: 6px; margin-bottom: 16px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; padding: 8px 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); flex-wrap: wrap; }
+        .mode-tab { display: flex; align-items: center; gap: 6px; padding: 8px 18px; border-radius: 7px; border: 1.5px solid transparent; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.18s; background: none; color: var(--text-muted); white-space: nowrap; }
+        .mode-tab:hover { background: var(--bg-card); color: var(--text-main); }
+        .mode-tab.active-all    { background: rgba(37,99,235,0.1);  border-color: rgba(37,99,235,0.35);  color: var(--accent-blue); }
+        .mode-tab.active-paper  { background: rgba(217,119,6,0.1);  border-color: rgba(217,119,6,0.35);  color: var(--paper-color); }
+        .mode-tab.active-live   { background: rgba(5,150,105,0.1);  border-color: rgba(5,150,105,0.35);  color: var(--live-color); }
+        .mode-tab.active-compare { background: rgba(124,58,237,0.1); border-color: rgba(124,58,237,0.35); color: #7c3aed; }
+        .mode-badge { display: inline-flex; align-items: center; justify-content: center; width: 8px; height: 8px; border-radius: 50%; }
+        .badge-all    { background: var(--accent-blue); }
+        .badge-paper  { background: var(--paper-color); }
+        .badge-live   { background: var(--live-color); }
+        .badge-compare { background: #7c3aed; }
+        .tab-sep { width: 1px; height: 20px; background: var(--border-color); margin: 0 2px; }
+        .mode-label { margin-left: auto; font-size: 11px; color: var(--text-muted); font-weight: 500; padding: 4px 10px; border-radius: 5px; background: var(--bg-card); border: 1px solid var(--border-color); }
 
         /* ── Filters ── */
         .filters { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
@@ -87,18 +107,21 @@
 
         /* ── Stat cards ── */
         .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
-        .stat-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: box-shadow 0.15s; }
+        .stat-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); transition: box-shadow 0.15s; position: relative; }
         .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
         .stat-card .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 8px; }
         .stat-card .val { font-size: 22px; font-weight: 700; color: var(--text-main); }
         .stat-card .sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+        .stat-card.paper-theme { border-top: 3px solid var(--paper-color); }
+        .stat-card.live-theme  { border-top: 3px solid var(--live-color); }
         .green { color: var(--up-green); }
         .red   { color: var(--down-red); }
         .blue  { color: var(--accent-blue); }
+        .orange { color: var(--paper-color); }
 
         /* ── Chart card ── */
         .chart-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-        .chart-card h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 12px; }
+        .chart-card h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
         #equityChart { width: 100%; height: 260px; }
 
         /* ── Tables ── */
@@ -118,11 +141,52 @@
         .pagination span { font-size: 12px; color: var(--text-muted); }
         .empty { text-align: center; padding: 40px; color: var(--text-muted); font-size: 13px; }
 
+        /* ── Compare view ── */
+        #compareView { display: none; }
+        #compareView.visible { display: block; }
+        .compare-header { display: flex; gap: 12px; margin-bottom: 16px; }
+        .compare-col-label { flex: 1; text-align: center; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 800; letter-spacing: 0.04em; }
+        .compare-col-label.paper { background: rgba(217,119,6,0.1); color: var(--paper-color); border: 1.5px solid rgba(217,119,6,0.3); }
+        .compare-col-label.live  { background: rgba(5,150,105,0.1);  color: var(--live-color);  border: 1.5px solid rgba(5,150,105,0.3); }
+        .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+        .compare-stat-block { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .compare-stat-block.paper-block { border-top: 3px solid var(--paper-color); }
+        .compare-stat-block.live-block  { border-top: 3px solid var(--live-color); }
+        .compare-stat-block .block-title { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em; padding: 10px 16px 6px; }
+        .compare-stat-block.paper-block .block-title { color: var(--paper-color); }
+        .compare-stat-block.live-block  .block-title { color: var(--live-color); }
+        .compare-stat-item { display: flex; align-items: center; justify-content: space-between; padding: 9px 16px; border-bottom: 1px solid var(--border-color); font-size: 12px; }
+        .compare-stat-item:last-child { border-bottom: none; }
+        .compare-stat-item .csi-label { color: var(--text-muted); font-weight: 500; }
+        .compare-stat-item .csi-val { font-weight: 700; color: var(--text-main); }
+        .compare-equity { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+        .compare-equity-card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .compare-equity-card h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 10px; }
+        .compare-equity-card.paper-card { border-top: 3px solid var(--paper-color); }
+        .compare-equity-card.paper-card h3 { color: var(--paper-color); }
+        .compare-equity-card.live-card  { border-top: 3px solid var(--live-color); }
+        .compare-equity-card.live-card  h3 { color: var(--live-color); }
+        #compareEquityPaper,#compareEquityLive { width: 100%; height: 200px; }
+
+        /* ── Stat header strip ── */
+        .stats-mode-banner { display: none; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; }
+        .stats-mode-banner.paper { display: flex; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); color: var(--paper-color); }
+        .stats-mode-banner.live  { display: flex; background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.2); color: var(--live-color); }
+        .stats-mode-banner.all   { display: flex; background: rgba(37,99,235,0.06);  border: 1px solid rgba(37,99,235,0.15);  color: var(--accent-blue); }
+
+        /* ── Trade mode badge in table ── */
+        .mode-pill { display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px; }
+        .mode-pill.paper { background: rgba(217,119,6,0.12); color: var(--paper-color); }
+        .mode-pill.live  { background: rgba(5,150,105,0.12); color: var(--live-color); }
+
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
+        @media (max-width: 900px) {
+            .compare-grid, .compare-equity { grid-template-columns: 1fr; }
+        }
         @media (max-width: 768px) {
             .sidebar { position: fixed; left: 0; top: 0; height: 100vh; z-index: 200; }
             .sidebar.collapsed { transform: translateX(-100%); width: 220px; }
@@ -130,6 +194,8 @@
             .stat-grid { grid-template-columns: 1fr 1fr; }
             .stat-card .val { font-size: 18px; }
             #equityChart { height: 200px; }
+            .mode-tabs { gap: 4px; }
+            .mode-tab { padding: 7px 12px; font-size: 12px; }
         }
     </style>
 </head>
@@ -152,6 +218,10 @@
         <a href="/strategy-builder" class="nav-item">
             <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
         </a>
+        <div class="nav-section-label">Account</div>
+        <a href="/profile" class="nav-item">
+            <span class="nav-icon">👤</span><span class="nav-text">Profile</span>
+        </a>
     </nav>
     <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">◀</button>
 </aside>
@@ -163,7 +233,7 @@
             <button class="hamburger" onclick="toggleSidebar()">☰</button>
             <div>
                 <div class="topbar-title">Analytics</div>
-                <div class="topbar-sub">Trade performance &amp; history</div>
+                <div class="topbar-sub" id="topbarSub">Trade performance &amp; history</div>
             </div>
         </div>
         <div class="topbar-right">
@@ -185,6 +255,7 @@
                     <div class="dropdown-section">
                         <a class="dropdown-item" href="/">📊&nbsp; Dashboard</a>
                         <a class="dropdown-item" href="/strategy-builder">⚡&nbsp; Strategies</a>
+                        <a class="dropdown-item" href="/profile">👤&nbsp; Profile</a>
                     </div>
                     <div class="dropdown-divider"></div>
                     <div class="dropdown-section">
@@ -196,8 +267,28 @@
     </header>
 
     <div class="page-content">
-        <!-- Filters -->
-        <div class="filters">
+
+        <!-- ── Mode Tabs ── -->
+        <div class="mode-tabs">
+            <button class="mode-tab" id="tab-all" onclick="switchMode('all')">
+                <span class="mode-badge badge-all"></span> All Trades
+            </button>
+            <div class="tab-sep"></div>
+            <button class="mode-tab" id="tab-paper" onclick="switchMode('paper')">
+                📋 Paper Trading
+            </button>
+            <button class="mode-tab" id="tab-live" onclick="switchMode('live')">
+                ⚡ Live Trading
+            </button>
+            <div class="tab-sep"></div>
+            <button class="mode-tab" id="tab-compare" onclick="switchMode('compare')">
+                🔄 Compare
+            </button>
+            <span class="mode-label" id="modeLabelBadge">All Trades</span>
+        </div>
+
+        <!-- ── Filters (hidden in compare mode) ── -->
+        <div class="filters" id="filtersBar">
             <label>From</label>
             <input type="date" id="fromDate">
             <label>To</label>
@@ -206,67 +297,136 @@
             <button class="btn-ghost" onclick="clearDates()">Clear</button>
         </div>
 
-        <!-- Stat cards -->
-        <div class="stat-grid" id="statGrid">
-            <div class="stat-card"><div class="lbl">Total P&amp;L</div><div class="val" id="s-pnl">—</div></div>
-            <div class="stat-card"><div class="lbl">Win Rate</div><div class="val" id="s-wr">—</div></div>
-            <div class="stat-card"><div class="lbl">Total Trades</div><div class="val blue" id="s-tt">—</div></div>
-            <div class="stat-card"><div class="lbl">Profit Factor</div><div class="val" id="s-pf">—</div></div>
-            <div class="stat-card"><div class="lbl">Max Drawdown</div><div class="val red" id="s-dd">—</div></div>
-            <div class="stat-card"><div class="lbl">Avg Trade</div><div class="val" id="s-avg">—</div></div>
-            <div class="stat-card"><div class="lbl">Best Trade</div><div class="val green" id="s-best">—</div></div>
-            <div class="stat-card"><div class="lbl">Sharpe Ratio</div><div class="val blue" id="s-sharpe">—</div></div>
+        <!-- ── Mode banner ── -->
+        <div class="stats-mode-banner" id="modeBanner"></div>
+
+        <!-- ═══ NORMAL VIEW (All / Paper / Live) ═══ -->
+        <div id="normalView">
+            <!-- Stat cards -->
+            <div class="stat-grid" id="statGrid">
+                <div class="stat-card"><div class="lbl">Total P&amp;L</div><div class="val" id="s-pnl">—</div></div>
+                <div class="stat-card"><div class="lbl">Win Rate</div><div class="val" id="s-wr">—</div></div>
+                <div class="stat-card"><div class="lbl">Total Trades</div><div class="val blue" id="s-tt">—</div></div>
+                <div class="stat-card"><div class="lbl">Profit Factor</div><div class="val" id="s-pf">—</div></div>
+                <div class="stat-card"><div class="lbl">Max Drawdown</div><div class="val red" id="s-dd">—</div></div>
+                <div class="stat-card"><div class="lbl">Avg Trade</div><div class="val" id="s-avg">—</div></div>
+                <div class="stat-card"><div class="lbl">Best Trade</div><div class="val green" id="s-best">—</div></div>
+                <div class="stat-card"><div class="lbl">Sharpe Ratio</div><div class="val blue" id="s-sharpe">—</div></div>
+            </div>
+
+            <!-- Equity Curve -->
+            <div class="chart-card">
+                <h2 id="equityChartTitle">📈 Equity Curve</h2>
+                <div id="equityChart"></div>
+            </div>
+
+            <!-- Monthly breakdown -->
+            <div class="section">
+                <div class="section-header"><h2>Monthly Breakdown</h2></div>
+                <div class="tbl-scroll">
+                    <table>
+                        <thead><tr><th>Month</th><th>Trades</th><th>Net P&amp;L</th><th>Win Rate</th></tr></thead>
+                        <tbody id="monthlyTbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Trade history -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>Trade History</h2>
+                    <span id="tradePaginInfo" style="font-size:12px;color:var(--text-muted)"></span>
+                </div>
+                <div class="tbl-scroll">
+                    <table>
+                        <thead><tr>
+                            <th>Date</th><th>Mode</th><th>Symbol</th><th>Type</th>
+                            <th>Entry ₹</th><th>Exit ₹</th><th>Strike</th><th>Qty</th>
+                            <th>Gross P&amp;L</th><th>Charges</th><th>Net P&amp;L</th><th>Reason</th>
+                        </tr></thead>
+                        <tbody id="tradeTbody"></tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <button id="prevBtn" onclick="changePage(-1)">← Prev</button>
+                    <span id="pageInfo"></span>
+                    <button id="nextBtn" onclick="changePage(1)">Next →</button>
+                </div>
+            </div>
         </div>
 
-        <!-- Equity Curve -->
-        <div class="chart-card">
-            <h2>Equity Curve</h2>
-            <div id="equityChart"></div>
+        <!-- ═══ COMPARE VIEW ═══ -->
+        <div id="compareView">
+            <!-- Column labels -->
+            <div class="compare-header">
+                <div class="compare-col-label paper">📋 Paper Trading</div>
+                <div class="compare-col-label live">⚡ Live Trading</div>
+            </div>
+
+            <!-- Side-by-side stat blocks -->
+            <div class="compare-grid">
+                <div class="compare-stat-block paper-block" id="cmpPaperBlock">
+                    <div class="block-title">📋 Paper</div>
+                    <!-- rows filled by JS -->
+                </div>
+                <div class="compare-stat-block live-block" id="cmpLiveBlock">
+                    <div class="block-title">⚡ Live</div>
+                </div>
+            </div>
+
+            <!-- Dual equity charts -->
+            <div class="compare-equity">
+                <div class="compare-equity-card paper-card">
+                    <h3>Paper — Equity Curve</h3>
+                    <div id="compareEquityPaper"></div>
+                </div>
+                <div class="compare-equity-card live-card">
+                    <h3>Live — Equity Curve</h3>
+                    <div id="compareEquityLive"></div>
+                </div>
+            </div>
+
+            <!-- Monthly comparison table -->
+            <div class="section">
+                <div class="section-header"><h2>Monthly — Paper vs Live</h2></div>
+                <div class="tbl-scroll">
+                    <table>
+                        <thead><tr>
+                            <th>Month</th>
+                            <th style="color:var(--paper-color)">📋 Paper Trades</th>
+                            <th style="color:var(--paper-color)">📋 Paper P&amp;L</th>
+                            <th style="color:var(--paper-color)">📋 Win%</th>
+                            <th style="color:var(--live-color)">⚡ Live Trades</th>
+                            <th style="color:var(--live-color)">⚡ Live P&amp;L</th>
+                            <th style="color:var(--live-color)">⚡ Win%</th>
+                        </tr></thead>
+                        <tbody id="compareMonthlyTbody"></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
-        <!-- Monthly breakdown -->
-        <div class="section">
-            <div class="section-header"><h2>Monthly Breakdown</h2></div>
-            <div class="tbl-scroll">
-                <table>
-                    <thead><tr><th>Month</th><th>Trades</th><th>Net P&amp;L</th><th>Win Rate</th></tr></thead>
-                    <tbody id="monthlyTbody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Trade history -->
-        <div class="section">
-            <div class="section-header">
-                <h2>Trade History</h2>
-                <span id="tradePaginInfo" style="font-size:12px;color:var(--text-muted)"></span>
-            </div>
-            <div class="tbl-scroll">
-                <table>
-                    <thead><tr><th>Date</th><th>Symbol</th><th>Type</th><th>Entry ₹</th><th>Exit ₹</th><th>Strike</th><th>Qty</th><th>Gross P&amp;L</th><th>Charges</th><th>Net P&amp;L</th><th>Reason</th></tr></thead>
-                    <tbody id="tradeTbody"></tbody>
-                </table>
-            </div>
-            <div class="pagination">
-                <button id="prevBtn" onclick="changePage(-1)">← Prev</button>
-                <span id="pageInfo"></span>
-                <button id="nextBtn" onclick="changePage(1)">Next →</button>
-            </div>
-        </div>
-    </div>
-</div>
+    </div><!-- /page-content -->
+</div><!-- /main-wrap -->
 
 <script>
 // ── Auth guard ──
 const TOKEN = localStorage.getItem('orb_token');
 if (!TOKEN) window.location.href = '/login';
 const USER = JSON.parse(localStorage.getItem('orb_user') || '{}');
-const initials = (USER.username || 'U').charAt(0).toUpperCase();
-document.getElementById('userAvatar').textContent     = initials;
-document.getElementById('dropdownAvatar').textContent = initials;
-document.getElementById('userNameDisplay').textContent = USER.username || 'User';
-document.getElementById('dropdownName').textContent   = USER.username || 'User';
-document.getElementById('dropdownEmail').textContent  = USER.email    || '';
+
+function setAvatarContent(el, user) {
+    if (user.photo_base64) {
+        el.innerHTML = `<img src="${user.photo_base64}" alt="avatar">`;
+    } else {
+        el.textContent = (user.display_name || user.username || 'U').charAt(0).toUpperCase();
+    }
+}
+setAvatarContent(document.getElementById('userAvatar'), USER);
+setAvatarContent(document.getElementById('dropdownAvatar'), USER);
+document.getElementById('userNameDisplay').textContent = USER.display_name || USER.username || 'User';
+document.getElementById('dropdownName').textContent   = USER.display_name || USER.username || 'User';
+document.getElementById('dropdownEmail').textContent  = USER.email || '';
 
 function toggleUserDropdown() { document.getElementById('userMenu').classList.toggle('open'); }
 document.addEventListener('click', e => { const m = document.getElementById('userMenu'); if (m && !m.contains(e.target)) m.classList.remove('open'); });
@@ -281,7 +441,7 @@ function toggleSidebar() {
 
 function authHeaders() { return {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN}; }
 
-// ── Equity chart ──
+// ── Equity chart (normal view) ──
 const equityChartEl = document.getElementById('equityChart');
 const equityChart = LightweightCharts.createChart(equityChartEl, {
     layout: { textColor: '#1E2328', background: { type: 'solid', color: '#FFFFFF' } },
@@ -297,8 +457,96 @@ new ResizeObserver(e => {
     equityChart.applyOptions({ width: e[0].contentRect.width, height: e[0].contentRect.height });
 }).observe(equityChartEl);
 
-// ── Pagination state ──
+// ── Compare equity charts ──
+let cmpPaperChart = null, cmpPaperSeries = null;
+let cmpLiveChart  = null, cmpLiveSeries  = null;
+
+function initCompareCharts() {
+    if (cmpPaperChart) return; // already init
+
+    const paperEl = document.getElementById('compareEquityPaper');
+    cmpPaperChart = LightweightCharts.createChart(paperEl, {
+        layout: { textColor: '#1E2328', background: { type: 'solid', color: '#FFFFFF' } },
+        grid: { vertLines: { color: '#E4E8EF' }, horzLines: { color: '#E4E8EF' } },
+        timeScale: { borderColor: '#E4E8EF', timeVisible: true },
+        rightPriceScale: { borderColor: '#E4E8EF' },
+        handleScale: true, handleScroll: true,
+    });
+    cmpPaperSeries = cmpPaperChart.addAreaSeries({
+        lineColor: '#D97706', topColor: 'rgba(217,119,6,0.22)', bottomColor: 'rgba(217,119,6,0.02)', lineWidth: 2,
+    });
+    new ResizeObserver(e => {
+        cmpPaperChart.applyOptions({ width: e[0].contentRect.width, height: e[0].contentRect.height });
+    }).observe(paperEl);
+
+    const liveEl = document.getElementById('compareEquityLive');
+    cmpLiveChart = LightweightCharts.createChart(liveEl, {
+        layout: { textColor: '#1E2328', background: { type: 'solid', color: '#FFFFFF' } },
+        grid: { vertLines: { color: '#E4E8EF' }, horzLines: { color: '#E4E8EF' } },
+        timeScale: { borderColor: '#E4E8EF', timeVisible: true },
+        rightPriceScale: { borderColor: '#E4E8EF' },
+        handleScale: true, handleScroll: true,
+    });
+    cmpLiveSeries = cmpLiveChart.addAreaSeries({
+        lineColor: '#059669', topColor: 'rgba(5,150,105,0.22)', bottomColor: 'rgba(5,150,105,0.02)', lineWidth: 2,
+    });
+    new ResizeObserver(e => {
+        cmpLiveChart.applyOptions({ width: e[0].contentRect.width, height: e[0].contentRect.height });
+    }).observe(liveEl);
+}
+
+// ── Mode state ──
+let currentMode = 'all'; // all | paper | live | compare
 let currentPage = 1; const PER_PAGE = 20;
+
+const TAB_CONFIG = {
+    all:     { label: 'All Trades',    activeClass: 'active-all',     bannerClass: 'all',   emoji: '📊', topSub: 'All trade performance & history' },
+    paper:   { label: 'Paper Trading', activeClass: 'active-paper',   bannerClass: 'paper', emoji: '📋', topSub: 'Paper trading performance & history' },
+    live:    { label: 'Live Trading',  activeClass: 'active-live',    bannerClass: 'live',  emoji: '⚡', topSub: 'Live trading performance & history' },
+    compare: { label: 'Paper vs Live', activeClass: 'active-compare', bannerClass: '',      emoji: '🔄', topSub: 'Paper vs Live side-by-side comparison' },
+};
+
+function switchMode(mode) {
+    currentMode = mode;
+    currentPage = 1;
+
+    // Update tabs
+    ['all','paper','live','compare'].forEach(m => {
+        const tab = document.getElementById('tab-'+m);
+        tab.className = 'mode-tab';
+        if (m === mode) tab.classList.add(TAB_CONFIG[m].activeClass);
+    });
+
+    const cfg = TAB_CONFIG[mode];
+    document.getElementById('modeLabelBadge').textContent = cfg.emoji + ' ' + cfg.label;
+    document.getElementById('topbarSub').textContent = cfg.topSub;
+
+    // Banner
+    const banner = document.getElementById('modeBanner');
+    banner.className = 'stats-mode-banner';
+    if (mode !== 'compare') {
+        banner.classList.add(cfg.bannerClass);
+        banner.innerHTML = `${cfg.emoji} Showing <strong>${cfg.label}</strong> data`;
+    }
+
+    // Toggle views
+    const isCompare = mode === 'compare';
+    document.getElementById('normalView').style.display    = isCompare ? 'none' : 'block';
+    document.getElementById('compareView').classList.toggle('visible', isCompare);
+    document.getElementById('filtersBar').style.display   = isCompare ? 'none' : 'flex';
+
+    if (isCompare) {
+        initCompareCharts();
+        loadCompare();
+    } else {
+        loadAll();
+    }
+}
+
+function modeParam() {
+    if (currentMode === 'all') return '';
+    return '&mode=' + currentMode.toUpperCase();
+}
 
 function dateParams() {
     const f = document.getElementById('fromDate').value;
@@ -308,32 +556,55 @@ function dateParams() {
 function clearDates() { document.getElementById('fromDate').value = ''; document.getElementById('toDate').value = ''; loadAll(); }
 async function loadAll() { currentPage = 1; await Promise.all([loadSummary(), loadEquityCurve(), loadMonthly(), loadTrades()]); }
 
-async function loadSummary() {
-    const r = await fetch('/api/analytics/summary?x=1'+dateParams(), {headers:authHeaders()});
-    const d = await r.json();
-    if (!d.ok) return;
-    const s = d.data;
-    const fmt = v => '₹'+v.toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:0});
-    document.getElementById('s-pnl').innerHTML    = `<span class="${s.total_net_pnl>=0?'green':'red'}">${fmt(s.total_net_pnl)}</span>`;
-    document.getElementById('s-wr').innerHTML     = `<span class="${s.win_rate>=50?'green':'red'}">${s.win_rate}%</span>`;
-    document.getElementById('s-tt').textContent   = s.total_trades;
-    document.getElementById('s-pf').innerHTML     = `<span class="${s.profit_factor>=1?'green':'red'}">${s.profit_factor}</span>`;
-    document.getElementById('s-dd').textContent   = fmt(s.max_drawdown);
-    document.getElementById('s-avg').innerHTML    = `<span class="${s.avg_trade>=0?'green':'red'}">${fmt(s.avg_trade)}</span>`;
-    document.getElementById('s-best').textContent = fmt(s.best_trade);
-    document.getElementById('s-sharpe').textContent = s.sharpe_ratio;
+// ── Color theming per mode ──
+function applyModeTheme(mode) {
+    const cards = document.querySelectorAll('#statGrid .stat-card');
+    cards.forEach(c => { c.classList.remove('paper-theme','live-theme'); });
+    if (mode === 'paper') cards.forEach(c => c.classList.add('paper-theme'));
+    if (mode === 'live')  cards.forEach(c => c.classList.add('live-theme'));
+
+    // Equity curve color
+    const colors = {
+        all:   { line:'#2563EB', top:'rgba(37,99,235,0.22)',   bot:'rgba(37,99,235,0.02)' },
+        paper: { line:'#D97706', top:'rgba(217,119,6,0.22)',   bot:'rgba(217,119,6,0.02)' },
+        live:  { line:'#059669', top:'rgba(5,150,105,0.22)',   bot:'rgba(5,150,105,0.02)' },
+    };
+    const c = colors[mode] || colors.all;
+    areaSeries.applyOptions({ lineColor: c.line, topColor: c.top, bottomColor: c.bot });
+
+    const title = { all: '📈 Equity Curve', paper: '📋 Paper — Equity Curve', live: '⚡ Live — Equity Curve' };
+    document.getElementById('equityChartTitle').textContent = title[mode] || '📈 Equity Curve';
 }
 
+// ── Summary ──
+async function loadSummary() {
+    applyModeTheme(currentMode);
+    const r = await fetch('/api/analytics/summary?x=1'+modeParam()+dateParams(), {headers:authHeaders()});
+    const d = await r.json();
+    if (!d.ok) return;
+    const fmt = v => '₹'+v.toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:0});
+    document.getElementById('s-pnl').innerHTML    = `<span class="${d.total_net_pnl>=0?'green':'red'}">${fmt(d.total_net_pnl)}</span>`;
+    document.getElementById('s-wr').innerHTML     = `<span class="${d.win_rate>=50?'green':'red'}">${d.win_rate}%</span>`;
+    document.getElementById('s-tt').textContent   = d.total_trades;
+    document.getElementById('s-pf').innerHTML     = `<span class="${d.profit_factor>=1?'green':'red'}">${d.profit_factor}</span>`;
+    document.getElementById('s-dd').textContent   = fmt(d.max_drawdown);
+    document.getElementById('s-avg').innerHTML    = `<span class="${d.avg_trade>=0?'green':'red'}">${fmt(d.avg_trade)}</span>`;
+    document.getElementById('s-best').textContent = fmt(d.best_trade);
+    document.getElementById('s-sharpe').textContent = d.sharpe_ratio;
+}
+
+// ── Equity curve ──
 async function loadEquityCurve() {
-    const r = await fetch('/api/analytics/equity-curve?x=1'+dateParams(), {headers:authHeaders()});
+    const r = await fetch('/api/analytics/equity-curve?x=1'+modeParam()+dateParams(), {headers:authHeaders()});
     const d = await r.json();
     if (!d.ok || !d.data.length) { areaSeries.setData([]); return; }
     areaSeries.setData(d.data.map(p => ({time: p.time, value: p.cumulative_pnl})));
     equityChart.timeScale().fitContent();
 }
 
+// ── Monthly ──
 async function loadMonthly() {
-    const r = await fetch('/api/analytics/monthly', {headers:authHeaders()});
+    const r = await fetch('/api/analytics/monthly?x=1'+modeParam()+dateParams(), {headers:authHeaders()});
     const d = await r.json();
     if (!d.ok) return;
     const tbody = document.getElementById('monthlyTbody');
@@ -347,15 +618,18 @@ async function loadMonthly() {
         </tr>`).join('');
 }
 
+// ── Trades ──
 async function loadTrades() {
-    const r = await fetch(`/api/trades?page=${currentPage}&per_page=${PER_PAGE}&x=1${dateParams()}`, {headers:authHeaders()});
+    const r = await fetch(`/api/trades?page=${currentPage}&per_page=${PER_PAGE}&x=1${modeParam()}${dateParams()}`, {headers:authHeaders()});
     const d = await r.json();
     if (!d.ok) return;
     const tbody = document.getElementById('tradeTbody');
-    if (!d.trades.length) { tbody.innerHTML='<tr><td colspan="11" class="empty">No trades found for this period.</td></tr>'; }
-    else tbody.innerHTML = d.trades.map(t => `
-        <tr>
+    if (!d.trades.length) { tbody.innerHTML='<tr><td colspan="12" class="empty">No trades found for this period.</td></tr>'; }
+    else tbody.innerHTML = d.trades.map(t => {
+        const tm = (t.trade_mode||'PAPER').toLowerCase();
+        return `<tr>
             <td>${t.date||'—'}</td>
+            <td><span class="mode-pill ${tm}">${tm==='live'?'⚡ Live':'📋 Paper'}</span></td>
             <td>${t.symbol||'—'}</td>
             <td style="color:${t.position_type==='CALL'?'var(--accent-blue)':'var(--down-red)'}; font-weight:700">${t.position_type||'—'}</td>
             <td>₹${(t.entry_prem||0).toFixed(2)}</td>
@@ -366,7 +640,8 @@ async function loadTrades() {
             <td style="color:var(--down-red)">-₹${(t.charges||0).toFixed(2)}</td>
             <td class="${(t.net_pnl||0)>=0?'green':'red'}" style="font-weight:700">₹${(t.net_pnl||0).toFixed(2)}</td>
             <td style="color:var(--text-muted);font-size:11px">${t.exit_reason||'—'}</td>
-        </tr>`).join('');
+        </tr>`;
+    }).join('');
 
     const totalPages = Math.ceil(d.total / PER_PAGE) || 1;
     document.getElementById('pageInfo').textContent       = `Page ${currentPage} of ${totalPages}`;
@@ -377,11 +652,107 @@ async function loadTrades() {
 
 function changePage(delta) { currentPage += delta; loadTrades(); }
 
+// ── COMPARE VIEW ──
+const COMPARE_METRICS = [
+    { key: 'total_trades',    label: 'Total Trades',    fmt: v => v },
+    { key: 'winning_trades',  label: 'Winning Trades',  fmt: v => v },
+    { key: 'losing_trades',   label: 'Losing Trades',   fmt: v => v },
+    { key: 'win_rate',        label: 'Win Rate',         fmt: v => v + '%', color: v => v>=50?'green':'red' },
+    { key: 'total_net_pnl',   label: 'Net P&L',         fmt: v => fmtRs(v), color: v => v>=0?'green':'red' },
+    { key: 'total_gross_pnl', label: 'Gross P&L',       fmt: v => fmtRs(v), color: v => v>=0?'green':'red' },
+    { key: 'total_charges',   label: 'Total Charges',   fmt: v => fmtRs(v), color: () => 'red' },
+    { key: 'avg_win',         label: 'Avg Win',         fmt: v => fmtRs(v), color: () => 'green' },
+    { key: 'avg_loss',        label: 'Avg Loss',        fmt: v => fmtRs(v), color: () => 'red' },
+    { key: 'profit_factor',   label: 'Profit Factor',   fmt: v => v, color: v => v>=1?'green':'red' },
+    { key: 'max_drawdown',    label: 'Max Drawdown',    fmt: v => fmtRs(v), color: () => 'red' },
+    { key: 'max_drawdown_pct',label: 'Max DD %',        fmt: v => v + '%', color: () => 'red' },
+    { key: 'best_trade',      label: 'Best Trade',      fmt: v => fmtRs(v), color: () => 'green' },
+    { key: 'worst_trade',     label: 'Worst Trade',     fmt: v => fmtRs(v), color: () => 'red' },
+    { key: 'avg_trade',       label: 'Avg Trade',       fmt: v => fmtRs(v), color: v => v>=0?'green':'red' },
+    { key: 'sharpe_ratio',    label: 'Sharpe Ratio',    fmt: v => v, color: v => v>=1?'green':'red' },
+];
+
+function fmtRs(v) { return '₹' + Number(v).toLocaleString('en-IN', {minimumFractionDigits:0, maximumFractionDigits:0}); }
+
+function renderCompareBlock(elId, stats) {
+    const el = document.getElementById(elId);
+    const header = el.querySelector('.block-title');
+    el.innerHTML = '';
+    el.appendChild(header);
+    COMPARE_METRICS.forEach(m => {
+        const val = stats[m.key] ?? 0;
+        const cls = m.color ? m.color(val) : '';
+        el.innerHTML += `<div class="compare-stat-item">
+            <span class="csi-label">${m.label}</span>
+            <span class="csi-val ${cls}">${m.fmt(val)}</span>
+        </div>`;
+    });
+}
+
+async function loadCompare() {
+    const r = await fetch('/api/analytics/compare?x=1', {headers:authHeaders()});
+    const d = await r.json();
+    if (!d.ok) return;
+
+    const paper = d.data.paper || {};
+    const live  = d.data.live  || {};
+
+    renderCompareBlock('cmpPaperBlock', paper);
+    renderCompareBlock('cmpLiveBlock',  live);
+
+    // Load equity curves for both modes
+    const [pe, le] = await Promise.all([
+        fetch('/api/analytics/equity-curve?mode=PAPER', {headers:authHeaders()}).then(r=>r.json()),
+        fetch('/api/analytics/equity-curve?mode=LIVE',  {headers:authHeaders()}).then(r=>r.json()),
+    ]);
+
+    if (pe.ok && pe.data.length) {
+        cmpPaperSeries.setData(pe.data.map(p => ({time:p.time, value:p.cumulative_pnl})));
+        cmpPaperChart.timeScale().fitContent();
+    } else cmpPaperSeries.setData([]);
+
+    if (le.ok && le.data.length) {
+        cmpLiveSeries.setData(le.data.map(p => ({time:p.time, value:p.cumulative_pnl})));
+        cmpLiveChart.timeScale().fitContent();
+    } else cmpLiveSeries.setData([]);
+
+    // Monthly compare table
+    const [pm, lm] = await Promise.all([
+        fetch('/api/analytics/monthly?mode=PAPER', {headers:authHeaders()}).then(r=>r.json()),
+        fetch('/api/analytics/monthly?mode=LIVE',  {headers:authHeaders()}).then(r=>r.json()),
+    ]);
+
+    const paperMonths = {};
+    (pm.data||[]).forEach(m => { paperMonths[m.month] = m; });
+    const liveMonths = {};
+    (lm.data||[]).forEach(m => { liveMonths[m.month] = m; });
+
+    const allMonths = [...new Set([...Object.keys(paperMonths), ...Object.keys(liveMonths)])].sort();
+    const tbody = document.getElementById('compareMonthlyTbody');
+    if (!allMonths.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No data yet</td></tr>'; return; }
+    tbody.innerHTML = allMonths.map(mo => {
+        const p = paperMonths[mo] || {trades:0, net_pnl:0, win_rate:0};
+        const l = liveMonths[mo]  || {trades:0, net_pnl:0, win_rate:0};
+        return `<tr>
+            <td style="font-weight:700">${mo}</td>
+            <td style="color:var(--paper-color)">${p.trades}</td>
+            <td class="${p.net_pnl>=0?'green':'red'}" style="font-weight:600">₹${p.net_pnl.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+            <td class="${p.win_rate>=50?'green':'red'}">${p.win_rate}%</td>
+            <td style="color:var(--live-color)">${l.trades}</td>
+            <td class="${l.net_pnl>=0?'green':'red'}" style="font-weight:600">₹${l.net_pnl.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+            <td class="${l.win_rate>=50?'green':'red'}">${l.win_rate}%</td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Init ──
 // Default date range: last 90 days
 const today = new Date(); const ago = new Date(); ago.setDate(ago.getDate()-90);
 document.getElementById('toDate').value   = today.toISOString().split('T')[0];
 document.getElementById('fromDate').value = ago.toISOString().split('T')[0];
-loadAll();
+
+// Load with default Paper tab (so user sees paper analytics first as requested)
+switchMode('paper');
 </script>
 </body>
 </html>

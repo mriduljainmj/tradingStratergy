@@ -1,3 +1,4 @@
+import datetime
 import re
 
 import bcrypt
@@ -8,6 +9,20 @@ from db.database import SessionLocal
 from db.models import User, Strategy
 
 auth_bp = Blueprint("auth", __name__)
+
+# Module-level references set by register_ helpers (injected from app.py)
+_broker = None
+_state  = None
+
+
+def register_broker_ref(broker):
+    global _broker
+    _broker = broker
+
+
+def register_state_ref(state):
+    global _state
+    _state = state
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -210,6 +225,145 @@ def update_profile():
         db.commit()
         db.refresh(user)
         return jsonify({"ok": True, "user": user.to_dict()})
+    except Exception as e:
+        db.rollback()
+        return _bad(str(e), 500)
+    finally:
+        db.close()
+
+
+# ── Kite session management (serverless-safe encrypted token) ─────────────────
+
+@auth_bp.route("/api/auth/kite-token", methods=["GET"])
+@jwt_required()
+def get_kite_token_status():
+    """Return whether a valid Kite token exists for today."""
+    uid = int(get_jwt_identity())
+    db  = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if not user:
+            return _bad("User not found.", 404)
+        today = datetime.date.today()
+        has_token = bool(user.kite_access_token_enc and user.kite_token_date == today)
+        return jsonify({
+            "ok":              True,
+            "has_token":       has_token,
+            "token_date":      user.kite_token_date.isoformat() if user.kite_token_date else None,
+            "kite_api_key":    user.kite_api_key_stored or "",
+            "login_url":       _broker.login_url() if _broker else "",
+        })
+    finally:
+        db.close()
+
+
+@auth_bp.route("/api/auth/kite-token", methods=["POST"])
+@jwt_required()
+def save_kite_token():
+    """
+    Save an encrypted Kite access_token (and optional api_key) to the DB.
+    Also immediately applies the token to the live broker so the engine
+    can resume without a restart.
+    """
+    from execution.broker import encrypt_token
+
+    uid  = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    access_token = (data.get("access_token") or "").strip()
+    api_key      = (data.get("api_key")      or "").strip()
+
+    if not access_token:
+        return _bad("access_token is required.")
+
+    # 1️⃣ Validate ONLY when the user explicitly provides both api_key + access_token.
+    #    If no api_key is given we cannot validate (the server may use a different key),
+    #    so we skip validation and trust the user — the engine will surface a bad token
+    #    naturally via the kite_auth_error flag.
+    validated = False
+    if _broker and api_key:
+        try:
+            from kiteconnect import KiteConnect
+            tmp = KiteConnect(api_key=api_key)
+            tmp.set_access_token(access_token)
+            tmp.profile()   # raises if invalid
+            validated = True
+        except Exception as e:
+            from execution.broker import is_kite_auth_error
+            if is_kite_auth_error(e):
+                return _bad("Kite rejected the token — check your API Key and Access Token.", 401)
+            # Network / other error: save anyway, we can't validate right now
+            validated = False
+
+    # 2️⃣ Encrypt & persist
+    db = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if not user:
+            return _bad("User not found.", 404)
+
+        enc = encrypt_token(access_token)
+        user.kite_access_token_enc = enc
+        user.kite_token_date       = datetime.date.today()
+        if api_key:
+            user.kite_api_key_stored = api_key
+
+        db.commit()
+        db.refresh(user)
+
+        # 3️⃣ Apply to live broker & clear auth error on state
+        #    Priority order for api_key:
+        #      a) what user typed now  →  b) what's stored in DB  →  c) server config key
+        effective_api_key = api_key or user.kite_api_key_stored or ""
+        if _broker:
+            if effective_api_key:
+                from kiteconnect import KiteConnect
+                _broker.kite = KiteConnect(api_key=effective_api_key)
+                _broker.config.api_key = effective_api_key  # keep config in sync
+            _broker.kite.set_access_token(access_token)
+            _broker._save_token(access_token)
+
+            # Quick sanity-check — try profile() to confirm the token works NOW
+            try:
+                _broker.kite.profile()
+                if _state:
+                    _state.kite_auth_error = False
+                    _state.logs.append("[--:--:--] ✅ Kite token applied — session restored.")
+                validated = True
+            except Exception as probe_err:
+                import logging as _log
+                _log.getLogger(__name__).warning(f"Token applied but profile() probe failed: {probe_err}")
+                if _state:
+                    _state.logs.append(f"[--:--:--] ⚠ Token saved but Kite probe failed: {probe_err}")
+        elif _state:
+            _state.kite_auth_error = False
+            _state.logs.append("[--:--:--] ✅ Kite access token saved (broker not running).")
+
+        return jsonify({
+            "ok":        True,
+            "validated": validated,
+            "user":      user.to_dict(),
+        })
+    except Exception as e:
+        db.rollback()
+        return _bad(str(e), 500)
+    finally:
+        db.close()
+
+
+@auth_bp.route("/api/auth/kite-token", methods=["DELETE"])
+@jwt_required()
+def clear_kite_token():
+    """Remove the stored Kite token (e.g. end of day cleanup)."""
+    uid = int(get_jwt_identity())
+    db  = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if not user:
+            return _bad("User not found.", 404)
+        user.kite_access_token_enc = None
+        user.kite_token_date       = None
+        db.commit()
+        return jsonify({"ok": True})
     except Exception as e:
         db.rollback()
         return _bad(str(e), 500)

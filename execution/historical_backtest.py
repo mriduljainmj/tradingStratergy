@@ -131,6 +131,7 @@ class HistoricalBacktester:
             "logs":               state.logs,
             "trade_taken":        trade_taken,
             "used_real_options":  state.used_real_options,
+            "strike":             strategy.strike if hasattr(strategy, 'strike') else None,
         }
 
     # ── Patch option prices + P&L with real Kite NFO data ─────────────────────
