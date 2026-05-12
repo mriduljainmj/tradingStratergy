@@ -330,7 +330,7 @@
                     </div>
 
                     <!-- Step 1: permanent credentials — ADMIN ONLY -->
-                    <div id="kiteAdminSections">
+                    <div id="kiteAdminSections" style="display:none">
                         <div style="margin-bottom:18px;">
                             <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">① Save API credentials <span style="font-weight:400; color:var(--text-muted);">— one-time setup</span></div>
                             <div class="form-row" style="margin-bottom:10px;">
@@ -366,7 +366,7 @@
                     </div>
 
                     <!-- Divider + manual fallback — ADMIN ONLY -->
-                    <div id="kiteAdminAdvanced">
+                    <div id="kiteAdminAdvanced" style="display:none">
                     <details id="kiteAdvancedDetails" style="margin-bottom:14px;">
                         <summary style="font-size:11px; color:var(--text-muted); cursor:pointer; user-select:none;">▸ Advanced / local dev options</summary>
                         <div style="margin-top:12px; display:flex; flex-direction:column; gap:14px;">
@@ -439,22 +439,26 @@ const USER = JSON.parse(localStorage.getItem('orb_user') || '{}');
 function hdrs() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }; }
 
 // ── Admin-only sections ──
-// Show "Save API credentials" and "Advanced / local dev" only to admins.
-// Regular users use the app's global Kite credentials and only need the login button.
-(function applyAdminGating() {
-    const isAdmin = USER.is_admin === true;
+// Both divs start hidden (display:none in HTML).
+// They are only revealed here if is_admin is confirmed true.
+// We apply a quick pre-check from localStorage so admins don't see a flash,
+// but loadProfile() always re-applies from the authoritative API response.
+function applyAdminGating(isAdmin) {
     const adminSections  = document.getElementById('kiteAdminSections');
     const adminAdvanced  = document.getElementById('kiteAdminAdvanced');
     const stepLabel      = document.getElementById('kiteStepLabel');
-
-    if (!isAdmin) {
+    if (isAdmin === true) {
+        if (adminSections) adminSections.style.display = '';
+        if (adminAdvanced) adminAdvanced.style.display = '';
+        if (stepLabel)     stepLabel.textContent = '②';   // admin: step 2 of 2
+    } else {
         if (adminSections) adminSections.style.display = 'none';
         if (adminAdvanced) adminAdvanced.style.display = 'none';
-        if (stepLabel)     stepLabel.textContent = '①';    // renumber: only one step for regular users
-    } else {
-        if (stepLabel)     stepLabel.textContent = '②';    // admin: step 2 of 2
+        if (stepLabel)     stepLabel.textContent = '①';   // regular user: only one step
     }
-})();
+}
+// Quick pre-check from localStorage cache (avoids flash for admin users)
+applyAdminGating(USER.is_admin === true);
 
 // ── Sidebar ──
 let sidebarCollapsed = false;
@@ -539,19 +543,8 @@ async function loadProfile() {
     const merged = { ...USER, ...u };
     localStorage.setItem('orb_user', JSON.stringify(merged));
 
-    // Re-apply admin gating in case is_admin changed since page load
-    const adminSections = document.getElementById('kiteAdminSections');
-    const adminAdvanced = document.getElementById('kiteAdminAdvanced');
-    const stepLabel     = document.getElementById('kiteStepLabel');
-    if (merged.is_admin) {
-        if (adminSections) adminSections.style.display = '';
-        if (adminAdvanced) adminAdvanced.style.display = '';
-        if (stepLabel)     stepLabel.textContent = '②';
-    } else {
-        if (adminSections) adminSections.style.display = 'none';
-        if (adminAdvanced) adminAdvanced.style.display = 'none';
-        if (stepLabel)     stepLabel.textContent = '①';
-    }
+    // Re-apply admin gating from authoritative API response (strict boolean check)
+    applyAdminGating(merged.is_admin === true);
 
     // Load quick stats
     loadStats();
