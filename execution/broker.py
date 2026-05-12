@@ -224,6 +224,36 @@ class KiteBroker:
         )
         return chosen["instrument_token"]
 
+    def find_option_tradingsymbol(self, strike: int, option_type: str,
+                                  on_or_after: datetime.date) -> Optional[str]:
+        """
+        Return the exact Kite tradingsymbol for a NIFTY option
+        (e.g. 'NIFTY2651423700PE' for weekly, 'NIFTY26MAY23700PE' for monthly).
+        This is what must be passed to place_order(); the format differs between
+        weekly and monthly contracts and cannot be safely derived without the
+        instruments list.
+        """
+        instruments = self.get_nfo_instruments()
+        candidates = [
+            inst for inst in instruments
+            if (inst.get("name") == "NIFTY"
+                and inst.get("instrument_type") == option_type
+                and int(inst.get("strike", 0)) == int(strike)
+                and inst.get("expiry") >= on_or_after)
+        ]
+        if not candidates:
+            logger.warning(
+                f"No tradingsymbol found for NIFTY {strike}{option_type} "
+                f"expiring on/after {on_or_after}"
+            )
+            return None
+        candidates.sort(key=lambda x: x["expiry"])
+        chosen = candidates[0]
+        logger.info(
+            f"Order symbol: {chosen['tradingsymbol']} (expiry {chosen['expiry']})"
+        )
+        return chosen["tradingsymbol"]
+
     # ── Real-time option price (paper / live) ──────────────────────────────────
 
     def get_option_ltp(self, strike: int, option_type: str) -> Optional[float]:

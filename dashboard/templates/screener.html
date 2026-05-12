@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>ORB — Screener</title>
+    <style>
+        :root {
+            --bg-base:    #F0F2F5;
+            --bg-surface: #FFFFFF;
+            --bg-card:    #F8FAFC;
+            --text-main:  #1E2328;
+            --text-muted: #6B7280;
+            --accent-blue:    #2563EB;
+            --up-green:       #059669;
+            --down-red:       #DC2626;
+            --border-color:   #E4E8EF;
+            --warning-yellow: #D97706;
+            --sidebar-bg:     #1A1D2E;
+            --sidebar-text:   #A9B1D6;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg-base); color: var(--text-main); display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
+
+        /* ── SIDEBAR ── */
+        .sidebar { width: 220px; background: var(--sidebar-bg); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.22s cubic-bezier(0.4,0,0.2,1); overflow: hidden; z-index: 100; }
+        .sidebar.collapsed { width: 52px; }
+        .sidebar-brand { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 52px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
+        .brand-logo { width: 28px; height: 28px; border-radius: 6px; background: var(--accent-blue); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 900; color: #fff; flex-shrink: 0; }
+        .brand-text { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; transition: opacity 0.15s; }
+        .sidebar.collapsed .brand-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-nav { flex: 1; padding: 10px 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+        .nav-section-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(169,177,214,0.45); padding: 10px 16px 4px; white-space: nowrap; overflow: hidden; transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-section-label { opacity: 0; }
+        .nav-item { display: flex; align-items: center; gap: 11px; padding: 9px 14px; margin: 0 6px; border-radius: 6px; text-decoration: none; color: var(--sidebar-text); font-size: 13px; font-weight: 500; transition: background 0.15s, color 0.15s; white-space: nowrap; overflow: hidden; cursor: pointer; }
+        .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+        .nav-item.active { background: rgba(37,99,235,0.2); color: #60a5fa; }
+        .nav-icon { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; }
+        .nav-text { transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-text { opacity: 0; width: 0; overflow: hidden; }
+        .sidebar-toggle { display: flex; align-items: center; justify-content: center; padding: 10px; background: none; border: none; border-top: 1px solid rgba(255,255,255,0.07); color: rgba(169,177,214,0.5); cursor: pointer; font-size: 13px; transition: color 0.15s; flex-shrink: 0; width: 100%; }
+        .sidebar-toggle:hover { color: #fff; }
+
+        /* ── MAIN ── */
+        .main-wrap { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; min-width: 0; }
+        .topbar { height: 52px; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .topbar-left { display: flex; align-items: center; gap: 12px; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+        .topbar-title { font-size: 15px; font-weight: 700; }
+        .hamburger { background: none; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: background 0.15s; line-height: 1; }
+        .hamburger:hover { background: var(--bg-card); color: var(--text-main); }
+
+        /* User menu */
+        .user-menu { position: relative; }
+        .user-btn { display: flex; align-items: center; gap: 8px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 5px 10px 5px 6px; border-radius: 8px; cursor: pointer; transition: all 0.15s; color: var(--text-main); }
+        .user-btn:hover { border-color: var(--accent-blue); background: #eff6ff; }
+        .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #2563EB, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
+        .user-name { font-size: 12px; font-weight: 600; }
+        .user-chevron { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+        .user-menu.open .user-chevron { transform: rotate(180deg); }
+        .user-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 6px); background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); width: 200px; z-index: 500; overflow: hidden; }
+        .user-menu.open .user-dropdown { display: block; }
+        .dropdown-section { padding: 6px 8px; }
+        .dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-muted); text-align: left; transition: all 0.15s; text-decoration: none; }
+        .dropdown-item:hover { background: var(--bg-card); color: var(--text-main); }
+        .dropdown-item.danger:hover { background: #fef2f2; color: #DC2626; }
+
+        /* ── LAYOUT ── */
+        .body-wrap { flex: 1; display: flex; overflow: hidden; }
+
+        /* ── SECTOR SIDEBAR ── */
+        .sector-panel { width: 200px; flex-shrink: 0; background: var(--bg-surface); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; overflow: hidden; }
+        .sector-panel-hdr { padding: 14px 16px 10px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+        .sector-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+        .sector-item { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-main); transition: background 0.12s, color 0.12s; border-left: 3px solid transparent; }
+        .sector-item:hover { background: #f0f7ff; color: var(--accent-blue); }
+        .sector-item.active { background: rgba(37,99,235,0.08); color: var(--accent-blue); border-left-color: var(--accent-blue); font-weight: 700; }
+        .sector-count { font-size: 10px; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 10px; padding: 2px 7px; font-weight: 600; }
+        .sector-item.active .sector-count { background: rgba(37,99,235,0.12); border-color: rgba(37,99,235,0.25); color: var(--accent-blue); }
+
+        /* ── CONTENT AREA ── */
+        .content-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+        /* ── TABS ── */
+        .view-tabs { display: flex; align-items: center; gap: 0; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); padding: 0 20px; flex-shrink: 0; }
+        .view-tab { padding: 14px 20px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+        .view-tab:hover { color: var(--text-main); }
+        .view-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+        .view-tab .tab-badge { font-size: 10px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 1px 6px; font-weight: 700; transition: all 0.15s; }
+        .view-tab.active .tab-badge { background: rgba(37,99,235,0.12); border-color: rgba(37,99,235,0.25); color: var(--accent-blue); }
+
+        /* ── TOOLBAR ── */
+        .toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: var(--bg-surface); border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+        .search-wrap { position: relative; flex: 1; max-width: 320px; }
+        .search-wrap input { width: 100%; padding: 8px 12px 8px 34px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; background: var(--bg-card); color: var(--text-main); outline: none; transition: border-color 0.15s; }
+        .search-wrap input:focus { border-color: var(--accent-blue); background: #fff; }
+        .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--text-muted); pointer-events: none; }
+        .toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+        .sort-select { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 7px; font-size: 12px; background: var(--bg-card); color: var(--text-main); outline: none; cursor: pointer; }
+        .refresh-btn { padding: 7px 14px; background: var(--accent-blue); color: #fff; border: none; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; display: flex; align-items: center; gap: 5px; }
+        .refresh-btn:hover { opacity: 0.88; }
+        .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result-count { font-size: 12px; color: var(--text-muted); }
+
+        /* ── TABLE ── */
+        .table-wrap { flex: 1; overflow: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
+        thead { position: sticky; top: 0; z-index: 10; }
+        th { padding: 10px 14px; text-align: left; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); background: var(--bg-card); border-bottom: 1px solid var(--border-color); white-space: nowrap; cursor: pointer; user-select: none; }
+        th:hover { color: var(--text-main); }
+        th .sort-arrow { font-size: 9px; margin-left: 3px; opacity: 0.4; }
+        th.sorted-asc .sort-arrow::after { content: '▲'; opacity: 1; color: var(--accent-blue); }
+        th.sorted-desc .sort-arrow::after { content: '▼'; opacity: 1; color: var(--accent-blue); }
+        th.sorted-asc, th.sorted-desc { color: var(--accent-blue); }
+        td { padding: 10px 14px; border-bottom: 1px solid var(--border-color); color: var(--text-main); white-space: nowrap; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f5f9ff; }
+        .empty-row { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: 13px; }
+
+        /* ── Cell styles ── */
+        .sym-cell { display: flex; flex-direction: column; gap: 2px; }
+        .sym-name { font-weight: 700; font-size: 13px; color: var(--text-main); }
+        .sym-company { font-size: 11px; color: var(--text-muted); font-weight: 400; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+        .sector-pill { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; background: rgba(37,99,235,0.08); color: var(--accent-blue); border: 1px solid rgba(37,99,235,0.18); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+        .price-cell { font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
+        .chg-cell { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13px; }
+        .chg-cell.up { color: var(--up-green); }
+        .chg-cell.dn { color: var(--down-red); }
+        .chg-cell.neu { color: var(--text-muted); }
+        .vol-cell { font-size: 12px; color: var(--text-muted); }
+        .na-cell { color: #CBD5E1; font-size: 12px; }
+
+        /* Watchlist button */
+        .wl-btn { width: 28px; height: 28px; border-radius: 6px; border: 1.5px solid var(--border-color); background: var(--bg-card); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; transition: all 0.15s; flex-shrink: 0; }
+        .wl-btn:hover { background: #fef9ec; border-color: #f59e0b; }
+        .wl-btn.in-wl { background: #fef9ec; border-color: #f59e0b; }
+        .wl-btn.in-wl::after { content: '★'; color: #f59e0b; }
+        .wl-btn:not(.in-wl)::after { content: '☆'; color: var(--text-muted); }
+
+        /* Technicals button */
+        .tech-btn { padding: 4px 10px; border: 1.5px solid var(--border-color); background: var(--bg-card); border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+        .tech-btn:hover { background: #eff6ff; border-color: var(--accent-blue); color: var(--accent-blue); }
+
+        /* ── SKELETON LOADER ── */
+        .sk { display: inline-block; background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%); background-size: 200% 100%; animation: sk-shimmer 1.4s infinite; border-radius: 4px; }
+        @keyframes sk-shimmer { 0% { background-position: 200% 0 } 100% { background-position: -200% 0 } }
+        .sk-sm { height: 12px; width: 60px; }
+        .sk-md { height: 13px; width: 80px; }
+        .sk-lg { height: 13px; width: 100px; }
+
+        /* ── TECHNICALS MODAL ── */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 900; display: none; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: var(--bg-surface); border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); width: 520px; max-width: 95vw; padding: 0; overflow: hidden; }
+        .modal-hdr { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border-color); }
+        .modal-title { font-size: 15px; font-weight: 800; }
+        .modal-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .modal-close { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; color: var(--text-muted); transition: all 0.15s; }
+        .modal-close:hover { background: #fef2f2; color: #DC2626; }
+        .modal-body { padding: 20px 22px; }
+        .tech-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+        .tech-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px; }
+        .tech-card .tc-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 5px; }
+        .tech-card .tc-val { font-size: 18px; font-weight: 800; color: var(--text-main); }
+        .tech-card .tc-sub { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+        .tc-val.green { color: var(--up-green); }
+        .tc-val.red   { color: var(--down-red); }
+        .tech-ma-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
+        .ma-label { color: var(--text-muted); font-weight: 600; width: 42px; flex-shrink: 0; }
+        .ma-bar-wrap { flex: 1; height: 6px; background: var(--bg-card); border-radius: 3px; overflow: hidden; }
+        .ma-bar { height: 100%; border-radius: 3px; transition: width 0.5s; }
+        .ma-bar.above { background: var(--up-green); }
+        .ma-bar.below { background: var(--down-red); }
+        .ma-val { font-weight: 700; color: var(--text-main); width: 70px; text-align: right; font-variant-numeric: tabular-nums; }
+        .ma-badge { font-size: 10px; padding: 2px 7px; border-radius: 8px; font-weight: 700; }
+        .ma-badge.above { background: rgba(5,150,105,0.1); color: var(--up-green); }
+        .ma-badge.below { background: rgba(220,38,38,0.1); color: var(--down-red); }
+        .rsi-gauge-wrap { margin: 0 0 18px; }
+        .rsi-bar-bg { height: 8px; border-radius: 4px; background: linear-gradient(to right, #DC2626 0%, #f59e0b 30%, #059669 50%, #f59e0b 70%, #DC2626 100%); position: relative; }
+        .rsi-indicator { position: absolute; top: -4px; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid var(--accent-blue); box-shadow: 0 2px 6px rgba(0,0,0,0.2); transform: translateX(-50%); transition: left 0.5s; }
+        .rsi-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); margin-top: 6px; }
+        .w52-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+        .w52-lbl { color: var(--text-muted); }
+        .w52-val { font-weight: 700; }
+        .loading-overlay { text-align: center; padding: 40px; color: var(--text-muted); font-size: 13px; }
+        .spinner { display: inline-block; width: 22px; height: 22px; border: 3px solid var(--border-color); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── WATCHLIST EMPTY ── */
+        .wl-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 80px 30px; color: var(--text-muted); }
+        .wl-empty-icon { font-size: 48px; opacity: 0.4; }
+        .wl-empty-text { font-size: 14px; font-weight: 500; text-align: center; }
+        .wl-empty-sub { font-size: 12px; opacity: 0.7; text-align: center; }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
+
+        /* ── Toast ── */
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: #1E2328; color: #fff; padding: 10px 22px; border-radius: 8px; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.25); z-index: 9999; transition: transform 0.3s; pointer-events: none; }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sector-panel { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ── SIDEBAR ─────────────────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-logo">ORB</div>
+        <span class="brand-text">ORB Console</span>
+    </div>
+    <nav class="sidebar-nav">
+        <div class="nav-section-label">Trading</div>
+        <a href="/" class="nav-item"><span class="nav-icon">📊</span><span class="nav-text">Dashboard</span></a>
+        <a href="/analytics" class="nav-item"><span class="nav-icon">📈</span><span class="nav-text">Analytics</span></a>
+        <a href="/screener" class="nav-item active"><span class="nav-icon">🔍</span><span class="nav-text">Screener</span></a>
+        <div class="nav-section-label">Config</div>
+        <a href="/strategy" class="nav-item"><span class="nav-icon">⚙️</span><span class="nav-text">Strategy</span></a>
+        <a href="/profile" class="nav-item"><span class="nav-icon">👤</span><span class="nav-text">Profile</span></a>
+    </nav>
+    <button class="sidebar-toggle" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">⟨</button>
+</aside>
+
+<!-- ── MAIN ────────────────────────────────────────────────────── -->
+<div class="main-wrap">
+
+    <!-- Topbar -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <button class="hamburger" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">☰</button>
+            <span class="topbar-title">🔍 Stock Screener</span>
+        </div>
+        <div class="topbar-right">
+            <div class="user-menu" id="userMenu">
+                <button class="user-btn" onclick="document.getElementById('userMenu').classList.toggle('open')">
+                    <div class="user-avatar" id="topAvatar">U</div>
+                    <span class="user-name" id="topName">Loading…</span>
+                    <span class="user-chevron">▾</span>
+                </button>
+                <div class="user-dropdown">
+                    <div class="dropdown-section">
+                        <a href="/profile" class="dropdown-item">👤 Profile</a>
+                        <a href="/" class="dropdown-item">📊 Dashboard</a>
+                        <button class="dropdown-item danger" onclick="logout()">↩ Sign Out</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="body-wrap">
+
+        <!-- ── SECTOR SIDEBAR ──────────────────────────────────── -->
+        <div class="sector-panel">
+            <div class="sector-panel-hdr">Sectors / Indices</div>
+            <div class="sector-list" id="sectorList">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- ── CONTENT AREA ─────────────────────────────────────── -->
+        <div class="content-area">
+
+            <!-- Tabs -->
+            <div class="view-tabs">
+                <div class="view-tab active" id="tabScreener" onclick="switchTab('screener')">
+                    📋 Screener <span class="tab-badge" id="screenerCount">—</span>
+                </div>
+                <div class="view-tab" id="tabWatchlist" onclick="switchTab('watchlist')">
+                    ⭐ Watchlist <span class="tab-badge" id="wlCount">0</span>
+                </div>
+            </div>
+
+            <!-- Toolbar -->
+            <div class="toolbar">
+                <div class="search-wrap">
+                    <span class="search-icon">🔎</span>
+                    <input type="text" id="searchInput" placeholder="Search symbol or company…" oninput="applyFilters()">
+                </div>
+                <div class="toolbar-right">
+                    <span class="result-count" id="resultCount"></span>
+                    <select class="sort-select" id="sortSelect" onchange="applyFilters()">
+                        <option value="">Sort by…</option>
+                        <option value="chg_desc">Change% ▼</option>
+                        <option value="chg_asc">Change% ▲</option>
+                        <option value="ltp_desc">LTP ▼</option>
+                        <option value="ltp_asc">LTP ▲</option>
+                        <option value="vol_desc">Volume ▼</option>
+                        <option value="sym_asc">Symbol A→Z</option>
+                    </select>
+                    <button class="refresh-btn" id="refreshBtn" onclick="refresh()">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-wrap">
+                <!-- Screener table -->
+                <div id="screenerView">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th onclick="sortBy('symbol')">Symbol <span class="sort-arrow"></span></th>
+                                <th>Sector</th>
+                                <th onclick="sortBy('ltp')" class="sorted-desc">LTP <span class="sort-arrow"></span></th>
+                                <th onclick="sortBy('change_pct')">Chg% <span class="sort-arrow"></span></th>
+                                <th onclick="sortBy('open')">Open <span class="sort-arrow"></span></th>
+                                <th onclick="sortBy('high')">High <span class="sort-arrow"></span></th>
+                                <th onclick="sortBy('low')">Low <span class="sort-arrow"></span></th>
+                                <th onclick="sortBy('volume')">Volume <span class="sort-arrow"></span></th>
+                                <th>Technicals</th>
+                                <th>WL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="screenerBody">
+                            <tr><td colspan="10" class="empty-row">Select a sector to load stocks…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Watchlist table -->
+                <div id="watchlistView" style="display:none">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Sector</th>
+                                <th>LTP</th>
+                                <th>Chg%</th>
+                                <th>Open</th>
+                                <th>High</th>
+                                <th>Low</th>
+                                <th>Volume</th>
+                                <th>Technicals</th>
+                                <th>Remove</th>
+                            </tr>
+                        </thead>
+                        <tbody id="watchlistBody">
+                            <tr><td colspan="10"><div class="wl-empty"><div class="wl-empty-icon">⭐</div><div class="wl-empty-text">Your watchlist is empty</div><div class="wl-empty-sub">Star stocks in the Screener tab to add them here</div></div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── TECHNICALS MODAL ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="techModal">
+    <div class="modal-box">
+        <div class="modal-hdr">
+            <div>
+                <div class="modal-title" id="techModalTitle">—</div>
+                <div class="modal-sub" id="techModalSub">Technical Analysis · Last 200 trading days</div>
+            </div>
+            <button class="modal-close" onclick="closeTechModal()">✕</button>
+        </div>
+        <div class="modal-body" id="techModalBody">
+            <div class="loading-overlay"><span class="spinner"></span>Computing indicators…</div>
+        </div>
+    </div>
+</div>
+
+<!-- ── TOAST ─────────────────────────────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Auth ─────────────────────────────────────────────────────────────────────
+const token = () => localStorage.getItem('orb_token');
+function authHdr() { return { 'Authorization': `Bearer ${token()}`, 'Content-Type': 'application/json' }; }
+function logout() {
+    localStorage.removeItem('orb_token');
+    localStorage.removeItem('orb_user');
+    location.href = '/login';
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let sectors        = [];        // [{sector, count}]
+let activeSector   = '';
+let rawData        = [];        // full quote rows for current sector
+let filteredData   = [];        // after search+sort
+let watchlistSet   = new Set(); // symbols currently in watchlist
+let watchlistData  = [];        // raw watchlist rows
+let currentTab     = 'screener';
+let sortCol        = 'change_pct';
+let sortDir        = 'desc';
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+    if (!token()) { location.href = '/login'; return; }
+
+    // Populate avatar instantly from cached user (avoids blank flash)
+    const cachedUser = JSON.parse(localStorage.getItem('orb_user') || '{}');
+    if (cachedUser.display_name || cachedUser.username) {
+        const name = cachedUser.display_name || cachedUser.username;
+        document.getElementById('topName').textContent = name;
+        document.getElementById('topAvatar').textContent = name[0].toUpperCase();
+    }
+
+    await loadUser();
+    await Promise.all([loadSectors(), loadWatchlist()]);
+    // Auto-select first sector
+    if (sectors.length > 0) selectSector(sectors[0].sector);
+});
+
+document.addEventListener('click', e => {
+    if (!document.getElementById('userMenu').contains(e.target))
+        document.getElementById('userMenu').classList.remove('open');
+});
+
+async function loadUser() {
+    try {
+        const r = await fetch('/api/auth/me', { headers: authHdr() });
+        if (r.status === 401) { logout(); return; }
+        const d = await r.json();
+        const name = d.display_name || d.username || 'User';
+        document.getElementById('topName').textContent = name;
+        document.getElementById('topAvatar').textContent = name[0].toUpperCase();
+    } catch {}
+}
+
+// ── Sectors ───────────────────────────────────────────────────────────────────
+async function loadSectors() {
+    try {
+        const r = await fetch('/api/screener/sectors', { headers: authHdr() });
+        const d = await r.json();
+        if (!d.ok) return;
+        sectors = d.sectors;
+        renderSectorList();
+    } catch(e) { console.error(e); }
+}
+
+function renderSectorList() {
+    const el = document.getElementById('sectorList');
+    el.innerHTML = sectors.map(s => `
+        <div class="sector-item ${s.sector === activeSector ? 'active' : ''}"
+             onclick="selectSector('${escHtml(s.sector)}')">
+            <span>${escHtml(s.sector)}</span>
+            <span class="sector-count">${s.count}</span>
+        </div>
+    `).join('');
+}
+
+function selectSector(name) {
+    activeSector = name;
+    renderSectorList();
+    loadSectorQuotes(name);
+}
+
+// ── Quotes ────────────────────────────────────────────────────────────────────
+async function loadSectorQuotes(sector) {
+    const body = document.getElementById('screenerBody');
+    body.innerHTML = skeletonRows(12);
+    document.getElementById('resultCount').textContent = '';
+    try {
+        const qs = sector ? `?sector=${encodeURIComponent(sector)}` : '';
+        const r  = await fetch(`/api/screener/quotes${qs}`, { headers: authHdr() });
+        const d  = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Failed');
+        rawData = d.data;
+        if (!d.live) showToast('⚠ Live data not available — showing stock list only', 3500);
+        applyFilters();
+    } catch(e) {
+        body.innerHTML = `<tr><td colspan="10" class="empty-row">Error: ${escHtml(e.message)}</td></tr>`;
+    }
+}
+
+// ── Filters & Sort ────────────────────────────────────────────────────────────
+function applyFilters() {
+    const q   = document.getElementById('searchInput').value.toLowerCase().trim();
+    const srt = document.getElementById('sortSelect').value;
+
+    filteredData = rawData.filter(r =>
+        !q || r.symbol.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q)
+    );
+
+    // Sort
+    const [col, dir] = parseSortSelect(srt);
+    if (col) {
+        filteredData.sort((a, b) => {
+            const va = a[col] ?? (dir === 'asc' ? Infinity : -Infinity);
+            const vb = b[col] ?? (dir === 'asc' ? Infinity : -Infinity);
+            if (typeof va === 'string') return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+            return dir === 'asc' ? va - vb : vb - va;
+        });
+    }
+
+    document.getElementById('resultCount').textContent = `${filteredData.length} stocks`;
+    document.getElementById('screenerCount').textContent = filteredData.length;
+    renderScreenerTable();
+}
+
+function parseSortSelect(val) {
+    const map = {
+        chg_desc: ['change_pct','desc'], chg_asc: ['change_pct','asc'],
+        ltp_desc: ['ltp','desc'],        ltp_asc: ['ltp','asc'],
+        vol_desc: ['volume','desc'],     sym_asc: ['symbol','asc'],
+    };
+    return map[val] || [null, null];
+}
+
+function sortBy(col) {
+    if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    else { sortCol = col; sortDir = 'desc'; }
+    // Map column to sortSelect option
+    const mapToSel = { change_pct: sortDir === 'desc' ? 'chg_desc':'chg_asc', ltp: sortDir === 'desc' ? 'ltp_desc':'ltp_asc', volume: 'vol_desc', symbol: 'sym_asc' };
+    if (mapToSel[col]) document.getElementById('sortSelect').value = mapToSel[col];
+    applyFilters();
+    // Update header classes
+    document.querySelectorAll('th').forEach(t => t.classList.remove('sorted-asc','sorted-desc'));
+}
+
+// ── Render screener table ─────────────────────────────────────────────────────
+function renderScreenerTable() {
+    const body = document.getElementById('screenerBody');
+    if (!filteredData.length) {
+        body.innerHTML = `<tr><td colspan="10" class="empty-row">No stocks found.</td></tr>`;
+        return;
+    }
+    body.innerHTML = filteredData.map(r => {
+        const inWl = watchlistSet.has(r.symbol);
+        const chgCls = r.change_pct == null ? 'neu' : r.change_pct > 0 ? 'up' : r.change_pct < 0 ? 'dn' : 'neu';
+        const chgTxt = r.change_pct == null ? '—' : (r.change_pct >= 0 ? '+' : '') + r.change_pct.toFixed(2) + '%';
+        return `<tr>
+            <td>
+                <div class="sym-cell">
+                    <span class="sym-name">${escHtml(r.symbol)}</span>
+                    <span class="sym-company" title="${escHtml(r.name)}">${escHtml(r.name || '—')}</span>
+                </div>
+            </td>
+            <td><span class="sector-pill" title="${escHtml(r.sector)}">${escHtml(r.sector || '—')}</span></td>
+            <td class="price-cell">${fmtPrice(r.ltp)}</td>
+            <td class="chg-cell ${chgCls}">${chgTxt}</td>
+            <td>${fmtPrice(r.open)}</td>
+            <td>${fmtPrice(r.high)}</td>
+            <td>${fmtPrice(r.low)}</td>
+            <td class="vol-cell">${fmtVol(r.volume)}</td>
+            <td><button class="tech-btn" onclick="openTechModal('${escHtml(r.symbol)}','${escHtml(r.name || r.symbol)}')">⚡ Analyse</button></td>
+            <td>
+                <button class="wl-btn ${inWl ? 'in-wl' : ''}" id="wlbtn-${escHtml(r.symbol)}"
+                        onclick="toggleWatchlist('${escHtml(r.symbol)}','${escHtml(r.name || '')}','${escHtml(r.sector || '')}',this)"
+                        title="${inWl ? 'Remove from watchlist' : 'Add to watchlist'}">
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+// ── Watchlist ─────────────────────────────────────────────────────────────────
+async function loadWatchlist() {
+    try {
+        const r = await fetch('/api/screener/watchlist', { headers: authHdr() });
+        if (r.status === 401) return;
+        const d = await r.json();
+        if (!d.ok) return;
+        watchlistData = d.data;
+        watchlistSet  = new Set(d.data.map(x => x.symbol));
+        document.getElementById('wlCount').textContent = d.data.length;
+    } catch {}
+}
+
+function renderWatchlistTable() {
+    const body = document.getElementById('watchlistBody');
+    if (!watchlistData.length) {
+        body.innerHTML = `<tr><td colspan="10"><div class="wl-empty"><div class="wl-empty-icon">⭐</div><div class="wl-empty-text">Your watchlist is empty</div><div class="wl-empty-sub">Star stocks in the Screener tab to add them here</div></div></td></tr>`;
+        return;
+    }
+    body.innerHTML = watchlistData.map(r => {
+        const chgCls = r.change_pct == null ? 'neu' : r.change_pct > 0 ? 'up' : r.change_pct < 0 ? 'dn' : 'neu';
+        const chgTxt = r.change_pct == null ? '—' : (r.change_pct >= 0 ? '+' : '') + r.change_pct.toFixed(2) + '%';
+        return `<tr>
+            <td>
+                <div class="sym-cell">
+                    <span class="sym-name">${escHtml(r.symbol)}</span>
+                    <span class="sym-company">${escHtml(r.company_name || '—')}</span>
+                </div>
+            </td>
+            <td><span class="sector-pill">${escHtml(r.sector || '—')}</span></td>
+            <td class="price-cell">${fmtPrice(r.ltp)}</td>
+            <td class="chg-cell ${chgCls}">${chgTxt}</td>
+            <td>${fmtPrice(r.open)}</td>
+            <td>${fmtPrice(r.high)}</td>
+            <td>${fmtPrice(r.low)}</td>
+            <td class="vol-cell">${fmtVol(r.volume)}</td>
+            <td><button class="tech-btn" onclick="openTechModal('${escHtml(r.symbol)}','${escHtml(r.company_name || r.symbol)}')">⚡ Analyse</button></td>
+            <td>
+                <button class="wl-btn in-wl" onclick="removeFromWatchlist('${escHtml(r.symbol)}',this)"
+                        title="Remove from watchlist"></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+async function toggleWatchlist(symbol, name, sector, btn) {
+    if (watchlistSet.has(symbol)) {
+        await removeFromWatchlist(symbol, btn);
+    } else {
+        await addToWatchlist(symbol, name, sector, btn);
+    }
+}
+
+async function addToWatchlist(symbol, name, sector, btn) {
+    try {
+        const r = await fetch('/api/screener/watchlist', {
+            method: 'POST', headers: authHdr(),
+            body: JSON.stringify({ symbol, name, sector })
+        });
+        const d = await r.json();
+        if (d.ok) {
+            watchlistSet.add(symbol);
+            btn.classList.add('in-wl');
+            btn.title = 'Remove from watchlist';
+            showToast(`⭐ ${symbol} added to watchlist`);
+            document.getElementById('wlCount').textContent = watchlistSet.size;
+            await loadWatchlist();
+        }
+    } catch(e) { showToast('Error: ' + e.message, 2500); }
+}
+
+async function removeFromWatchlist(symbol, btn) {
+    try {
+        const r = await fetch(`/api/screener/watchlist/${encodeURIComponent(symbol)}`, {
+            method: 'DELETE', headers: authHdr()
+        });
+        const d = await r.json();
+        if (d.ok) {
+            watchlistSet.delete(symbol);
+            if (btn) {
+                btn.classList.remove('in-wl');
+                btn.title = 'Add to watchlist';
+            }
+            showToast(`Removed ${symbol} from watchlist`);
+            document.getElementById('wlCount').textContent = watchlistSet.size;
+            await loadWatchlist();
+            if (currentTab === 'watchlist') renderWatchlistTable();
+        }
+    } catch(e) { showToast('Error: ' + e.message, 2500); }
+}
+
+// ── Technicals Modal ─────────────────────────────────────────────────────────
+async function openTechModal(symbol, name) {
+    document.getElementById('techModalTitle').textContent = `${symbol}`;
+    document.getElementById('techModalSub').textContent   = `${name} · Technical Analysis`;
+    document.getElementById('techModalBody').innerHTML    = `<div class="loading-overlay"><span class="spinner"></span>Fetching 200-day history & computing indicators…</div>`;
+    document.getElementById('techModal').classList.add('open');
+
+    try {
+        const r = await fetch(`/api/screener/technicals?symbol=${encodeURIComponent(symbol)}`, { headers: authHdr() });
+        const d = await r.json();
+        if (!d.ok || d.error) {
+            document.getElementById('techModalBody').innerHTML = `<div class="loading-overlay" style="color:#DC2626">⚠ ${escHtml(d.error || 'Failed to fetch data')}</div>`;
+            return;
+        }
+        renderTechModal(d);
+    } catch(e) {
+        document.getElementById('techModalBody').innerHTML = `<div class="loading-overlay" style="color:#DC2626">⚠ ${escHtml(e.message)}</div>`;
+    }
+}
+
+function closeTechModal() {
+    document.getElementById('techModal').classList.remove('open');
+}
+
+document.getElementById('techModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('techModal')) closeTechModal();
+});
+
+function renderTechModal(d) {
+    const ltp   = d.ltp ?? 0;
+    const rsi   = d.rsi14;
+    const rsiPct = rsi != null ? Math.max(0, Math.min(100, rsi)) : 50;
+
+    // RSI sentiment
+    let rsiLabel = '—', rsiColor = 'var(--text-main)';
+    if (rsi != null) {
+        if (rsi >= 70)      { rsiLabel = 'Overbought'; rsiColor = '#DC2626'; }
+        else if (rsi >= 60) { rsiLabel = 'Bullish';    rsiColor = '#059669'; }
+        else if (rsi >= 40) { rsiLabel = 'Neutral';    rsiColor = 'var(--text-muted)'; }
+        else if (rsi >= 30) { rsiLabel = 'Bearish';    rsiColor = '#D97706'; }
+        else               { rsiLabel = 'Oversold';   rsiColor = '#DC2626'; }
+    }
+
+    function maRow(label, val) {
+        if (val == null) return `<div class="tech-ma-row"><span class="ma-label">${label}</span><span class="na-cell">N/A</span></div>`;
+        const above = ltp >= val;
+        const pct   = Math.abs((ltp - val) / val * 100);
+        const barW  = Math.min(pct * 3, 100).toFixed(1);
+        return `<div class="tech-ma-row">
+            <span class="ma-label">${label}</span>
+            <div class="ma-bar-wrap"><div class="ma-bar ${above ? 'above' : 'below'}" style="width:${barW}%"></div></div>
+            <span class="ma-val">₹${fmtNum(val)}</span>
+            <span class="ma-badge ${above ? 'above' : 'below'}">${above ? '▲ Above' : '▼ Below'}</span>
+        </div>`;
+    }
+
+    const distH = d.dist_from_52h != null ? `${d.dist_from_52h >= 0 ? '+' : ''}${d.dist_from_52h.toFixed(2)}%` : '—';
+    const distL = d.dist_from_52l != null ? `+${d.dist_from_52l.toFixed(2)}%` : '—';
+
+    document.getElementById('techModalBody').innerHTML = `
+        <!-- Stat grid -->
+        <div class="tech-grid">
+            <div class="tech-card">
+                <div class="tc-lbl">RSI (14)</div>
+                <div class="tc-val" style="color:${rsiColor}">${rsi != null ? rsi.toFixed(1) : '—'}</div>
+                <div class="tc-sub">${rsiLabel}</div>
+            </div>
+            <div class="tech-card">
+                <div class="tc-lbl">52W High</div>
+                <div class="tc-val">₹${d.w52_high != null ? fmtNum(d.w52_high) : '—'}</div>
+                <div class="tc-sub">${distH} from high</div>
+            </div>
+            <div class="tech-card">
+                <div class="tc-lbl">52W Low</div>
+                <div class="tc-val">₹${d.w52_low != null ? fmtNum(d.w52_low) : '—'}</div>
+                <div class="tc-sub">${distL} from low</div>
+            </div>
+        </div>
+
+        <!-- RSI gauge -->
+        <div class="rsi-gauge-wrap">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;">RSI Gauge</div>
+            <div class="rsi-bar-bg">
+                <div class="rsi-indicator" style="left:${rsiPct}%"></div>
+            </div>
+            <div class="rsi-labels"><span>Oversold (30)</span><span>Neutral (50)</span><span>Overbought (70)</span></div>
+        </div>
+
+        <!-- Moving averages -->
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px;">Moving Averages vs LTP (₹${fmtNum(ltp)})</div>
+        ${maRow('MA 20', d.ma20)}
+        ${maRow('MA 50', d.ma50)}
+        ${maRow('MA 200', d.ma200)}
+
+        <!-- 52W range -->
+        <div style="margin-top:16px;">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px;">52-Week Range</div>
+            <div style="position:relative;height:8px;background:#e2e8f0;border-radius:4px;margin-bottom:8px;">
+                ${d.w52_high && d.w52_low ? (() => {
+                    const range = d.w52_high - d.w52_low;
+                    const pos   = range > 0 ? ((ltp - d.w52_low) / range * 100).toFixed(1) : 50;
+                    return `<div style="position:absolute;left:0;width:${pos}%;height:100%;background:linear-gradient(to right,#DC2626,#059669);border-radius:4px;"></div>
+                            <div style="position:absolute;left:${pos}%;top:-4px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #2563EB;transform:translateX(-50%);box-shadow:0 2px 6px rgba(0,0,0,.2);"></div>`;
+                })() : ''}
+            </div>
+            <div class="w52-row">
+                <div><div class="w52-lbl">52W Low</div><div class="w52-val" style="color:#DC2626">₹${d.w52_low != null ? fmtNum(d.w52_low) : '—'}</div></div>
+                <div style="text-align:center"><div class="w52-lbl">Current LTP</div><div class="w52-val">₹${fmtNum(ltp)}</div></div>
+                <div style="text-align:right"><div class="w52-lbl">52W High</div><div class="w52-val" style="color:#059669">₹${d.w52_high != null ? fmtNum(d.w52_high) : '—'}</div></div>
+            </div>
+        </div>
+
+        <div style="font-size:11px;color:var(--text-muted);margin-top:18px;text-align:center;">Based on last ${d.bars || '—'} trading days of daily OHLC data</div>
+    `;
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+    currentTab = tab;
+    document.getElementById('tabScreener').classList.toggle('active',  tab === 'screener');
+    document.getElementById('tabWatchlist').classList.toggle('active', tab === 'watchlist');
+    document.getElementById('screenerView').style.display  = tab === 'screener'  ? '' : 'none';
+    document.getElementById('watchlistView').style.display = tab === 'watchlist' ? '' : 'none';
+    document.getElementById('searchInput').value = '';
+
+    if (tab === 'watchlist') {
+        // Refresh quotes for watchlist items when tab is selected
+        loadWatchlist().then(() => renderWatchlistTable());
+    }
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
+async function refresh() {
+    document.getElementById('refreshBtn').disabled = true;
+    document.getElementById('refreshBtn').textContent = '⏳ Loading…';
+    if (currentTab === 'screener') {
+        await loadSectorQuotes(activeSector);
+    } else {
+        await loadWatchlist();
+        renderWatchlistTable();
+    }
+    document.getElementById('refreshBtn').disabled = false;
+    document.getElementById('refreshBtn').innerHTML = '🔄 Refresh';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtPrice(v) {
+    if (v == null) return '<span class="na-cell">—</span>';
+    return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtNum(v) {
+    if (v == null) return '—';
+    return v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtVol(v) {
+    if (v == null) return '<span class="na-cell">—</span>';
+    if (v >= 1e7) return (v / 1e7).toFixed(2) + ' Cr';
+    if (v >= 1e5) return (v / 1e5).toFixed(2) + ' L';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toLocaleString('en-IN');
+}
+
+function skeletonRows(n) {
+    const cols = 10;
+    const w    = ['50px','80px','60px','50px','60px','60px','60px','70px','70px','30px'];
+    return Array.from({length: n}, () =>
+        `<tr>${Array.from({length: cols}, (_,i) => `<td><span class="sk" style="width:${w[i]}"></span></td>`).join('')}</tr>`
+    ).join('');
+}
+
+let _toastTimer = null;
+function showToast(msg, duration = 2200) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+</script>
+</body>
+</html>

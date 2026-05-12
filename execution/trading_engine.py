@@ -4,7 +4,6 @@ import threading
 import time
 
 from config.settings import TradingConfig
-from core.options_math import OptionsMath
 from core.state import BotState
 from core.strategy import ORBStrategy
 from execution.broker import KiteBroker
@@ -22,15 +21,47 @@ def _now() -> datetime.datetime:
 class TradingEngine:
     """Orchestrates data fetching, strategy execution, and order routing."""
 
-    def __init__(self, config: TradingConfig, state: BotState, broker: KiteBroker):
-        self.config = config
-        self.state = state
-        self.broker = broker
+    def __init__(self, config: TradingConfig, state: BotState, broker: KiteBroker,
+                 user_id: int = None):
+        self.config  = config
+        self.state   = state
+        self.broker  = broker
+        self.user_id = user_id   # set for analytics DB saves
         self.strategy = ORBStrategy(config, state)
         self._stop_event = threading.Event()
 
     def stop(self):
         self._stop_event.set()
+
+    def _save_trade(self, trade_mode: str):
+        """Persist the just-completed trade to the analytics DB."""
+        if not self.user_id:
+            return
+        from db.helpers import save_completed_trade
+        st  = self.state
+        cfg = self.config
+        # Derive entry/exit datetimes from marker unix timestamps
+        entry_ts = st.markers[0]["time"]  if len(st.markers) > 0 else None
+        exit_ts  = st.markers[-1]["time"] if len(st.markers) > 1 else None
+        to_dt = lambda ts: datetime.datetime.fromtimestamp(ts, tz=_IST).replace(tzinfo=None) if ts else None
+        save_completed_trade(
+            user_id       = self.user_id,
+            trade_mode    = trade_mode,
+            date          = _now().date(),
+            position_type = st.position_type,
+            entry_prem    = st.entry_prem,
+            exit_prem     = st.exit_prem,
+            strike        = self.strategy.strike,
+            quantity      = cfg.qty,
+            gross_pnl     = st.gross_pnl,
+            charges       = st.total_charges,
+            net_pnl       = st.net_pnl,
+            exit_reason   = st.exit_reason,
+            or_high       = st.or_high,
+            or_low        = st.or_low,
+            entry_time    = to_dt(entry_ts),
+            exit_time     = to_dt(exit_ts),
+        )
 
     def _stopped(self) -> bool:
         return self._stop_event.is_set()
@@ -199,6 +230,12 @@ class TradingEngine:
         self._fetch_balance(real_money)
         self._backfill_session()  # establish OR + position before live loop
 
+        # If the day's trade already completed during backfill, stop cleanly.
+        if self.strategy.has_traded and not self.strategy.in_position:
+            logger.info("Today's trade already completed in backfill replay — engine stopped.")
+            self.state.status = "Trade done for today"
+            return
+
         balance_tick = 0   # refresh balance every 60s
 
         while not self._stopped():
@@ -257,6 +294,7 @@ class TradingEngine:
                     if signal["action"] == "SELL":
                         self.state.live_pnl         = 0.0
                         self.state.live_option_price = 0.0
+                        self._save_trade("LIVE" if real_money else "PAPER")
                         logger.info("Trade complete. Shutting down engine.")
                         break
 
@@ -268,6 +306,47 @@ class TradingEngine:
             except Exception as e:
                 logger.error(f"Network error: {e}")
                 time.sleep(2)
+
+    def _backfill_option_chart(self, strike: int, opt_type: str,
+                               trade_date: datetime.date):
+        """
+        Fetch today's full-day 1m option OHLC (09:15–15:30) from Kite and
+        prepend those historical candles to state.option_prices so the chart
+        shows the entire session, not just from the entry tick onwards.
+        Runs in a background thread — safe to call fire-and-forget.
+        """
+        try:
+            records = self.broker.get_option_history(strike, opt_type, trade_date)
+            if not records:
+                logger.info(
+                    f"No option history for NIFTY{strike}{opt_type} on {trade_date} "
+                    f"— option chart not backfilled"
+                )
+                return
+            hist = sorted(
+                [
+                    {
+                        "time":  int(r["date"].timestamp()),
+                        "open":  r["open"], "high": r["high"],
+                        "low":   r["low"],  "close": r["close"],
+                    }
+                    for r in records
+                ],
+                key=lambda c: c["time"],
+            )
+            # Merge: keep historical candles that don't overlap live ticks
+            existing_times = {c["time"] for c in self.state.option_prices}
+            new_hist = [c for c in hist if c["time"] not in existing_times]
+            self.state.option_prices = sorted(
+                new_hist + self.state.option_prices,
+                key=lambda c: c["time"],
+            )
+            logger.info(
+                f"Option chart backfilled: {len(new_hist)} historical candles "
+                f"prepended for NIFTY{strike}{opt_type}"
+            )
+        except Exception as e:
+            logger.warning(f"Option chart backfill failed for NIFTY{strike}{opt_type}: {e}")
 
     def _handle_signal(self, signal: dict, real_money: bool = False):
         cfg = self.config
@@ -281,12 +360,32 @@ class TradingEngine:
             required_margin = round(signal["price"] * cfg.qty, 2)
             self._check_balance(required_margin, real_money)
 
+            # ── Backfill option chart with full-day history (09:15 → now) ──────
+            # Runs in background so it doesn't block the live feed.
+            _opt_suffix  = "CE" if signal["type"] == "CALL" else "PE"
+            _trade_date  = _now().date()
+            threading.Thread(
+                target=self._backfill_option_chart,
+                args=(signal["strike"], _opt_suffix, _trade_date),
+                daemon=True,
+            ).start()
+
             if real_money:
                 opt_type = "CE" if signal["type"] == "CALL" else "PE"
-                sym = OptionsMath.build_nfo_symbol(signal["strike"], opt_type)
+                trade_date = _now().date()
+                # Use find_option_tradingsymbol to get the EXACT Kite tradingsymbol
+                # (e.g. "NIFTY2651423700PE" for weekly, "NIFTY26MAY23700PE" for monthly).
+                # build_nfo_symbol() generates the wrong format for Kite orders.
+                sym = self.broker.find_option_tradingsymbol(
+                    signal["strike"], opt_type, trade_date
+                )
+                if not sym:
+                    logger.error(
+                        f"Could not resolve NFO tradingsymbol for "
+                        f"NIFTY{signal['strike']}{opt_type} — order aborted"
+                    )
+                    return
                 # ── MARKET ORDER (not limit) ──────────────────────────────────
-                # We use MARKET orders for guaranteed execution on breakout.
-                # Limit orders risk non-fill if the market gaps through the level.
                 order_id = self.broker.place_market_order(
                     sym, self.broker.kite.TRANSACTION_TYPE_BUY, cfg.qty
                 )
@@ -303,9 +402,18 @@ class TradingEngine:
         elif signal["action"] == "SELL":
             logger.info(f"{signal['reason']} — Exit: ₹{signal['price']:.2f} | P&L: ₹{signal['pnl']:.2f}")
             if real_money:
-                pos_type = self.state.position_type
-                opt_type = "CE" if pos_type == "CALL" else "PE"
-                sym = OptionsMath.build_nfo_symbol(self.strategy.strike, opt_type)
+                pos_type   = self.state.position_type
+                opt_type   = "CE" if pos_type == "CALL" else "PE"
+                trade_date = _now().date()
+                sym = self.broker.find_option_tradingsymbol(
+                    self.strategy.strike, opt_type, trade_date
+                )
+                if not sym:
+                    logger.error(
+                        f"Could not resolve NFO tradingsymbol for "
+                        f"NIFTY{self.strategy.strike}{opt_type} — SELL order aborted"
+                    )
+                    return
                 order_id = self.broker.place_market_order(
                     sym, self.broker.kite.TRANSACTION_TYPE_SELL, cfg.qty
                 )

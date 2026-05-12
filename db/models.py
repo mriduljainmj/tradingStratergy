@@ -3,7 +3,7 @@ import json
 
 from sqlalchemy import (
     Boolean, Column, Date, DateTime, Float, ForeignKey,
-    Integer, String, Text,
+    Integer, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -121,6 +121,7 @@ class Strategy(Base):
     user = relationship("User", back_populates="strategies")
 
     def get_rules(self):
+
         return json.loads(self.rules) if self.rules else {}
 
     def set_rules(self, rules_dict):
@@ -135,4 +136,28 @@ class Strategy(Base):
             "is_active":   self.is_active,
             "created_at":  self.created_at.isoformat() if self.created_at else None,
             "updated_at":  self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class Watchlist(Base):
+    """Per-user stock watchlist — symbols the user wants to monitor."""
+    __tablename__ = "watchlist"
+    __table_args__ = (UniqueConstraint("user_id", "symbol", name="uq_watchlist_user_symbol"),)
+
+    id           = Column(Integer, primary_key=True)
+    user_id      = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    symbol       = Column(String(30), nullable=False)
+    company_name = Column(String(200))
+    sector       = Column(String(100))
+    added_at     = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", backref="watchlist_items")
+
+    def to_dict(self):
+        return {
+            "id":           self.id,
+            "symbol":       self.symbol,
+            "company_name": self.company_name or self.symbol,
+            "sector":       self.sector or "",
+            "added_at":     self.added_at.isoformat() if self.added_at else None,
         }

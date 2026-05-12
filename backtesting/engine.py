@@ -25,12 +25,17 @@ def atm_strike(price: float, spacing: int = 50) -> int:
     return int(round(price / spacing) * spacing)
 
 
-def next_thursday(dt) -> object:
+def next_tuesday(dt) -> object:
+    """Return the next weekly expiry Tuesday (NSE moved NIFTY expiry Thu→Tue, Oct 2024)."""
     d = dt.date() if hasattr(dt, "date") else dt
-    days = (3 - d.weekday()) % 7
+    days = (1 - d.weekday()) % 7   # 1 = Tuesday
     if days == 0:
         days = 7
     return d + pd.Timedelta(days=days)
+
+
+# Keep old name as alias so any external callers don't break
+next_thursday = next_tuesday
 
 
 def tte_years(current_dt, expiry_date) -> float:
@@ -127,7 +132,7 @@ def run_backtest(df: pd.DataFrame, config: BacktestConfig) -> pd.DataFrame:
                 trail_dist = initial_risk * config.fib_trail
                 best_idx_px = entry_idx_px
                 strike = atm_strike(entry_idx_px, spacing)
-                expiry = next_thursday(entry_time)
+                expiry = next_tuesday(entry_time)
                 iv = get_iv(entry_time)
                 T_entry = tte_years(entry_time, expiry)
                 entry_prem = bs_put(entry_idx_px, strike, T_entry, r, iv)

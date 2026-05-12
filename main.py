@@ -124,7 +124,7 @@ def main():
 
     def _start_engine(mode: str):
         global _current_engine, _engine_thread
-        engine = TradingEngine(trading_config, state, broker)
+        engine = TradingEngine(trading_config, state, broker, user_id=uid)
         _current_engine = engine
 
         def _run():
@@ -162,6 +162,7 @@ def main():
         broker=broker,
         start_engine_fn=_start_engine,
         initial_mode=app_config.mode,
+        user_id=uid,
     )
     logger.info(f"Dashboard live at http://{app_config.host}:{app_config.port}")
     flask_app.run(host=app_config.host, port=app_config.port, debug=False, use_reloader=False)

@@ -31,10 +31,12 @@ class OptionsMath:
     @staticmethod
     def get_expiry_date(trade_date: datetime.date) -> datetime.date:
         """
-        Return the nearest weekly expiry Thursday on or after trade_date.
-        If trade_date is itself a Thursday, that IS the expiry.
+        Return the nearest weekly expiry Tuesday on or after trade_date.
+        NSE moved NIFTY weekly options expiry from Thursday to Tuesday
+        (effective Oct 2024 onwards).
+        If trade_date is itself a Tuesday, that IS the expiry.
         """
-        days_ahead = (3 - trade_date.weekday()) % 7   # 3 = Thursday
+        days_ahead = (1 - trade_date.weekday()) % 7   # 1 = Tuesday
         return trade_date + datetime.timedelta(days=days_ahead)
 
     @staticmethod

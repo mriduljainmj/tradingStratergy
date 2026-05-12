@@ -16,6 +16,7 @@ class ORBStrategy:
         self.config = config
         self.state = state
         self.in_position: bool = False
+        self.has_traded: bool = False   # True after first entry — prevents re-entry
         self.target_prem: Optional[float] = None
         self.strike: Optional[int] = None
 
@@ -57,7 +58,7 @@ class ORBStrategy:
                 real_option_price,
             )
 
-        if not self.in_position and t <= self.config.entry_end_time:
+        if not self.in_position and not self.has_traded and t <= self.config.entry_end_time:
             return self._look_for_entry(unix_time, t, tick_open, tick_high, tick_low)
 
         return None
@@ -142,6 +143,7 @@ class ORBStrategy:
             triggered, exit_prem = "EOD Force Close", close_p
 
         if triggered:
+            self.state.exit_reason = triggered   # persist for analytics save
             # P&L and Charges Math
             gross_pnl = (exit_prem - self.state.entry_prem) * cfg.qty
 
@@ -258,6 +260,7 @@ class ORBStrategy:
         })
 
         self.in_position = True
+        self.has_traded  = True   # block any further entry for this session
         return {
             "action": "BUY",
             "type": self.state.position_type,

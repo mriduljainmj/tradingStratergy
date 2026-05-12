@@ -86,12 +86,14 @@
         .mode-tab.active-all    { background: rgba(37,99,235,0.1);  border-color: rgba(37,99,235,0.35);  color: var(--accent-blue); }
         .mode-tab.active-paper  { background: rgba(217,119,6,0.1);  border-color: rgba(217,119,6,0.35);  color: var(--paper-color); }
         .mode-tab.active-live   { background: rgba(5,150,105,0.1);  border-color: rgba(5,150,105,0.35);  color: var(--live-color); }
-        .mode-tab.active-compare { background: rgba(124,58,237,0.1); border-color: rgba(124,58,237,0.35); color: #7c3aed; }
+        .mode-tab.active-compare  { background: rgba(124,58,237,0.1); border-color: rgba(124,58,237,0.35); color: #7c3aed; }
+        .mode-tab.active-backtest { background: rgba(15,118,110,0.1); border-color: rgba(15,118,110,0.35); color: #0f766e; }
         .mode-badge { display: inline-flex; align-items: center; justify-content: center; width: 8px; height: 8px; border-radius: 50%; }
-        .badge-all    { background: var(--accent-blue); }
-        .badge-paper  { background: var(--paper-color); }
-        .badge-live   { background: var(--live-color); }
-        .badge-compare { background: #7c3aed; }
+        .badge-all      { background: var(--accent-blue); }
+        .badge-paper    { background: var(--paper-color); }
+        .badge-live     { background: var(--live-color); }
+        .badge-compare  { background: #7c3aed; }
+        .badge-backtest { background: #0f766e; }
         .tab-sep { width: 1px; height: 20px; background: var(--border-color); margin: 0 2px; }
         .mode-label { margin-left: auto; font-size: 11px; color: var(--text-muted); font-weight: 500; padding: 4px 10px; border-radius: 5px; background: var(--bg-card); border: 1px solid var(--border-color); }
 
@@ -170,9 +172,30 @@
 
         /* ── Stat header strip ── */
         .stats-mode-banner { display: none; align-items: center; gap: 10px; margin-bottom: 14px; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; }
-        .stats-mode-banner.paper { display: flex; background: rgba(217,119,6,0.08); border: 1px solid rgba(217,119,6,0.2); color: var(--paper-color); }
-        .stats-mode-banner.live  { display: flex; background: rgba(5,150,105,0.08); border: 1px solid rgba(5,150,105,0.2); color: var(--live-color); }
-        .stats-mode-banner.all   { display: flex; background: rgba(37,99,235,0.06);  border: 1px solid rgba(37,99,235,0.15);  color: var(--accent-blue); }
+        .stats-mode-banner.paper    { display: flex; background: rgba(217,119,6,0.08);  border: 1px solid rgba(217,119,6,0.2);  color: var(--paper-color); }
+        .stats-mode-banner.live     { display: flex; background: rgba(5,150,105,0.08);  border: 1px solid rgba(5,150,105,0.2);  color: var(--live-color); }
+        .stats-mode-banner.all      { display: flex; background: rgba(37,99,235,0.06);  border: 1px solid rgba(37,99,235,0.15); color: var(--accent-blue); }
+
+        /* ── Backtest view ── */
+        #backtestView { display: none; }
+        #backtestView.visible { display: block; }
+        .bt-runner { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .bt-runner label { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+        .bt-runner input[type=date] { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); padding: 7px 10px; border-radius: 6px; font-size: 13px; outline: none; }
+        .bt-runner input[type=date]:focus { border-color: #0f766e; }
+        .btn-bt { padding: 8px 20px; background: #0f766e; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; display: flex; align-items: center; gap: 6px; }
+        .btn-bt:hover { opacity: 0.88; }
+        .btn-bt:disabled { opacity: 0.5; cursor: not-allowed; }
+        .bt-notice { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+        .bt-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .bt-stat { background: var(--bg-surface); border: 1px solid var(--border-color); border-top: 3px solid #0f766e; border-radius: 10px; padding: 14px 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        .bt-stat .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 6px; }
+        .bt-stat .val { font-size: 22px; font-weight: 700; }
+        #btEquityChart { width: 100%; height: 260px; }
+        .bt-day-row td { font-size: 12px; }
+        .bt-win  { color: var(--up-green);  font-weight: 700; }
+        .bt-loss { color: var(--down-red);   font-weight: 700; }
+        .bt-none { color: var(--text-muted); }
 
         /* ── Trade mode badge in table ── */
         .mode-pill { display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px; }
@@ -214,6 +237,9 @@
         </a>
         <a href="/analytics" class="nav-item active">
             <span class="nav-icon">📈</span><span class="nav-text">Analytics</span>
+        </a>
+        <a href="/screener" class="nav-item">
+            <span class="nav-icon">🔍</span><span class="nav-text">Screener</span>
         </a>
         <a href="/strategy-builder" class="nav-item">
             <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
@@ -283,6 +309,10 @@
             <div class="tab-sep"></div>
             <button class="mode-tab" id="tab-compare" onclick="switchMode('compare')">
                 🔄 Compare
+            </button>
+            <div class="tab-sep"></div>
+            <button class="mode-tab" id="tab-backtest" onclick="switchMode('backtest')">
+                <span class="mode-badge badge-backtest"></span> Backtest
             </button>
             <span class="mode-label" id="modeLabelBadge">All Trades</span>
         </div>
@@ -406,6 +436,65 @@
             </div>
         </div>
 
+        <!-- ═══ BACKTEST VIEW ═══ -->
+        <div id="backtestView">
+
+            <!-- Date range runner -->
+            <div class="bt-runner">
+                <label>From</label>
+                <input type="date" id="btFrom">
+                <label>To</label>
+                <input type="date" id="btTo">
+                <button class="btn-bt" id="btRunBtn" onclick="runBacktest()">▶ Run Backtest</button>
+                <span class="bt-notice" id="btNotice">Select a date range (max 60 days) and click Run</span>
+            </div>
+
+            <!-- Results (hidden until first run) -->
+            <div id="btResults" style="display:none;">
+
+                <!-- Summary stat cards -->
+                <div class="bt-stat-grid">
+                    <div class="bt-stat"><div class="lbl">Total P&L</div><div class="val" id="bt-pnl">—</div></div>
+                    <div class="bt-stat"><div class="lbl">Win Rate</div><div class="val" id="bt-wr">—</div></div>
+                    <div class="bt-stat"><div class="lbl">Trades Taken</div><div class="val blue" id="bt-tt">—</div></div>
+                    <div class="bt-stat"><div class="lbl">Wins / Losses</div><div class="val" id="bt-wl">—</div></div>
+                    <div class="bt-stat"><div class="lbl">Trading Days</div><div class="val blue" id="bt-days">—</div></div>
+                    <div class="bt-stat"><div class="lbl">Real Options Used</div><div class="val" id="bt-real">—</div></div>
+                    <div class="bt-stat"><div class="lbl">BS Fallback</div><div class="val orange" id="bt-bs">—</div></div>
+                    <div class="bt-stat"><div class="lbl">Avg Trade P&L</div><div class="val" id="bt-avg">—</div></div>
+                </div>
+
+                <!-- Equity curve -->
+                <div class="chart-card">
+                    <h2>📈 Backtest — Cumulative P&amp;L Curve</h2>
+                    <div id="btEquityChart"></div>
+                </div>
+
+                <!-- Daily breakdown table -->
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Daily Breakdown</h2>
+                        <span id="btRangeLabel" style="font-size:11px;color:var(--text-muted);"></span>
+                    </div>
+                    <div class="tbl-scroll">
+                        <table>
+                            <thead><tr>
+                                <th>Date</th>
+                                <th>Position</th>
+                                <th>Entry ₹</th>
+                                <th>Exit ₹</th>
+                                <th>Net P&amp;L</th>
+                                <th>Cumulative</th>
+                                <th>Options Data</th>
+                            </tr></thead>
+                            <tbody id="btDayTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div><!-- /btResults -->
+        </div><!-- /backtestView -->
+
     </div><!-- /page-content -->
 </div><!-- /main-wrap -->
 
@@ -496,14 +585,15 @@ function initCompareCharts() {
 }
 
 // ── Mode state ──
-let currentMode = 'all'; // all | paper | live | compare
+let currentMode = 'all'; // all | paper | live | compare | backtest
 let currentPage = 1; const PER_PAGE = 20;
 
 const TAB_CONFIG = {
-    all:     { label: 'All Trades',    activeClass: 'active-all',     bannerClass: 'all',   emoji: '📊', topSub: 'All trade performance & history' },
-    paper:   { label: 'Paper Trading', activeClass: 'active-paper',   bannerClass: 'paper', emoji: '📋', topSub: 'Paper trading performance & history' },
-    live:    { label: 'Live Trading',  activeClass: 'active-live',    bannerClass: 'live',  emoji: '⚡', topSub: 'Live trading performance & history' },
-    compare: { label: 'Paper vs Live', activeClass: 'active-compare', bannerClass: '',      emoji: '🔄', topSub: 'Paper vs Live side-by-side comparison' },
+    all:      { label: 'All Trades',         activeClass: 'active-all',      bannerClass: 'all',   emoji: '📊', topSub: 'All trade performance & history' },
+    paper:    { label: 'Paper Trading',      activeClass: 'active-paper',    bannerClass: 'paper', emoji: '📋', topSub: 'Paper trading performance & history' },
+    live:     { label: 'Live Trading',       activeClass: 'active-live',     bannerClass: 'live',  emoji: '⚡', topSub: 'Live trading performance & history' },
+    compare:  { label: 'Paper vs Live',      activeClass: 'active-compare',  bannerClass: '',      emoji: '🔄', topSub: 'Paper vs Live side-by-side comparison' },
+    backtest: { label: 'Backtest Analysis',  activeClass: 'active-backtest', bannerClass: '',      emoji: '🔬', topSub: 'Historical backtest analysis' },
 };
 
 function switchMode(mode) {
@@ -511,8 +601,9 @@ function switchMode(mode) {
     currentPage = 1;
 
     // Update tabs
-    ['all','paper','live','compare'].forEach(m => {
+    Object.keys(TAB_CONFIG).forEach(m => {
         const tab = document.getElementById('tab-'+m);
+        if (!tab) return;
         tab.className = 'mode-tab';
         if (m === mode) tab.classList.add(TAB_CONFIG[m].activeClass);
     });
@@ -524,20 +615,24 @@ function switchMode(mode) {
     // Banner
     const banner = document.getElementById('modeBanner');
     banner.className = 'stats-mode-banner';
-    if (mode !== 'compare') {
+    if (mode !== 'compare' && mode !== 'backtest') {
         banner.classList.add(cfg.bannerClass);
         banner.innerHTML = `${cfg.emoji} Showing <strong>${cfg.label}</strong> data`;
     }
 
-    // Toggle views
-    const isCompare = mode === 'compare';
-    document.getElementById('normalView').style.display    = isCompare ? 'none' : 'block';
+    const isCompare  = mode === 'compare';
+    const isBacktest = mode === 'backtest';
+
+    document.getElementById('normalView').style.display   = (!isCompare && !isBacktest) ? 'block' : 'none';
     document.getElementById('compareView').classList.toggle('visible', isCompare);
-    document.getElementById('filtersBar').style.display   = isCompare ? 'none' : 'flex';
+    document.getElementById('backtestView').classList.toggle('visible', isBacktest);
+    document.getElementById('filtersBar').style.display   = (!isCompare && !isBacktest) ? 'flex' : 'none';
 
     if (isCompare) {
         initCompareCharts();
         loadCompare();
+    } else if (isBacktest) {
+        initBtChart();
     } else {
         loadAll();
     }
@@ -745,13 +840,134 @@ async function loadCompare() {
     }).join('');
 }
 
+// ── Backtest tab ──────────────────────────────────────────────────────────────
+let btChart = null, btSeries = null;
+
+function initBtChart() {
+    if (btChart) return;
+    const el = document.getElementById('btEquityChart');
+    btChart = LightweightCharts.createChart(el, {
+        layout: { textColor: '#1E2328', background: { type: 'solid', color: '#FFFFFF' } },
+        grid: { vertLines: { color: '#E4E8EF' }, horzLines: { color: '#E4E8EF' } },
+        timeScale: { borderColor: '#E4E8EF', timeVisible: false },
+        rightPriceScale: { borderColor: '#E4E8EF' },
+        handleScale: true, handleScroll: true,
+    });
+    btSeries = btChart.addAreaSeries({
+        lineColor: '#0f766e', topColor: 'rgba(15,118,110,0.22)', bottomColor: 'rgba(15,118,110,0.02)', lineWidth: 2,
+    });
+    new ResizeObserver(e => {
+        btChart.applyOptions({ width: e[0].contentRect.width, height: e[0].contentRect.height });
+    }).observe(el);
+}
+
+async function runBacktest() {
+    const fromVal = document.getElementById('btFrom').value;
+    const toVal   = document.getElementById('btTo').value;
+    if (!fromVal || !toVal) {
+        document.getElementById('btNotice').textContent = '⚠ Please select both From and To dates.';
+        return;
+    }
+    const btn = document.getElementById('btRunBtn');
+    btn.disabled = true; btn.textContent = '⏳ Running…';
+    document.getElementById('btNotice').textContent = 'Fetching data from Kite…';
+
+    try {
+        const r = await fetch('/api/backtest/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: 'range', from_date: fromVal, to_date: toVal }),
+        });
+        const d = await r.json();
+
+        if (d.error) {
+            document.getElementById('btNotice').textContent = '❌ ' + d.error;
+            return;
+        }
+
+        // ── Stat cards ──
+        const pnl = d.total_pnl ?? 0;
+        const traded = d.trade_days ?? 0;
+        const avg = traded ? (pnl / traded) : 0;
+        document.getElementById('bt-pnl').textContent  = '₹' + pnl.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+        document.getElementById('bt-pnl').className    = 'val ' + (pnl >= 0 ? 'green' : 'red');
+        document.getElementById('bt-wr').textContent   = (d.win_rate ?? 0) + '%';
+        document.getElementById('bt-wr').className     = 'val ' + ((d.win_rate ?? 0) >= 50 ? 'green' : 'red');
+        document.getElementById('bt-tt').textContent   = traded + ' / ' + (d.total_days ?? 0) + ' days';
+        document.getElementById('bt-wl').innerHTML     = `<span class="bt-win">${d.wins ?? 0}W</span> / <span class="bt-loss">${d.losses ?? 0}L</span>`;
+        document.getElementById('bt-days').textContent = d.total_days ?? 0;
+        document.getElementById('bt-real').textContent = d.real_options_used ?? 0;
+        document.getElementById('bt-bs').textContent   = d.bs_fallback ?? 0;
+        document.getElementById('bt-avg').textContent  = '₹' + avg.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2});
+        document.getElementById('bt-avg').className    = 'val ' + (avg >= 0 ? 'green' : 'red');
+
+        // ── Equity curve ──
+        initBtChart();
+        const cumData = (d.cumulative || []).map(row => ({
+            time: row.date,   // YYYY-MM-DD string — LightweightCharts accepts it
+            value: row.cumulative,
+        }));
+        if (cumData.length) {
+            btSeries.setData(cumData);
+            btChart.timeScale().fitContent();
+            // Colour the series based on final value
+            const finalVal = cumData[cumData.length - 1].value;
+            const clr = finalVal >= 0 ? '#0f766e' : '#DC2626';
+            btSeries.applyOptions({ lineColor: clr, topColor: clr.replace(')', ',0.2)').replace('rgb','rgba'), bottomColor: 'rgba(0,0,0,0.01)' });
+        }
+
+        // ── Daily breakdown table ──
+        const tbody = document.getElementById('btDayTbody');
+        document.getElementById('btRangeLabel').textContent = fromVal + ' → ' + toVal;
+        if (!(d.cumulative || []).length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty">No trading days in range</td></tr>';
+        } else {
+            tbody.innerHTML = (d.cumulative || []).map(row => {
+                const taken = row.trade_taken;
+                const pnlCls = row.pnl > 0 ? 'bt-win' : row.pnl < 0 ? 'bt-loss' : 'bt-none';
+                const cumCls = row.cumulative > 0 ? 'green' : row.cumulative < 0 ? 'red' : '';
+                const ptBadge = row.position_type === 'CALL'
+                    ? `<span style="background:rgba(37,99,235,0.1);color:#2563EB;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:800;">CALL</span>`
+                    : row.position_type === 'PUT'
+                    ? `<span style="background:rgba(220,38,38,0.1);color:#DC2626;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:800;">PUT</span>`
+                    : `<span class="bt-none">—</span>`;
+                const realBadge = row.used_real_options
+                    ? `<span style="color:#059669;font-size:10px;font-weight:700;">✓ Real</span>`
+                    : taken ? `<span style="color:#D97706;font-size:10px;">BS est.</span>` : '—';
+                return `<tr class="bt-day-row">
+                    <td style="font-weight:700">${row.date}</td>
+                    <td>${taken ? ptBadge : '<span class="bt-none">No trade</span>'}</td>
+                    <td>${taken ? '₹' + (row.entry_prem || 0).toFixed(2) : '—'}</td>
+                    <td>${taken ? '₹' + (row.exit_prem  || 0).toFixed(2) : '—'}</td>
+                    <td class="${taken ? pnlCls : 'bt-none'}">${taken ? '₹' + row.pnl.toLocaleString('en-IN',{minimumFractionDigits:2}) : '—'}</td>
+                    <td class="${cumCls}" style="font-weight:600">₹${row.cumulative.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                    <td>${realBadge}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        document.getElementById('btResults').style.display = 'block';
+        document.getElementById('btNotice').textContent = `✓ Done — ${d.total_days} days analysed, ${traded} trades`;
+
+    } catch (err) {
+        document.getElementById('btNotice').textContent = '❌ ' + err.message;
+    } finally {
+        btn.disabled = false; btn.textContent = '▶ Run Backtest';
+    }
+}
+
 // ── Init ──
 // Default date range: last 90 days
 const today = new Date(); const ago = new Date(); ago.setDate(ago.getDate()-90);
 document.getElementById('toDate').value   = today.toISOString().split('T')[0];
 document.getElementById('fromDate').value = ago.toISOString().split('T')[0];
 
-// Load with default Paper tab (so user sees paper analytics first as requested)
+// Preset backtest range to last 30 days
+const btTo = new Date(); const btFrom = new Date(); btFrom.setDate(btFrom.getDate()-30);
+document.getElementById('btTo').value   = btTo.toISOString().split('T')[0];
+document.getElementById('btFrom').value = btFrom.toISOString().split('T')[0];
+
+// Load with default Paper tab
 switchMode('paper');
 </script>
 </body>

@@ -15,10 +15,12 @@ from dashboard.routes import (
     register_trading_config,
     register_broker,
     register_start_engine,
+    register_user_id,
 )
 from dashboard.auth_routes      import auth_bp, _seed_default_strategy, register_broker_ref, register_state_ref
 from dashboard.analytics_routes import analytics_bp
 from dashboard.strategy_routes  import strategy_bp
+from dashboard.screener_routes  import screener_bp, register_screener_broker
 from db.database import init_db, SessionLocal
 from db.models import Strategy, User
 
@@ -67,7 +69,8 @@ def _ensure_default_user():
 
 def create_app(state: BotState, mode_switcher=None, backtester=None,
                trading_config: TradingConfig = None, broker=None,
-               start_engine_fn=None, initial_mode: str = "PAPER") -> Flask:
+               start_engine_fn=None, initial_mode: str = "PAPER",
+               user_id: int = None) -> Flask:
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     app = Flask(__name__, template_folder=template_dir)
 
@@ -92,15 +95,19 @@ def create_app(state: BotState, mode_switcher=None, backtester=None,
         register_trading_config(trading_config)
     if broker:
         register_broker(broker)
-        register_broker_ref(broker)   # also expose to auth_routes for kite token ops
+        register_broker_ref(broker)        # also expose to auth_routes for kite token ops
+        register_screener_broker(broker)   # expose to screener_routes for quote / history
     register_state_ref(state)         # expose state to auth_routes
     if start_engine_fn:
         register_start_engine(start_engine_fn, initial_mode)
+    if user_id:
+        register_user_id(user_id)
 
     # Register blueprints
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(analytics_bp)
     app.register_blueprint(strategy_bp)
+    app.register_blueprint(screener_bp)
 
     return app

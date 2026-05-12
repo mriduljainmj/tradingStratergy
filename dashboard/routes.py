@@ -59,6 +59,13 @@ def register_start_engine(fn, initial_mode: str = "PAPER"):
     _initial_mode = initial_mode
 
 
+_user_id: int = None
+
+def register_user_id(uid: int):
+    global _user_id
+    _user_id = uid
+
+
 def _config_to_dict(cfg: TradingConfig) -> dict:
     result = {}
     for field in _STRATEGY_FIELDS + _POSITION_FIELDS + _OPTIONS_FIELDS + _BROKER_FIELDS:
@@ -225,21 +232,71 @@ def option_chart():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+def _to_date(dt) -> datetime.date:
+    """Safely extract a date from a datetime or date object."""
+    return dt.date() if hasattr(dt, "date") else dt
+
+
+def _day_key(d: datetime.date) -> dict:
+    """Return a LightweightCharts business-day time object {year, month, day}."""
+    return {"year": d.year, "month": d.month, "day": d.day}
+
+
+def _aggregate_candles(records: list, interval: str) -> list:
+    """
+    Aggregate a list of daily Kite candle dicts into weekly or monthly bars.
+    Returns LightweightCharts business-day time objects {year, month, day} as
+    the 'time' field — avoids all UTC/IST timestamp ambiguity for daily+ bars.
+    """
+    buckets: dict = {}   # date key → candle dict
+
+    for r in records:
+        d = _to_date(r["date"])
+
+        if interval == "week":
+            key = d - datetime.timedelta(days=d.weekday())   # ISO Monday
+        else:  # month
+            key = datetime.date(d.year, d.month, 1)
+
+        if key not in buckets:
+            buckets[key] = {
+                "time":  _day_key(key),
+                "open":  r["open"],
+                "high":  r["high"],
+                "low":   r["low"],
+                "close": r["close"],
+            }
+        else:
+            b = buckets[key]
+            b["high"]  = max(b["high"],  r["high"])
+            b["low"]   = min(b["low"],   r["low"])
+            b["close"] = r["close"]   # last day's close = bar's close
+
+    return [buckets[k] for k in sorted(buckets)]
+
+
 @dashboard_bp.route("/api/nifty/history")
 def nifty_history():
     """
     Fetch NIFTY 50 candles for day / week / month view.
+    Kite only supports up to 'day' interval, so week/month bars are aggregated
+    from daily candles on the backend before returning to the frontend.
+
+    Returns LightweightCharts business-day time objects {year, month, day} for
+    all intervals so the frontend can use timeVisible:false with no timezone
+    ambiguity.
+
     Query params:
       interval = day | week | month
-      from     = YYYY-MM-DD  (default: 365 days ago)
+      from     = YYYY-MM-DD  (default varies by interval)
       to       = YYYY-MM-DD  (default: today)
     """
     if not _broker:
         return jsonify({"ok": False, "error": "Broker not available"}), 503
 
     interval = (request.args.get("interval", "day") or "day").lower()
-    _kite_interval_map = {"day": "day", "week": "week", "month": "month"}
-    kite_interval = _kite_interval_map.get(interval, "day")
+    if interval not in ("day", "week", "month"):
+        interval = "day"
 
     today = datetime.date.today()
     default_days = {"day": 365, "week": 730, "month": 1825}
@@ -252,21 +309,28 @@ def nifty_history():
         return jsonify({"ok": False, "error": "Invalid date format"}), 400
 
     try:
+        # Always fetch 'day' interval — Kite doesn't support 'week' or 'month'
         records = _broker.get_historical_data(
             _trading_config.index_token,
             f"{from_dt} 09:15:00",
             f"{to_dt} 15:30:00",
-            kite_interval,
+            "day",
             state=_state,
         )
-        candles = [
-            {
-                "time":  int(r["date"].timestamp()),
-                "open":  r["open"], "high": r["high"],
-                "low":   r["low"],  "close": r["close"],
-            }
-            for r in records
-        ]
+
+        if interval == "day":
+            # Use business-day {year, month, day} objects — avoids IST/UTC confusion
+            candles = [
+                {
+                    "time":  _day_key(_to_date(r["date"])),
+                    "open":  r["open"], "high": r["high"],
+                    "low":   r["low"],  "close": r["close"],
+                }
+                for r in records
+            ]
+        else:
+            candles = _aggregate_candles(records, interval)
+
         return jsonify({"ok": True, "data": candles, "interval": interval})
     except Exception as e:
         if _state:

@@ -360,6 +360,14 @@
         .chart-inner { flex-grow: 1; width: 100%; min-height: 0; position: relative; display: flex; flex-direction: column; }
         #chart, #optionsChart { flex-grow: 1; width: 100%; min-height: 0; position: relative; }
 
+        /* ── OHLC hover legend (TradingView-style) ── */
+        .ohlc-legend { position: absolute; top: 6px; left: 8px; z-index: 10; pointer-events: none; font-size: 12px; font-family: inherit; line-height: 1.5; display: none; }
+        .ohlc-legend.visible { display: block; }
+        .ohlc-row { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+        .ohlc-lbl { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-right: 2px; }
+        .ohlc-val { font-size: 12px; font-weight: 600; }
+        .ohlc-chg { font-size: 11px; font-weight: 700; margin-top: 1px; }
+
         /* ── Side Panel ── */
         .side-panel { display: flex; flex-direction: column; gap: 16px; min-height: 0; }
         .card { background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; transition: all 0.2s ease;}
@@ -652,6 +660,9 @@
       </a>
       <a href="/analytics" class="nav-item">
         <span class="nav-icon">📈</span><span class="nav-text">Analytics</span>
+      </a>
+      <a href="/screener" class="nav-item">
+        <span class="nav-icon">🔍</span><span class="nav-text">Screener</span>
       </a>
       <a href="/strategy-builder" class="nav-item">
         <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
@@ -1105,6 +1116,7 @@
                       </div>
                   </div>
                   <div class="collapsible-content chart-inner">
+                      <div class="ohlc-legend" id="niftyLegend"></div>
                       <div id="chart"></div>
                   </div>
               </div>
@@ -1138,6 +1150,7 @@
                       <div id="optionsBadge" style="flex-shrink:0; margin-left:8px;"></div>
                   </div>
                   <div class="collapsible-content chart-inner">
+                      <div class="ohlc-legend" id="optLegend"></div>
                       <div id="optionsChart"></div>
                   </div>
               </div>
@@ -1270,14 +1283,45 @@
             setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
         }
 
-        // ── Bulletproof IST Time Formatter ──
+        // ── Time Formatters ─────────────────────────────────────────────────────
+        // LightweightCharts passes either a Unix timestamp (intraday) or a
+        // business-day object {year, month, day} (daily / weekly / monthly).
+        // Both formatters must handle both forms.
+
+        const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun',
+                          'Jul','Aug','Sep','Oct','Nov','Dec'];
+
+        function _fmtBusinessDay(t) {
+            // t = {year, month, day}  — month is 1-based
+            return `${String(t.day).padStart(2,'0')} ${_MONTHS[t.month-1]} ${t.year}`;
+        }
+
         function formatIST(time) {
             if (!time) return '';
+            // Business-day object from daily/weekly/monthly data
+            if (typeof time === 'object' && 'year' in time) {
+                return _fmtBusinessDay(time);
+            }
+            // Unix timestamp — intraday — show HH:MM in IST
             const d = new Date(time * 1000);
             return new Intl.DateTimeFormat('en-GB', {
                 timeZone: 'Asia/Kolkata',
                 hour: '2-digit',
                 minute: '2-digit'
+            }).format(d);
+        }
+
+        function formatISTFull(time) {
+            // Used for crosshair tooltip — show date + time for intraday, date only for daily+
+            if (!time) return '';
+            if (typeof time === 'object' && 'year' in time) {
+                return _fmtBusinessDay(time);
+            }
+            const d = new Date(time * 1000);
+            return new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Kolkata',
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
             }).format(d);
         }
 
@@ -1288,7 +1332,7 @@
                 timeVisible: true, rightOffset: 12,
                 tickMarkFormatter: formatIST
             },
-            localization: { timeFormatter: formatIST },
+            localization: { timeFormatter: formatISTFull },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         };
 
@@ -1317,20 +1361,74 @@
             optChart.applyOptions({ height: entries[0].contentRect.height, width: entries[0].contentRect.width });
         }).observe(document.getElementById('optionsChart'));
 
+        // ── OHLC hover legend ─────────────────────────────────────────────────────
+        function fmtP(v, decimals) {
+            // Format price — use 2 decimals for options (small values), auto for NIFTY
+            if (v == null) return '—';
+            return v.toLocaleString('en-IN', { minimumFractionDigits: decimals ?? 2, maximumFractionDigits: decimals ?? 2 });
+        }
+
+        function updateOhlcLegend(legendId, param, series) {
+            const el = document.getElementById(legendId);
+            if (!el) return;
+            const isOpt = legendId === 'optLegend';
+
+            if (!param || !param.time || !param.seriesData) {
+                el.classList.remove('visible');
+                return;
+            }
+            const bar = param.seriesData.get(series);
+            if (!bar) { el.classList.remove('visible'); return; }
+
+            const { open: o, high: h, low: l, close: c } = bar;
+            const chg = c - o;
+            const pct = o !== 0 ? (chg / o) * 100 : 0;
+            const up  = c >= o;
+            const clr = up ? '#089981' : '#F23645';
+            const dec = isOpt ? 2 : 2;
+
+            el.innerHTML =
+                `<div class="ohlc-row">` +
+                `<span><span class="ohlc-lbl">O</span><span class="ohlc-val">${fmtP(o, dec)}</span></span>` +
+                `<span><span class="ohlc-lbl">H</span><span class="ohlc-val" style="color:#089981">${fmtP(h, dec)}</span></span>` +
+                `<span><span class="ohlc-lbl">L</span><span class="ohlc-val" style="color:#F23645">${fmtP(l, dec)}</span></span>` +
+                `<span><span class="ohlc-lbl">C</span><span class="ohlc-val" style="color:${clr}">${fmtP(c, dec)}</span></span>` +
+                `<span class="ohlc-chg" style="color:${clr}">${chg >= 0 ? '+' : ''}${fmtP(chg, dec)}&nbsp;(${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)</span>` +
+                `</div>`;
+            el.classList.add('visible');
+        }
+
         // ── Bi-directional Crosshair Sync ──
         chart.subscribeCrosshairMove(param => {
             if (param.time) {
                 try { optChart.setCrossHairXY(optChart.timeScale().timeToCoordinate(param.time) ?? -1, 0, true); } catch(e) {}
             }
+            updateOhlcLegend('niftyLegend', param, candleSeries);
         });
         optChart.subscribeCrosshairMove(param => {
             if (param.time) {
                 try { chart.setCrossHairXY(chart.timeScale().timeToCoordinate(param.time) ?? -1, 0, true); } catch(e) {}
             }
+            updateOhlcLegend('optLegend', param, optSeries);
         });
 
         function updateOptionsChart(state) {
-            const prices = state.option_prices || [];
+            let prices = state.option_prices || [];
+
+            // In paper/live mode: merge full-day historical base with live ticks.
+            // _liveOptBase holds candles from 09:15; live ticks arrive every second
+            // from entry onwards. We keep historical candles that predate the first
+            // live tick so there's no gap or overlap.
+            if (_liveOptBase.length) {
+                if (prices.length) {
+                    const firstLiveTs = prices[0].time;
+                    const hist = _liveOptBase.filter(c => c.time < firstLiveTs);
+                    prices = hist.concat(prices);
+                } else {
+                    prices = _liveOptBase;
+                }
+            }
+
             const wrapper = document.getElementById('optionsWrapper');
 
             if (prices.length === 0) { wrapper.classList.remove('visible'); return; }
@@ -1393,6 +1491,45 @@
         const TF_NEEDS_FETCH = new Set(['D', 'W', 'Mo']);
         let rawNiftyDayCandles = []; // fetched daily/weekly/monthly candles (separate from intraday)
 
+        // ── Live/Paper full-day option backfill ──────────────────────────────────
+        // When a trade is entered we fire ONE async fetch to get the full-day
+        // 1m OHLC from 09:15 onwards, so the chart is not limited to entry→now.
+        let _liveOptLabel    = '';    // option_label we last backfilled for
+        let _liveOptBase     = [];    // full-day historical candles (fetched once)
+        let _liveOptFetching = false; // guard against parallel fetches
+
+        async function _ensureLiveOptHistory(appMode, optLabel) {
+            // Only run in live/paper mode; skip if nothing changed or already fetching
+            if (appMode !== 'PAPER' && appMode !== 'LIVE') {
+                // Reset when leaving live/paper so next session starts fresh
+                if (_liveOptLabel) { _liveOptLabel = ''; _liveOptBase = []; }
+                return;
+            }
+            if (!optLabel) {
+                if (_liveOptLabel) { _liveOptLabel = ''; _liveOptBase = []; }
+                return;
+            }
+            if (optLabel === _liveOptLabel || _liveOptFetching) return;
+
+            // Mark immediately to prevent re-entry on next poll tick
+            _liveOptFetching = true;
+            _liveOptLabel    = optLabel;
+            _liveOptBase     = [];
+
+            const m = optLabel.match(/NIFTY\s+(\d+)\s+(CE|PE)/i);
+            if (!m) { _liveOptFetching = false; return; }
+            try {
+                const today = new Date().toISOString().slice(0, 10);
+                const res = await fetch(`/api/option-chart?strike=${m[1]}&type=${m[2]}&date=${today}`);
+                const d   = await res.json();
+                if (d.ok && d.data.length) {
+                    _liveOptBase = d.data;
+                    console.debug(`[OptChart] Backfilled ${d.data.length} candles for ${optLabel}`);
+                }
+            } catch(e) { console.warn('[OptChart] Backfill fetch failed:', e); }
+            _liveOptFetching = false;
+        }
+
         function paintOptionsChart(tf) {
             if (rawOptCandles.length === 0) {
                 optSeries.setData([]);
@@ -1453,16 +1590,17 @@
             setActiveTfBtn('niftyTfGroup', tf);
 
             if (TF_NEEDS_FETCH.has(tf)) {
-                // D / W / Mo: fetch multi-day historical data from the server
+                // D / W / Mo: business-day {year,month,day} time objects — no time component
+                chart.applyOptions({ timeScale: { timeVisible: false } });
                 fetchNiftyHistory(tf);
             } else {
-                // 1m / 5m / 15m / 30m: aggregate from in-memory intraday candles
+                // 1m / 5m / 15m / 30m: Unix timestamps with IST time display
+                chart.applyOptions({ timeScale: { timeVisible: true } });
                 rawNiftyDayCandles = []; // discard any previously fetched day data
                 candleSeries.setData(aggregateCandles(rawNiftyCandles, tf));
                 candleSeries.setMarkers(snapMarkers(rawMarkers, tf));
                 chart.timeScale().fitContent();
                 // Clear the "Daily/Weekly/Monthly View" badge if coming from multi-day TF
-                // (keep a user-set date badge that was set by runBacktest)
                 const badge = document.getElementById('viewingDateBadge');
                 if (badge && badge.textContent.includes('View')) {
                     badge.style.display = 'none';
@@ -1628,6 +1766,7 @@
         function buildLevels(state) {
             const h = state.current_high, l = state.current_low, r = h - l;
             const orH = state.or_high, orL = state.or_low, orR = orH - orL;
+            const hasOR = orH > 0 && orL > 0 && orL < orH;
 
             if (state.position_type === 'CALL') {
                 return {
@@ -1639,6 +1778,11 @@
                     'Trail': { p: h - r * 0.700, c: '#E6A23C', t: 'Trail SL (70%)',   s: 1, w: 1 },
                     'Fib78': { p: h - r * 0.786, c: '#787B86', t: 'Fib 78.6%',        s: 3, w: 1 },
                     'Bot':   { p: l,             c: '#F23645', t: 'Swing Low (100%)',  s: 2, w: 2 },
+                    // OR reference lines — entry trigger levels
+                    ...(hasOR ? {
+                        'ORH':  { p: orH, c: '#2962FF', t: 'OR High ──', s: 3, w: 1 },
+                        'ORL':  { p: orL, c: '#F23645', t: 'OR Low ──',  s: 3, w: 1 },
+                    } : {}),
                 };
             } else if (state.position_type === 'PUT') {
                 return {
@@ -1650,8 +1794,13 @@
                     'Fib38': { p: l + r * 0.382, c: '#787B86', t: 'Fib 38.2%',        s: 3, w: 1 },
                     'Fib23': { p: l + r * 0.236, c: '#787B86', t: 'Fib 23.6%',        s: 3, w: 1 },
                     'Bot':   { p: l,             c: '#2962FF', t: 'Swing Low (0%)',    s: 2, w: 2 },
+                    // OR reference lines — entry trigger levels
+                    ...(hasOR ? {
+                        'ORH':  { p: orH, c: '#F23645', t: 'OR High ──', s: 3, w: 1 },
+                        'ORL':  { p: orL, c: '#2962FF', t: 'OR Low ──',  s: 3, w: 1 },
+                    } : {}),
                 };
-            } else if (orH > 0 && orL > 0 && orL < orH) {
+            } else if (hasOR) {
                 return {
                     'High':  { p: orH,               c: '#2962FF', t: 'OR High',   s: 2, w: 2 },
                     'Fib61': { p: orL + orR * 0.618, c: '#787B86', t: 'Fib 61.8%', s: 3, w: 1 },
@@ -1744,6 +1893,8 @@
                         }
 
                         document.getElementById('logs').innerHTML = state.logs.map(l => `<div>${l}</div>`).join('');
+                        // Backfill full-day option history on first entry (paper/live)
+                        _ensureLiveOptHistory(state.app_mode, state.option_label || '');
                         updateOptionsChart(state);
                         checkTradeNotification(state);
                     }
@@ -1989,6 +2140,28 @@
 
             updateOptionsChart(data);
             if ((data.option_prices || []).length > 0) optChart.timeScale().fitContent();
+
+            // ── If backtest fell back to Black-Scholes (no real NFO data yet),
+            //    try fetching the real option OHLC now so the chart is accurate.
+            //    Also fires after the Tuesday-expiry fix so old BS-only results
+            //    get upgraded to real candles on re-run.
+            if (!data.used_real_options && data.strike && data.trade_taken) {
+                const optType = data.position_type === 'PUT' ? 'PE' : 'CE';
+                fetch(`/api/option-chart?strike=${data.strike}&type=${optType}&date=${data.date}`)
+                    .then(r => r.json())
+                    .then(od => {
+                        if (od.ok && od.data.length) {
+                            rawOptCandles = od.data;
+                            const optTf = optSynced ? currentTf : currentOptTf;
+                            paintOptionsChart(optTf);
+                            optSeries.setMarkers(snapMarkers(rawOptMarkers, optTf));
+                            document.getElementById('optionsWrapper').classList.add('visible');
+                            optChart.timeScale().fitContent();
+                            console.debug(`[OptChart] Loaded ${od.data.length} real candles (was BS fallback)`);
+                        }
+                    })
+                    .catch(() => {});
+            }
 
             // ── Strike selector: init from backtest result ──────────────────
             if (data.strike && data.trade_taken) {
