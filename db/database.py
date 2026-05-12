@@ -56,9 +56,10 @@ def _migrate_add_columns():
     import logging as _logging
     _log = _logging.getLogger(__name__)
 
-    # Boolean default must be DB-specific:
+    # Boolean defaults must be DB-specific:
     #   PostgreSQL → TRUE/FALSE   |   SQLite → 1/0
-    bool_true = "TRUE" if not _is_sqlite else "1"
+    bool_true  = "TRUE"  if not _is_sqlite else "1"
+    bool_false = "FALSE" if not _is_sqlite else "0"
 
     _new_cols = [
         ("users",  "display_name",           "VARCHAR(150)"),
@@ -72,7 +73,7 @@ def _migrate_add_columns():
         ("users",  "kite_access_token_enc",  "TEXT"),
         ("users",  "kite_token_date",        "DATE"),
         ("trades", "trade_mode",             "VARCHAR(10) DEFAULT 'PAPER'"),
-        ("users",  "is_admin",               "BOOLEAN DEFAULT 0"),
+        ("users",  "is_admin",               f"BOOLEAN DEFAULT {bool_false}"),
     ]
 
     from sqlalchemy import text as _text
