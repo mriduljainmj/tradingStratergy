@@ -26,6 +26,12 @@ class User(Base):
     trade_confirm_modal = Column(Boolean,     default=True)    # show modal on trade exec
     broker_id           = Column(String(100), nullable=True)   # Zerodha client ID etc.
 
+    # Per-user trading settings (JSON blob of TradingConfig field overrides)
+    settings_json = Column(Text, nullable=True)
+
+    # Admin flag — admin users can manage app-level Kite credentials
+    is_admin = Column(Boolean, default=False)
+
     # Kite session persistence (serverless-safe; secrets are Fernet-encrypted)
     kite_api_key_stored   = Column(String(100), nullable=True)  # user's api_key
     kite_api_secret_enc   = Column(Text,        nullable=True)  # encrypted api_secret
@@ -55,6 +61,7 @@ class User(Base):
             "has_kite_secret":    bool(self.kite_api_secret_enc),
             "has_kite_token":     has_kite_token,
             "kite_token_date":    self.kite_token_date.isoformat() if self.kite_token_date else None,
+            "is_admin":           bool(self.is_admin),
         }
 
 

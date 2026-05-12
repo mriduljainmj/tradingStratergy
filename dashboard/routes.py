@@ -1,155 +1,222 @@
 import datetime
+import json
 import logging
 
 from flask import Blueprint, jsonify, render_template, request
+from flask_jwt_extended import get_jwt_identity, jwt_required
+
+from config.config_utils import config_to_dict, apply_config_dict
+from core.engine_pool import engine_pool
 
 logger = logging.getLogger(__name__)
 
-from config.settings import TradingConfig
-from core.state import BotState
-
 dashboard_bp = Blueprint("dashboard", __name__)
-_state: BotState = None
-_switch_mode_callback = None
-_backtester = None
-_trading_config: TradingConfig = None
-_broker = None
-_start_engine_fn = None
-_initial_mode: str = "PAPER"
 
 VALID_MODES = {"BACKTEST", "PAPER", "LIVE"}
 
-# Fields exposed via the settings API, grouped by section
-_STRATEGY_FIELDS = ["target_pts", "fib_trail", "entry_end_time", "eod_exit_time", "strike_spacing"]
-_POSITION_FIELDS = ["lot_size", "qty_multiplier"]
-_OPTIONS_FIELDS  = ["risk_free_rate", "assumed_iv"]
-_BROKER_FIELDS   = ["brokerage_per_order", "stt_pct", "exchange_charges_pct",
-                    "gst_pct", "sebi_charges_pct", "stamp_duty_pct"]
-_TIME_FIELDS     = {"entry_end_time", "eod_exit_time"}
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _uid() -> int:
+    return int(get_jwt_identity())
 
 
-def register_state(state: BotState):
-    global _state
-    _state = state
+def _ue():
+    """Return the calling user's UserEngine (creates one if needed)."""
+    return engine_pool.get_or_create(_uid())
 
 
-def register_mode_switcher(callback):
-    global _switch_mode_callback
-    _switch_mode_callback = callback
+def _persist_settings(user_id: int, cfg):
+    """Save per-user TradingConfig overrides to the DB."""
+    try:
+        from db.database import SessionLocal
+        from db.models import User
+        db = SessionLocal()
+        try:
+            user = db.get(User, user_id)
+            if user:
+                user.settings_json = json.dumps(config_to_dict(cfg))
+                db.commit()
+                logger.info(f"Settings persisted for user {user_id}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Settings persist failed for user {user_id}: {e}")
 
 
-def register_backtester(backtester):
-    global _backtester
-    _backtester = backtester
-
-
-def register_trading_config(config: TradingConfig):
-    global _trading_config
-    _trading_config = config
-
-
-def register_broker(broker):
-    global _broker
-    _broker = broker
-
-
-def register_start_engine(fn, initial_mode: str = "PAPER"):
-    global _start_engine_fn, _initial_mode
-    _start_engine_fn = fn
-    _initial_mode = initial_mode
-
-
-_user_id: int = None
-
-def register_user_id(uid: int):
-    global _user_id
-    _user_id = uid
-
-
-def _config_to_dict(cfg: TradingConfig) -> dict:
-    result = {}
-    for field in _STRATEGY_FIELDS + _POSITION_FIELDS + _OPTIONS_FIELDS + _BROKER_FIELDS:
-        val = getattr(cfg, field, None)
-        if isinstance(val, datetime.time):
-            val = val.strftime("%H:%M")
-        result[field] = val
-    return result
-
-
-def _apply_config_dict(cfg: TradingConfig, data: dict):
-    for field in _STRATEGY_FIELDS + _POSITION_FIELDS + _OPTIONS_FIELDS + _BROKER_FIELDS:
-        if field not in data:
-            continue
-        val = data[field]
-        if field in _TIME_FIELDS:
-            try:
-                h, m = str(val).split(":")
-                setattr(cfg, field, datetime.time(int(h), int(m)))
-            except Exception:
-                pass
-        else:
-            current = getattr(cfg, field, None)
-            try:
-                setattr(cfg, field, type(current)(val))
-            except Exception:
-                pass
-
+# ── Pages ─────────────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/")
 def index():
-    return render_template("dashboard.html", mode=_state.app_mode)
+    # mode is no longer needed server-side — JS fetches /api/state after load
+    return render_template("dashboard.html", mode="PAPER")
 
+
+@dashboard_bp.route("/health")
+def health():
+    """
+    Lightweight health-check endpoint.
+    Used by the keep-alive self-ping and external monitors (UptimeRobot, etc.)
+    to prevent Render from spinning the server down while engines are active.
+    """
+    active = len(engine_pool.all_engines())
+    trading = sum(
+        1 for ue in engine_pool.all_engines()
+        if ue.is_running
+    )
+    return jsonify({"ok": True, "engines": active, "running": trading})
+
+
+# ── Trading state ─────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/state")
+@jwt_required()
 def get_state():
-    return jsonify(_state.to_dict())
+    return jsonify(_ue().state.to_dict())
 
 
 @dashboard_bp.route("/api/balance")
+@jwt_required()
 def get_balance():
-    """Returns real-time funds from Kite (LIVE) or state balance (PAPER)."""
-    if not _broker:
-        return jsonify({"available": 0.0, "used": 0.0, "total": 0.0})
-    if _state and _state.app_mode == "LIVE":
-        funds = _broker.get_funds()
-        _state.balance = funds["available"]
+    ue = _ue()
+    if ue.state.app_mode == "LIVE":
+        funds = ue.broker.get_funds()
+        ue.state.balance = funds["available"]
         return jsonify(funds)
-    # PAPER / BACKTEST — return simulated balance from state
-    return jsonify({"available": _state.balance if _state else 0.0,
-                    "used": 0.0, "total": _state.balance if _state else 0.0})
+    bal = ue.state.balance
+    return jsonify({"available": bal, "used": 0.0, "total": bal})
 
+
+# ── Settings ──────────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/settings", methods=["GET"])
+@jwt_required()
 def get_settings():
-    if not _trading_config:
-        return jsonify({"error": "Config not registered"}), 503
-    return jsonify(_config_to_dict(_trading_config))
+    return jsonify(config_to_dict(_ue().config))
 
 
 @dashboard_bp.route("/api/settings", methods=["POST"])
+@jwt_required()
 def update_settings():
-    if not _trading_config:
-        return jsonify({"error": "Config not registered"}), 503
+    uid  = _uid()
+    ue   = engine_pool.get_or_create(uid)
     data = request.json or {}
-    _apply_config_dict(_trading_config, data)
-    return jsonify({"ok": True, "settings": _config_to_dict(_trading_config)})
+    apply_config_dict(ue.config, data)
+    _persist_settings(uid, ue.config)
+    return jsonify({"ok": True, "settings": config_to_dict(ue.config)})
 
+
+# ── Mode switching ────────────────────────────────────────────────────────────
+
+@dashboard_bp.route("/api/mode", methods=["POST"])
+@jwt_required()
+def switch_mode():
+    uid      = _uid()
+    ue       = engine_pool.get_or_create(uid)
+    new_mode = (request.json or {}).get("mode", "").upper()
+    if new_mode not in VALID_MODES:
+        return jsonify({"error": f"Invalid mode. Must be one of {VALID_MODES}"}), 400
+    if new_mode == ue.state.app_mode:
+        return jsonify({"mode": new_mode, "changed": False})
+    ue.switch_mode(new_mode)
+    return jsonify({"mode": new_mode, "changed": True})
+
+
+# ── Engine controls ───────────────────────────────────────────────────────────
+
+@dashboard_bp.route("/api/trade-direction", methods=["POST"])
+@jwt_required()
+def set_trade_direction():
+    """Set which direction the engine may enter trades.
+
+    Body: {"direction": "CALL" | "PUT" | "BOTH"}
+    """
+    ue        = _ue()
+    direction = ((request.json or {}).get("direction", "BOTH") or "BOTH").upper()
+    if direction not in ("CALL", "PUT", "BOTH"):
+        return jsonify({"ok": False, "error": "direction must be CALL, PUT, or BOTH"}), 400
+    ue.state.trade_direction = direction
+    labels = {"CALL": "CALL only ☎", "PUT": "PUT only 🔻", "BOTH": "CALL & PUT"}
+    ue.state.logs.append(f"[--:--:--] 🎯 Trade direction set to {labels[direction]}")
+    return jsonify({"ok": True, "trade_direction": direction})
+
+
+@dashboard_bp.route("/api/trades-enabled", methods=["POST"])
+@jwt_required()
+def set_trades_enabled():
+    """Toggle whether the engine enters new trades.
+
+    Body: {"enabled": true|false}
+    When disabled the engine still monitors the market and logs breakout signals,
+    but skips BUY entries.  Any open position continues to be managed normally.
+    """
+    ue      = _ue()
+    enabled = bool((request.json or {}).get("enabled", True))
+    ue.state.trades_enabled = enabled
+    verb = "enabled" if enabled else "disabled"
+    icon = "▶" if enabled else "⏸"
+    ue.state.logs.append(f"[--:--:--] {icon} Trade execution {verb} by user")
+    return jsonify({"ok": True, "trades_enabled": enabled, "mode": ue.state.app_mode})
+
+
+@dashboard_bp.route("/api/active-strategy", methods=["POST"])
+@jwt_required()
+def set_active_strategy():
+    """Select which strategy is active for the running engine.
+
+    Body: {"strategy_id": <int>}
+    Activates the strategy in the DB (deactivates all others for this user)
+    and records the selection on BotState so it survives across poll calls.
+    """
+    uid  = _uid()
+    ue   = engine_pool.get_or_create(uid)
+    data = request.json or {}
+    sid  = data.get("strategy_id")
+
+    if sid is None:
+        return jsonify({"ok": False, "error": "strategy_id is required"}), 400
+
+    try:
+        sid = int(sid)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "strategy_id must be an integer"}), 400
+
+    try:
+        from db.database import SessionLocal
+        from db.models import Strategy
+        db = SessionLocal()
+        try:
+            s = db.get(Strategy, sid)
+            if not s or s.user_id != uid:
+                return jsonify({"ok": False, "error": "Strategy not found"}), 404
+            # Deactivate all, activate selected
+            db.query(Strategy).filter_by(user_id=uid).update({"is_active": False})
+            s.is_active = True
+            db.commit()
+            ue.state.active_strategy_id = sid
+            ue.state.logs.append(f"[--:--:--] 📋 Strategy changed: {s.name}")
+            return jsonify({"ok": True, "active_strategy_id": sid, "name": s.name})
+        finally:
+            db.close()
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── Historical backtest ───────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/backtest/run", methods=["POST"])
+@jwt_required()
 def run_historical_backtest():
-    if not _backtester:
-        return jsonify({"error": "Backtester not available"}), 503
-
+    ue   = _ue()
     data = request.json or {}
     mode = data.get("mode", "single")
 
-    def _check_auth_error(result: dict):
-        """If the backtest failed with a Kite auth error, flag it on shared state."""
+    def _check_auth(result: dict):
         err = result.get("error", "")
-        if err and _state and _broker:
+        if err:
             from execution.broker import is_kite_auth_error
             if is_kite_auth_error(Exception(err)):
-                _state.kite_auth_error = True
+                ue.state.kite_auth_error = True
 
     if mode == "single":
         date_str = data.get("date", "")
@@ -157,45 +224,29 @@ def run_historical_backtest():
             date = datetime.date.fromisoformat(date_str)
         except ValueError:
             return jsonify({"error": "Invalid date. Use YYYY-MM-DD format."}), 400
-        result = _backtester.run_day(date)
-        _check_auth_error(result)
+        result = ue.backtester.run_day(date)
+        _check_auth(result)
         return jsonify(result)
 
     elif mode == "range":
         try:
             from_date = datetime.date.fromisoformat(data.get("from_date", ""))
-            to_date = datetime.date.fromisoformat(data.get("to_date", ""))
+            to_date   = datetime.date.fromisoformat(data.get("to_date",   ""))
         except ValueError:
             return jsonify({"error": "Invalid dates. Use YYYY-MM-DD format."}), 400
-        result = _backtester.run_range(from_date, to_date)
-        _check_auth_error(result)
+        result = ue.backtester.run_range(from_date, to_date)
+        _check_auth(result)
         return jsonify(result)
 
     return jsonify({"error": "mode must be 'single' or 'range'"}), 400
 
 
-@dashboard_bp.route("/api/mode", methods=["POST"])
-def switch_mode():
-    new_mode = (request.json or {}).get("mode", "").upper()
-    if new_mode not in VALID_MODES:
-        return jsonify({"error": f"Invalid mode. Must be one of {VALID_MODES}"}), 400
-    if new_mode == _state.app_mode:
-        return jsonify({"mode": new_mode, "changed": False})
-    if _switch_mode_callback:
-        _switch_mode_callback(new_mode)
-    return jsonify({"mode": new_mode, "changed": True})
-
-
+# ── Option chart ──────────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/option-chart")
+@jwt_required()
 def option_chart():
-    """
-    Fetch OHLC candles for any NIFTY option strike on a given date.
-    Query params: strike (int), type (CE|PE), date (YYYY-MM-DD), interval (minute|5minute|day)
-    """
-    if not _broker:
-        return jsonify({"ok": False, "error": "Broker not available"}), 503
-
+    ue       = _ue()
     strike   = request.args.get("strike", type=int)
     opt_type = (request.args.get("type", "CE") or "CE").upper()
     date_str = request.args.get("date", "")
@@ -205,14 +256,14 @@ def option_chart():
         return jsonify({"ok": False, "error": "strike is required"}), 400
     if opt_type not in ("CE", "PE"):
         return jsonify({"ok": False, "error": "type must be CE or PE"}), 400
-
     try:
-        trade_date = datetime.date.fromisoformat(date_str) if date_str else datetime.date.today()
+        trade_date = (datetime.date.fromisoformat(date_str)
+                      if date_str else datetime.date.today())
     except ValueError:
         return jsonify({"ok": False, "error": "Invalid date format"}), 400
 
     try:
-        records = _broker.get_option_history(strike, opt_type, trade_date, interval)
+        records = ue.broker.get_option_history(strike, opt_type, trade_date, interval)
         candles = [
             {
                 "time":  int(r["date"].timestamp()),
@@ -221,122 +272,84 @@ def option_chart():
             }
             for r in records
         ]
-        # Build label
-        label = f"NIFTY {strike} {opt_type}"
-        return jsonify({"ok": True, "data": candles, "label": label})
+        return jsonify({"ok": True, "data": candles,
+                        "label": f"NIFTY {strike} {opt_type}"})
     except Exception as e:
-        if _state and _broker:
-            from execution.broker import is_kite_auth_error
-            if is_kite_auth_error(e):
-                _state.kite_auth_error = True
+        from execution.broker import is_kite_auth_error
+        if is_kite_auth_error(e):
+            ue.state.kite_auth_error = True
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+# ── NIFTY history chart ───────────────────────────────────────────────────────
+
 def _to_date(dt) -> datetime.date:
-    """Safely extract a date from a datetime or date object."""
     return dt.date() if hasattr(dt, "date") else dt
 
 
 def _day_key(d: datetime.date) -> dict:
-    """Return a LightweightCharts business-day time object {year, month, day}."""
     return {"year": d.year, "month": d.month, "day": d.day}
 
 
 def _aggregate_candles(records: list, interval: str) -> list:
-    """
-    Aggregate a list of daily Kite candle dicts into weekly or monthly bars.
-    Returns LightweightCharts business-day time objects {year, month, day} as
-    the 'time' field — avoids all UTC/IST timestamp ambiguity for daily+ bars.
-    """
-    buckets: dict = {}   # date key → candle dict
-
+    buckets: dict = {}
     for r in records:
-        d = _to_date(r["date"])
-
-        if interval == "week":
-            key = d - datetime.timedelta(days=d.weekday())   # ISO Monday
-        else:  # month
-            key = datetime.date(d.year, d.month, 1)
-
+        d   = _to_date(r["date"])
+        key = (d - datetime.timedelta(days=d.weekday())
+               if interval == "week"
+               else datetime.date(d.year, d.month, 1))
         if key not in buckets:
-            buckets[key] = {
-                "time":  _day_key(key),
-                "open":  r["open"],
-                "high":  r["high"],
-                "low":   r["low"],
-                "close": r["close"],
-            }
+            buckets[key] = {"time":  _day_key(key),
+                            "open":  r["open"], "high": r["high"],
+                            "low":   r["low"],  "close": r["close"]}
         else:
             b = buckets[key]
             b["high"]  = max(b["high"],  r["high"])
             b["low"]   = min(b["low"],   r["low"])
-            b["close"] = r["close"]   # last day's close = bar's close
-
+            b["close"] = r["close"]
     return [buckets[k] for k in sorted(buckets)]
 
 
 @dashboard_bp.route("/api/nifty/history")
+@jwt_required()
 def nifty_history():
-    """
-    Fetch NIFTY 50 candles for day / week / month view.
-    Kite only supports up to 'day' interval, so week/month bars are aggregated
-    from daily candles on the backend before returning to the frontend.
-
-    Returns LightweightCharts business-day time objects {year, month, day} for
-    all intervals so the frontend can use timeVisible:false with no timezone
-    ambiguity.
-
-    Query params:
-      interval = day | week | month
-      from     = YYYY-MM-DD  (default varies by interval)
-      to       = YYYY-MM-DD  (default: today)
-    """
-    if not _broker:
-        return jsonify({"ok": False, "error": "Broker not available"}), 503
-
+    ue       = _ue()
     interval = (request.args.get("interval", "day") or "day").lower()
     if interval not in ("day", "week", "month"):
         interval = "day"
 
-    today = datetime.date.today()
+    today        = datetime.date.today()
     default_days = {"day": 365, "week": 730, "month": 1825}
     default_from = today - datetime.timedelta(days=default_days.get(interval, 365))
 
     try:
-        from_dt = datetime.date.fromisoformat(request.args.get("from", str(default_from)))
-        to_dt   = datetime.date.fromisoformat(request.args.get("to",   str(today)))
+        from_dt = datetime.date.fromisoformat(
+            request.args.get("from", str(default_from)))
+        to_dt   = datetime.date.fromisoformat(
+            request.args.get("to",   str(today)))
     except ValueError:
         return jsonify({"ok": False, "error": "Invalid date format"}), 400
 
     try:
-        # Always fetch 'day' interval — Kite doesn't support 'week' or 'month'
-        records = _broker.get_historical_data(
-            _trading_config.index_token,
+        records = ue.broker.get_historical_data(
+            ue.config.index_token,
             f"{from_dt} 09:15:00",
             f"{to_dt} 15:30:00",
             "day",
-            state=_state,
+            state=ue.state,
         )
-
         if interval == "day":
-            # Use business-day {year, month, day} objects — avoids IST/UTC confusion
             candles = [
-                {
-                    "time":  _day_key(_to_date(r["date"])),
-                    "open":  r["open"], "high": r["high"],
-                    "low":   r["low"],  "close": r["close"],
-                }
+                {"time":  _day_key(_to_date(r["date"])),
+                 "open":  r["open"], "high": r["high"],
+                 "low":   r["low"],  "close": r["close"]}
                 for r in records
             ]
         else:
             candles = _aggregate_candles(records, interval)
-
         return jsonify({"ok": True, "data": candles, "interval": interval})
     except Exception as e:
-        if _state:
-            from execution.broker import is_kite_auth_error
-            if is_kite_auth_error(e):
-                _state.kite_auth_error = True
+        from execution.broker import is_kite_auth_error
+        if is_kite_auth_error(e):
+            ue.state.kite_auth_error = True
         return jsonify({"ok": False, "error": str(e)}), 500
-
-

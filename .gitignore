@@ -1,6 +1,7 @@
-# Secrets
+# Secrets / local cache
 .env
 .kite_session.json
+.trading_settings.json
 
 .idea/
 
@@ -17,4 +18,4 @@ env/
 # Misc
 .DS_Store
 *.log
-*.db
+*.db        # SQLite databases (trading.db is recreated automatically on startup)

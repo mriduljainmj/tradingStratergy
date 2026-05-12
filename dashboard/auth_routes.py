@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 import re
 
 import bcrypt
@@ -13,21 +14,28 @@ logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
 
-# Module-level references set by register_ helpers (injected from app.py)
-_broker = None
-_state  = None
-
-
-def register_broker_ref(broker):
-    global _broker
-    _broker = broker
-
-
-def register_state_ref(state):
-    global _state
-    _state = state
-
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+# ── Kite credential resolution ─────────────────────────────────────────────────
+# Users can optionally store their own API key/secret (for power users who have
+# their own ₹500/month Kite Connect subscription).  If they haven't, we fall
+# back to the app's global credentials from env vars so they can connect with
+# just a "Login with Zerodha" click — no personal API subscription needed.
+
+def _resolve_kite_api_key(user: "User") -> str:
+    """Return the effective Kite API key for this user (own key > app global)."""
+    return (user.kite_api_key_stored or "").strip() or os.getenv("KITE_API_KEY", "")
+
+
+def _resolve_kite_api_secret(user: "User") -> str:
+    """Return the effective Kite API secret for this user (own secret > app global)."""
+    if user.kite_api_secret_enc:
+        from execution.broker import decrypt_token
+        secret = decrypt_token(user.kite_api_secret_enc)
+        if secret:
+            return secret
+    return os.getenv("KITE_API_SECRET", "")
 
 # ── Default strategy seeded for every new user ─────────────────────────────────
 _DEFAULT_ORB_STRATEGY = {
@@ -106,8 +114,16 @@ def register():
         if db.query(User).filter_by(username=username).first():
             return _bad("Username already taken.")
 
+        # First-ever user automatically becomes admin
+        is_first_user = db.query(User).count() == 0
+
         pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        user = User(email=email, username=username, password_hash=pw_hash)
+        user = User(
+            email=email,
+            username=username,
+            password_hash=pw_hash,
+            is_admin=is_first_user,
+        )
         db.add(user)
         db.flush()  # get user.id before committing
 
@@ -142,6 +158,22 @@ def login():
             return _bad("Invalid email or password.", 401)
 
         token = create_access_token(identity=str(user.id))
+
+        # ── Restore today's Kite session if the user already authenticated ─────
+        # This means engine starts automatically on app login — no extra step needed
+        # unless the daily token has expired (Kite tokens expire at midnight).
+        today = datetime.date.today()
+        if user.kite_access_token_enc and user.kite_token_date == today:
+            try:
+                from execution.broker import decrypt_token
+                access_token = decrypt_token(user.kite_access_token_enc)
+                api_key      = _resolve_kite_api_key(user)
+                if access_token and api_key:
+                    _apply_token_to_broker(user.id, api_key, access_token)
+                    logger.info(f"Kite session auto-restored on login for user {user.id}.")
+            except Exception as e:
+                logger.warning(f"Auto-restore Kite session failed for user {user.id}: {e}")
+
         return jsonify({"ok": True, "token": token, "user": user.to_dict()})
     finally:
         db.close()
@@ -237,18 +269,46 @@ def update_profile():
 
 # ── Kite session management (serverless-safe encrypted token) ─────────────────
 
-def _apply_token_to_broker(api_key: str, access_token: str):
-    """Apply api_key + access_token to the running broker and clear auth error."""
-    if not _broker:
-        return
+def _apply_token_to_broker(user_id: int, api_key: str, access_token: str):
+    """
+    Apply api_key + access_token to the user's engine and start it if needed.
+    Also fetches the Kite profile to persist the Zerodha client ID as broker_id.
+    """
+    from core.engine_pool import engine_pool
     from kiteconnect import KiteConnect
-    _broker.kite = KiteConnect(api_key=api_key)
-    _broker.config.api_key = api_key
-    _broker.kite.set_access_token(access_token)
-    _broker._save_token(access_token)
-    if _state:
-        _state.kite_auth_error = False
-        _state.logs.append("[--:--:--] ✅ Kite session live.")
+
+    ue = engine_pool.get_or_create(user_id, api_key)
+    ue.broker.kite = KiteConnect(api_key=api_key)
+    ue.broker.config.api_key = api_key
+    ue.broker.kite.set_access_token(access_token)
+    ue.state.kite_auth_error = False
+    ue.state.logs.append("[--:--:--] ✅ Kite session live.")
+
+    # Fetch Kite profile → persist Zerodha client ID as broker_id
+    try:
+        profile = ue.broker.kite.profile()
+        kite_client_id = profile.get("user_id", "")
+        if kite_client_id:
+            from db.database import SessionLocal
+            from db.models import User as _User
+            _db = SessionLocal()
+            try:
+                _u = _db.get(_User, user_id)
+                if _u:
+                    _u.broker_id = kite_client_id
+                    _db.commit()
+                    logger.info(
+                        f"Kite profile fetched for user {user_id}: "
+                        f"client_id={kite_client_id}"
+                    )
+            finally:
+                _db.close()
+    except Exception as e:
+        logger.warning(f"Could not fetch Kite profile for user {user_id}: {e}")
+
+    # Start the engine in PAPER mode if it isn't already running
+    if not ue.is_running:
+        ue.start("PAPER")
 
 
 @auth_bp.route("/api/auth/kite-token", methods=["GET"])
@@ -272,6 +332,40 @@ def get_kite_token_status():
         })
     finally:
         db.close()
+
+
+@auth_bp.route("/api/auth/kite-info", methods=["GET"])
+@jwt_required()
+def kite_info():
+    """
+    Return live Kite account info for the profile page:
+      - Zerodha client ID and account name (from kite.profile())
+      - Available balance and used margin (from kite.margins())
+    Only works when the user has an active Kite session today.
+    """
+    uid = int(get_jwt_identity())
+    from core.engine_pool import engine_pool
+    ue = engine_pool.get(uid)
+
+    if not ue or ue.state.kite_auth_error:
+        return _bad("Kite not authenticated — please log in via the Kite button.", 401)
+
+    try:
+        profile = ue.broker.kite.profile()
+        funds   = ue.broker.get_funds()
+        return jsonify({
+            "ok":        True,
+            "client_id": profile.get("user_id",   ""),
+            "name":      profile.get("user_name",  ""),
+            "email":     profile.get("email",      ""),
+            "broker":    profile.get("broker",     "ZERODHA"),
+            "balance":   funds,
+        })
+    except Exception as e:
+        from execution.broker import is_kite_auth_error
+        if is_kite_auth_error(e) and ue:
+            ue.state.kite_auth_error = True
+        return _bad(str(e), 500)
 
 
 @auth_bp.route("/api/auth/kite-credentials", methods=["POST"])
@@ -317,8 +411,10 @@ def save_kite_credentials():
 def kite_login_url():
     """
     Initiate the Kite OAuth flow.
+    Uses the user's own API key if they've stored one; otherwise falls back to
+    the app's global KITE_API_KEY env var — so users don't need a personal
+    ₹500/month Kite Connect subscription.
     Stores the user_id in the Flask session so /kite/callback knows who is logging in.
-    Returns the Kite login URL to redirect the browser to.
     """
     uid = int(get_jwt_identity())
     db  = SessionLocal()
@@ -326,13 +422,24 @@ def kite_login_url():
         user = db.get(User, uid)
         if not user:
             return _bad("User not found.", 404)
-        if not user.kite_api_key_stored:
-            return _bad("Save your API Key & Secret first.", 400)
-        if not user.kite_api_secret_enc:
-            return _bad("Save your API Secret first.", 400)
+
+        api_key    = _resolve_kite_api_key(user)
+        api_secret = _resolve_kite_api_secret(user)
+        if not api_key:
+            return _bad(
+                "No Kite API key configured. "
+                "Either save your own API Key in your profile, or ask the app "
+                "administrator to set the KITE_API_KEY environment variable.", 400
+            )
+        if not api_secret:
+            return _bad(
+                "No Kite API secret configured. "
+                "Either save your own API Secret in your profile, or ask the app "
+                "administrator to set the KITE_API_SECRET environment variable.", 400
+            )
 
         from kiteconnect import KiteConnect
-        kite = KiteConnect(api_key=user.kite_api_key_stored)
+        kite = KiteConnect(api_key=api_key)
         login_url = kite.login_url()
 
         # Store uid in server-side session — the callback reads it back
@@ -374,24 +481,30 @@ def kite_callback():
     db = SessionLocal()
     try:
         user = db.get(User, uid)
-        if not user or not user.kite_api_key_stored or not user.kite_api_secret_enc:
-            return redirect("/profile?kite_error=API+credentials+not+found+—+save+them+first")
+        if not user:
+            return redirect("/profile?kite_error=User+not+found")
 
-        api_key    = user.kite_api_key_stored
-        api_secret = decrypt_token(user.kite_api_secret_enc)
+        # Use user's own credentials if stored, otherwise fall back to app globals
+        api_key    = _resolve_kite_api_key(user)
+        api_secret = _resolve_kite_api_secret(user)
+        if not api_key or not api_secret:
+            return redirect("/profile?kite_error=API+credentials+not+configured")
 
         from kiteconnect import KiteConnect
         kite = KiteConnect(api_key=api_key)
         data = kite.generate_session(request_token, api_secret=api_secret)
         access_token = data["access_token"]
 
-        # Encrypt & persist
+        # Encrypt & persist the access token + record which api_key was used
         user.kite_access_token_enc = encrypt_token(access_token)
         user.kite_token_date       = datetime.date.today()
+        # Store the resolved api_key so restore_from_db uses the right one
+        if not user.kite_api_key_stored:
+            user.kite_api_key_stored = api_key
         db.commit()
 
-        # Apply to running broker
-        _apply_token_to_broker(api_key, access_token)
+        # Apply to running broker and start engine
+        _apply_token_to_broker(uid, api_key, access_token)
 
         session.pop("kite_oauth_uid", None)
         logger.info(f"Kite OAuth login successful for user {uid}.")
@@ -416,8 +529,11 @@ def exchange_kite_token():
     production server (/kite/callback).  The user copies the request_token
     query-param from the production redirect and pastes it here — the local
     server does the exchange itself without needing its own callback URL.
+
+    Falls back to the app's global KITE_API_KEY / KITE_API_SECRET env vars
+    if the user hasn't stored their own credentials.
     """
-    from execution.broker import decrypt_token, encrypt_token
+    from execution.broker import encrypt_token
 
     uid  = int(get_jwt_identity())
     data = request.get_json(silent=True) or {}
@@ -431,27 +547,27 @@ def exchange_kite_token():
         user = db.get(User, uid)
         if not user:
             return _bad("User not found.", 404)
-        if not user.kite_api_key_stored:
-            return _bad("Save your API Key & Secret first (Step ①).")
-        if not user.kite_api_secret_enc:
-            return _bad("Save your API Secret first (Step ①).")
 
-        api_key    = user.kite_api_key_stored
-        api_secret = decrypt_token(user.kite_api_secret_enc)
+        api_key    = _resolve_kite_api_key(user)
+        api_secret = _resolve_kite_api_secret(user)
+        if not api_key:
+            return _bad("No API key configured — save your credentials or ask the administrator to set KITE_API_KEY.")
+        if not api_secret:
+            return _bad("No API secret configured — save your credentials or ask the administrator to set KITE_API_SECRET.")
 
         from kiteconnect import KiteConnect
-        kite     = KiteConnect(api_key=api_key)
+        kite      = KiteConnect(api_key=api_key)
         kite_data = kite.generate_session(request_token, api_secret=api_secret)
         access_token = kite_data["access_token"]
 
         user.kite_access_token_enc = encrypt_token(access_token)
         user.kite_token_date       = datetime.date.today()
+        if not user.kite_api_key_stored:
+            user.kite_api_key_stored = api_key
         db.commit()
         db.refresh(user)
 
-        _apply_token_to_broker(api_key, access_token)
-        if _state:
-            _state.logs.append("[--:--:--] ✅ Kite request_token exchanged — session live.")
+        _apply_token_to_broker(uid, api_key, access_token)
 
         return jsonify({"ok": True, "user": user.to_dict()})
     except Exception as e:
@@ -483,17 +599,23 @@ def save_kite_token():
         user = db.get(User, uid)
         if not user:
             return _bad("User not found.", 404)
-        if not user.kite_api_key_stored:
-            return _bad("Save your API Key & Secret first (they are required to use the token).")
+
+        api_key = _resolve_kite_api_key(user)
+        if not api_key:
+            return _bad(
+                "No Kite API key configured. "
+                "Either save your own API Key in your profile, or ask the app "
+                "administrator to set the KITE_API_KEY environment variable."
+            )
 
         user.kite_access_token_enc = encrypt_token(access_token)
         user.kite_token_date       = datetime.date.today()
+        if not user.kite_api_key_stored:
+            user.kite_api_key_stored = api_key
         db.commit()
         db.refresh(user)
 
-        _apply_token_to_broker(user.kite_api_key_stored, access_token)
-        if _state:
-            _state.logs.append("[--:--:--] ✅ Kite access token saved and applied.")
+        _apply_token_to_broker(uid, api_key, access_token)
 
         return jsonify({"ok": True, "user": user.to_dict()})
     except Exception as e:
@@ -518,17 +640,9 @@ def clear_kite_token():
         user.kite_token_date       = None
         db.commit()
 
-        # Wipe file cache so DB and file stay in sync
-        try:
-            from execution.broker import _TOKEN_CACHE
-            if os.path.exists(_TOKEN_CACHE):
-                os.remove(_TOKEN_CACHE)
-        except Exception:
-            pass
-
-        if _state:
-            _state.kite_auth_error = True
-            _state.logs.append("[--:--:--] 🗑 Kite token cleared — re-authenticate via /profile.")
+        # Stop and remove the user's engine from the pool — they must re-auth
+        from core.engine_pool import engine_pool
+        engine_pool.remove(uid)
 
         return jsonify({"ok": True})
     except Exception as e:

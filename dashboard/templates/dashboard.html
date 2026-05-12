@@ -642,6 +642,53 @@
         /* Hide the native calendar icon since flatpickr has its own */
         .bt-date::-webkit-calendar-picker-indicator,
         .dpc-date::-webkit-calendar-picker-indicator { display: none; }
+
+        /* ── Engine Controls Bar ── */
+        .engine-controls-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            background: var(--bg-surface); border: 1px solid var(--border-color);
+            border-radius: 8px; padding: 7px 14px; gap: 12px; flex-shrink: 0;
+        }
+        .ecb-left, .ecb-right { display: flex; align-items: center; gap: 14px; }
+        .ecb-group { display: flex; align-items: center; gap: 7px; }
+        .ecb-label { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+        .ecb-select {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            color: var(--text-main); padding: 4px 10px; border-radius: 5px;
+            font-size: 12px; font-weight: 600; cursor: pointer; outline: none;
+            min-width: 160px; max-width: 280px;
+            transition: border-color 0.15s;
+        }
+        .ecb-select:focus { border-color: var(--accent-blue); }
+        .trades-toggle {
+            display: inline-flex; align-items: center; gap: 5px;
+            padding: 4px 12px; border-radius: 20px; cursor: pointer;
+            font-size: 11px; font-weight: 700; transition: all 0.2s; white-space: nowrap;
+            border: 1px solid transparent;
+        }
+        .trades-on  { background: #f0fdf4; color: #059669; border-color: #bbf7d0; }
+        .trades-off { background: #fef2f2; color: #DC2626; border-color: #fecaca; }
+        .tt-indicator { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+        .trades-on .tt-indicator { animation: livePulse 1.5s ease-in-out infinite; }
+        /* ── Direction segmented control ── */
+        .dir-seg { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+        .dir-seg button {
+            background: var(--bg-card); color: var(--text-muted);
+            border: none; border-right: 1px solid var(--border-color);
+            padding: 4px 10px; font-size: 11px; font-weight: 700;
+            cursor: pointer; transition: background 0.15s, color 0.15s;
+            white-space: nowrap;
+        }
+        .dir-seg button:last-child { border-right: none; }
+        .dir-seg button:hover:not(.ds-active) { background: rgba(255,255,255,0.06); color: var(--text-main); }
+        .dir-seg button.ds-active.ds-call { background: #dcfce7; color: #15803d; }
+        .dir-seg button.ds-active.ds-both { background: #ede9fe; color: #6d28d9; }
+        .dir-seg button.ds-active.ds-put  { background: #fef2f2; color: #b91c1c; }
+        @media (max-width: 600px) {
+            .engine-controls-bar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+            .ecb-left, .ecb-right { flex-wrap: wrap; gap: 8px; }
+            .ecb-select { min-width: 0; flex: 1; }
+        }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -666,10 +713,6 @@
       </a>
       <a href="/strategy-builder" class="nav-item">
         <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
-      </a>
-      <div class="nav-section-label">Account</div>
-      <a href="/profile" class="nav-item">
-        <span class="nav-icon">👤</span><span class="nav-text">Profile</span>
       </a>
     </nav>
     <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">◀</button>
@@ -746,6 +789,36 @@
           </div>
           <a class="kite-auth-btn" href="/profile#kiteSection">🔑 Re-enter Token</a>
           <button class="kite-auth-dismiss" onclick="dismissAuthBanner()" title="Dismiss">✕</button>
+      </div>
+
+      <!-- ── Engine Controls Bar ── -->
+      <div class="engine-controls-bar" id="engineControlsBar">
+          <div class="ecb-left">
+              <div class="ecb-group">
+                  <span class="ecb-label">📋 Strategy</span>
+                  <select id="strategySelect" class="ecb-select" onchange="handleStrategyChange(this.value)">
+                      <option value="">Loading…</option>
+                  </select>
+              </div>
+          </div>
+          <div class="ecb-right">
+              <div class="ecb-group">
+                  <span class="ecb-label">Direction</span>
+                  <div class="dir-seg" id="directionSeg">
+                      <button class="ds-call"               onclick="handleDirectionChange('CALL')">▲ CALL</button>
+                      <button class="ds-both ds-active"     onclick="handleDirectionChange('BOTH')">⇅ BOTH</button>
+                      <button class="ds-put"                onclick="handleDirectionChange('PUT')">🔻 PUT</button>
+                  </div>
+              </div>
+              <div class="ecb-group">
+                  <span class="ecb-label">Take Trades</span>
+                  <button id="tradesToggleBtn" class="trades-toggle trades-on" onclick="handleTradesToggle()">
+                      <span class="tt-indicator"></span>
+                      <span id="tradesToggleText">ON</span>
+                  </button>
+              </div>
+              <button class="gear-btn" onclick="openSettings()" title="Strategy Settings">⚙</button>
+          </div>
       </div>
 
       <!-- Settings Modal -->
@@ -1029,6 +1102,8 @@
 
           <button class="bt-run" id="btRun" onclick="runBacktest()">Run</button>
           <span class="bt-status" id="btStatus"></span>
+          <div id="btSettingsSummary" style="font-size:10px; color:var(--text-muted); margin-top:4px; line-height:1.5; display:none;">
+          </div>
       </div>
 
       <!-- Range Results -->
@@ -1247,6 +1322,31 @@
             document.getElementById('dropdownName').textContent = user.username || 'User';
             document.getElementById('dropdownEmail').textContent = user.email || '';
         })();
+
+        /**
+         * authFetch — drop-in replacement for fetch() that automatically
+         * injects the JWT Bearer token from localStorage and redirects to
+         * /login if the server returns 401 / 422 (token missing or expired).
+         */
+        function authFetch(url, opts) {
+            opts = opts || {};
+            const token = localStorage.getItem('orb_token');
+            if (token) {
+                opts.headers = Object.assign(
+                    { 'Authorization': 'Bearer ' + token },
+                    opts.headers || {}
+                );
+            }
+            return fetch(url, opts).then(function(res) {
+                if (res.status === 401 || res.status === 422) {
+                    localStorage.removeItem('orb_token');
+                    localStorage.removeItem('orb_user');
+                    window.location.replace('/login');
+                    return new Promise(function() {});  // halt the chain
+                }
+                return res;
+            });
+        }
 
         function toggleUserDropdown() {
             document.getElementById('userMenu').classList.toggle('open');
@@ -1520,7 +1620,7 @@
             if (!m) { _liveOptFetching = false; return; }
             try {
                 const today = new Date().toISOString().slice(0, 10);
-                const res = await fetch(`/api/option-chart?strike=${m[1]}&type=${m[2]}&date=${today}`);
+                const res = await authFetch(`/api/option-chart?strike=${m[1]}&type=${m[2]}&date=${today}`);
                 const d   = await res.json();
                 if (d.ok && d.data.length) {
                     _liveOptBase = d.data;
@@ -1617,7 +1717,7 @@
             const intervalMap = { D: 'day', W: 'week', Mo: 'month' };
             const interval = intervalMap[tf] || 'day';
             try {
-                const r = await fetch(`/api/nifty/history?interval=${interval}`);
+                const r = await authFetch(`/api/nifty/history?interval=${interval}`);
                 const d = await r.json();
                 if (d.ok && d.data.length) {
                     rawNiftyDayCandles = d.data;
@@ -1673,7 +1773,7 @@
         let settingsTab = 'BACKTEST';
 
         function openSettings() {
-            fetch('/api/settings')
+            authFetch('/api/settings')
                 .then(r => r.json())
                 .then(cfg => {
                     if (cfg.error) return;
@@ -1686,6 +1786,34 @@
                         fields.forEach(f => {
                             const el = document.getElementById(`${prefix}-${f}`);
                             if (el && cfg[f] !== undefined) el.value = cfg[f];
+                        });
+                    });
+
+                    // Cross-tab sync: when any input changes, mirror value to the
+                    // same field in the other two tabs.
+                    let _syncing = false;
+                    document.querySelectorAll('.settings-input').forEach(input => {
+                        input.addEventListener('change', function() {
+                            if (_syncing) return;
+                            _syncing = true;
+                            const id = input.id;
+                            let prefix, field;
+                            if (id.startsWith('sf2-')) {
+                                prefix = 'sf2'; field = id.slice(4);
+                            } else if (id.startsWith('sf3-')) {
+                                prefix = 'sf3'; field = id.slice(4);
+                            } else if (id.startsWith('sf-')) {
+                                prefix = 'sf'; field = id.slice(3);
+                            } else {
+                                _syncing = false;
+                                return;
+                            }
+                            ['sf','sf2','sf3'].forEach(p => {
+                                if (p === prefix) return;
+                                const other = document.getElementById(`${p}-${field}`);
+                                if (other) other.value = input.value;
+                            });
+                            _syncing = false;
                         });
                     });
                 })
@@ -1715,6 +1843,47 @@
             document.getElementById('saveBtn').style.background = colors[tab] || 'var(--accent-blue)';
         }
 
+        function updateBtSettingsSummary(cfg) {
+            // Show active strategy settings as a compact summary near the Run button
+            const el = document.getElementById('btSettingsSummary');
+            if (!el || !cfg) return;
+            const tgt   = cfg.target_pts     !== undefined ? `Target: ₹${cfg.target_pts}` : '';
+            const entry = cfg.entry_end_time !== undefined ? `Last Entry: ${cfg.entry_end_time}` : '';
+            const eod   = cfg.eod_exit_time  !== undefined ? `Force-Close: ${cfg.eod_exit_time}` : '';
+            const qty   = cfg.qty_multiplier !== undefined && cfg.lot_size !== undefined
+                            ? `Qty: ${Math.round(cfg.lot_size * cfg.qty_multiplier)} (${cfg.qty_multiplier} lots)` : '';
+            const parts = [tgt, entry, eod, qty].filter(Boolean);
+            if (parts.length) {
+                el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+                el.style.display = '';
+            }
+        }
+
+        function showSettingsToast(cfg) {
+            // Brief overlay toast showing what was actually saved
+            const eod   = cfg.eod_exit_time  || '?';
+            const entry = cfg.entry_end_time || '?';
+            const tgt   = cfg.target_pts     !== undefined ? `₹${cfg.target_pts}` : '?';
+            const msg   = `✓ Settings saved — Force-close: ${eod} · Last entry: ${entry} · Target: ${tgt}`;
+
+            let toast = document.getElementById('_settingsToast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = '_settingsToast';
+                toast.style.cssText = [
+                    'position:fixed','bottom:24px','left:50%','transform:translateX(-50%)',
+                    'background:#059669','color:#fff','padding:10px 20px','border-radius:8px',
+                    'font-size:12px','font-weight:600','z-index:9999','box-shadow:0 4px 16px rgba(0,0,0,0.3)',
+                    'transition:opacity 0.3s','pointer-events:none'
+                ].join(';');
+                document.body.appendChild(toast);
+            }
+            toast.textContent = msg;
+            toast.style.opacity = '1';
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+        }
+
         function saveSettings() {
             const prefixMap = { BACKTEST: 'sf', PAPER: 'sf2', LIVE: 'sf3' };
             const prefix = prefixMap[settingsTab];
@@ -1728,14 +1897,29 @@
                 const el = document.getElementById(`${prefix}-${f}`);
                 if (el && el.value !== '') payload[f] = el.value;
             });
-            fetch('/api/settings', {
+            authFetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             })
             .then(r => r.json())
             .then(res => {
-                if (res.ok) closeSettings();
+                if (res.ok) {
+                    closeSettings();
+                    // Show toast with confirmed saved values + update Run-button summary
+                    if (res.settings) {
+                        showSettingsToast(res.settings);
+                        updateBtSettingsSummary(res.settings);
+                        // Sync ALL tab inputs so they reflect the real saved values
+                        const saved = res.settings;
+                        ['sf','sf2','sf3'].forEach(p => {
+                            fields.forEach(f => {
+                                const el2 = document.getElementById(`${p}-${f}`);
+                                if (el2 && saved[f] !== undefined) el2.value = saved[f];
+                            });
+                        });
+                    }
+                }
             })
             .catch(() => {});
         }
@@ -1838,7 +2022,7 @@
         }
 
         function pollData() {
-            fetch('/api/state')
+            authFetch('/api/state')
                 .then(res => res.json())
                 .then(state => {
                     if (!frozenChart) {
@@ -1970,6 +2154,19 @@
                     // ── Kite auth error → show banner ──────────────────────────
                     if (state.kite_auth_error) showAuthBanner();
 
+                    // ── Sync trades-enabled toggle from server state ────────────
+                    if (typeof state.trades_enabled !== 'undefined' &&
+                            state.trades_enabled !== _tradesEnabled) {
+                        _tradesEnabled = state.trades_enabled;
+                        _syncTradesToggleUI();
+                    }
+
+                    // ── Sync trade direction from server state ──────────────────
+                    if (state.trade_direction && state.trade_direction !== _tradeDirection) {
+                        _tradeDirection = state.trade_direction;
+                        _syncDirectionUI();
+                    }
+
                     // ── Strike selector: init from live option label ────────────
                     const liveMode = (state.app_mode === 'LIVE' || state.app_mode === 'PAPER');
                     const optLabel = state.option_label || '';
@@ -1988,7 +2185,7 @@
 
         function switchMode(mode) {
             ['BACKTEST', 'PAPER', 'LIVE'].forEach(m => document.getElementById('btn-' + m).disabled = true);
-            fetch('/api/mode', {
+            authFetch('/api/mode', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode })
@@ -2042,7 +2239,7 @@
                 showChartLoader('Running backtest…');
             }
 
-            fetch('/api/backtest/run', {
+            authFetch('/api/backtest/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -2072,7 +2269,7 @@
             highlightRangeRow(dateStr);
             setViewingDate(null);   // clear until data arrives
 
-            fetch('/api/backtest/run', {
+            authFetch('/api/backtest/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: 'single', date: dateStr })
@@ -2147,7 +2344,7 @@
             //    get upgraded to real candles on re-run.
             if (!data.used_real_options && data.strike && data.trade_taken) {
                 const optType = data.position_type === 'PUT' ? 'PE' : 'CE';
-                fetch(`/api/option-chart?strike=${data.strike}&type=${optType}&date=${data.date}`)
+                authFetch(`/api/option-chart?strike=${data.strike}&type=${optType}&date=${data.date}`)
                     .then(r => r.json())
                     .then(od => {
                         if (od.ok && od.data.length) {
@@ -2466,7 +2663,7 @@
             const date = _lastTradeDate || new Date().toISOString().split('T')[0];
             try {
                 const url = `/api/option-chart?strike=${_altStrike}&type=${_altStrikeType}&date=${date}`;
-                const r   = await fetch(url);
+                const r   = await authFetch(url);
                 const d   = await r.json();
                 if (!d.ok) { alert('Could not load chart: ' + (d.error || 'unknown error')); return; }
                 if (!d.data.length) { alert('No data for ' + _altStrike + ' ' + _altStrikeType + ' on ' + date); return; }
@@ -2488,11 +2685,126 @@
             }
         }
 
-        // Hook into pollData — call after markers arrive
-        const _origPollData = pollData;
+        // ── Engine Controls: Strategy Dropdown + Trades Toggle ────────────────
+
+        let _tradesEnabled = true;  // local cache — synced from server via pollData
+
+        async function loadStrategies() {
+            try {
+                const r = await authFetch('/api/strategies');
+                const d = await r.json();
+                const strategies = d.strategies || [];
+                const sel = document.getElementById('strategySelect');
+                if (!sel) return;
+                sel.innerHTML = '';
+                if (strategies.length === 0) {
+                    sel.innerHTML = '<option value="">No strategies yet</option>';
+                    return;
+                }
+                strategies.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name + (s.is_active ? '  ✓' : '');
+                    if (s.is_active) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+            } catch (_) {}
+        }
+
+        async function handleStrategyChange(stratId) {
+            if (!stratId) return;
+            const sel = document.getElementById('strategySelect');
+            if (sel) sel.disabled = true;
+            try {
+                const r = await authFetch('/api/active-strategy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ strategy_id: parseInt(stratId) }),
+                });
+                const d = await r.json();
+                if (d.ok) loadStrategies();
+                else console.warn('Strategy change failed:', d.error);
+            } catch (_) {}
+            finally { if (sel) sel.disabled = false; }
+        }
+
+        async function handleTradesToggle() {
+            const next = !_tradesEnabled;
+            const btn = document.getElementById('tradesToggleBtn');
+            if (btn) btn.disabled = true;
+            try {
+                const r = await authFetch('/api/trades-enabled', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: next }),
+                });
+                const d = await r.json();
+                if (d.ok) {
+                    _tradesEnabled = next;
+                    _syncTradesToggleUI();
+                }
+            } catch (_) {}
+            finally { if (btn) btn.disabled = false; }
+        }
+
+        function _syncTradesToggleUI() {
+            const btn = document.getElementById('tradesToggleBtn');
+            const txt = document.getElementById('tradesToggleText');
+            if (!btn || !txt) return;
+            if (_tradesEnabled) {
+                btn.className = 'trades-toggle trades-on';
+                txt.textContent = 'ON';
+            } else {
+                btn.className = 'trades-toggle trades-off';
+                txt.textContent = 'OFF';
+            }
+        }
+
+        // ── Trade direction (CALL / BOTH / PUT) ───────────────────────────────
+        let _tradeDirection = 'BOTH';   // local cache — synced from server via pollData
+
+        async function handleDirectionChange(dir) {
+            if (dir === _tradeDirection) return;
+            const btns = document.querySelectorAll('#directionSeg button');
+            btns.forEach(b => b.disabled = true);
+            try {
+                const r = await authFetch('/api/trade-direction', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ direction: dir }),
+                });
+                const d = await r.json();
+                if (d.ok) {
+                    _tradeDirection = dir;
+                    _syncDirectionUI();
+                } else {
+                    console.warn('Direction change failed:', d.error);
+                }
+            } catch (_) {}
+            finally { btns.forEach(b => b.disabled = false); }
+        }
+
+        function _syncDirectionUI() {
+            document.querySelectorAll('#directionSeg button').forEach(btn => {
+                btn.classList.remove('ds-active');
+            });
+            const map = { 'CALL': 'ds-call', 'BOTH': 'ds-both', 'PUT': 'ds-put' };
+            const cls = map[_tradeDirection] || 'ds-both';
+            const active = document.querySelector(`#directionSeg .${cls}`);
+            if (active) active.classList.add('ds-active');
+        }
+
+        // ── Init engine controls on page load ─────────────────────────────────
+        loadStrategies();
 
         setInterval(pollData, 1000);
         pollData();
+
+        // Populate the backtest settings summary chip on page load
+        authFetch('/api/settings')
+            .then(r => r.json())
+            .then(cfg => { if (!cfg.error) updateBtSettingsSummary(cfg); })
+            .catch(() => {});
     </script>
 
 <!-- ── Trade Execution Notification Modal ── -->

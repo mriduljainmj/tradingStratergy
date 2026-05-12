@@ -138,6 +138,25 @@ class TradingEngine:
             signal = self.strategy.process_tick(
                 int(dt.timestamp()), dt.time(), r["open"], r["high"], r["low"], r["close"]
             )
+            # Gate: skip BUY entry if trades are disabled
+            if signal and signal["action"] == "BUY" and not getattr(self.state, "trades_enabled", True):
+                self.state.logs.append(
+                    f"[{dt.strftime('%H:%M:%S')}] ⏸ {signal['type']} breakout "
+                    f"₹{signal['price']:.0f} — Take Trades is OFF, skipped"
+                )
+                self.strategy.in_position = False
+                self.strategy.has_traded  = False
+                self.strategy.strike      = None
+                self.strategy.target_prem = None
+                self.state.position_type  = "NONE"
+                self.state.entry_prem     = 0.0
+                self.state.target_prem    = 0.0
+                self.state.option_prices  = []
+                self.state.option_label   = ""
+                self.state.option_expiry  = ""
+                if self.state.markers:        self.state.markers.pop()
+                if self.state.option_markers: self.state.option_markers.pop()
+                signal = None
             if signal:
                 self._handle_signal(signal)
                 if signal["action"] == "SELL":
@@ -288,6 +307,31 @@ class TradingEngine:
                 signal = self.strategy.process_tick(
                     unix_time, t, ltp, ltp, ltp, ltp, real_opt_price
                 )
+
+                # ── Trades-enabled gate ──────────────────────────────────────
+                # When the user turns "Take Trades" OFF the engine still watches
+                # the market and logs breakout signals, but never enters a position.
+                # Exits are always honoured if somehow already in a trade.
+                if signal and signal["action"] == "BUY" and not getattr(self.state, "trades_enabled", True):
+                    t_str = now_dt.strftime("%H:%M:%S")
+                    self.state.logs.append(
+                        f"[{t_str}] ⏸ {signal['type']} breakout ₹{signal['price']:.0f} "
+                        f"— Take Trades is OFF, signal skipped"
+                    )
+                    # Undo all state mutations made by strategy._look_for_entry
+                    self.strategy.in_position = False
+                    self.strategy.has_traded  = False
+                    self.strategy.strike      = None
+                    self.strategy.target_prem = None
+                    self.state.position_type  = "NONE"
+                    self.state.entry_prem     = 0.0
+                    self.state.target_prem    = 0.0
+                    self.state.option_prices  = []
+                    self.state.option_label   = ""
+                    self.state.option_expiry  = ""
+                    if self.state.markers:        self.state.markers.pop()
+                    if self.state.option_markers: self.state.option_markers.pop()
+                    signal = None
 
                 if signal:
                     self._handle_signal(signal, real_money)

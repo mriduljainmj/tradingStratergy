@@ -66,11 +66,13 @@ def _migrate_add_columns():
         ("users",  "photo_base64",           "TEXT"),
         ("users",  "trade_confirm_modal",    f"BOOLEAN DEFAULT {bool_true}"),
         ("users",  "broker_id",              "VARCHAR(100)"),
+        ("users",  "settings_json",           "TEXT"),
         ("users",  "kite_api_key_stored",    "VARCHAR(100)"),
         ("users",  "kite_api_secret_enc",    "TEXT"),
         ("users",  "kite_access_token_enc",  "TEXT"),
         ("users",  "kite_token_date",        "DATE"),
         ("trades", "trade_mode",             "VARCHAR(10) DEFAULT 'PAPER'"),
+        ("users",  "is_admin",               "BOOLEAN DEFAULT 0"),
     ]
 
     from sqlalchemy import text as _text

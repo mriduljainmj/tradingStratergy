@@ -209,7 +209,11 @@ class ORBStrategy:
         cfg = self.config
         T_entry = 4 / 365.25
 
+        direction = getattr(self.state, "trade_direction", "BOTH").upper()
+
         if tick_high > self.state.or_high:
+            if direction == "PUT":
+                return None   # user restricted to PUT-only; skip CALL breakout
             entry_px = max(tick_open, self.state.or_high)
             self.strike = OptionsMath.get_atm_strike(entry_px, cfg.strike_spacing)
             entry_prem = OptionsMath.bs_call(entry_px, self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv)
@@ -219,6 +223,8 @@ class ORBStrategy:
             self.state.position_type = "CALL"
 
         elif tick_low < self.state.or_low:
+            if direction == "CALL":
+                return None   # user restricted to CALL-only; skip PUT breakout
             entry_px = min(tick_open, self.state.or_low)
             self.strike = OptionsMath.get_atm_strike(entry_px, cfg.strike_spacing)
             entry_prem = OptionsMath.bs_put(entry_px, self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv)

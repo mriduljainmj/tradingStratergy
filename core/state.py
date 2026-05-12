@@ -1,6 +1,6 @@
 import threading
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -34,6 +34,11 @@ class BotState:
     # --- KITE AUTH ---
     kite_auth_error: bool = False    # True when Kite returns "Incorrect api_key/access_token"
 
+    # --- ENGINE CONTROLS (user-facing toggles, preserved across mode resets) ---
+    trades_enabled: bool = True            # False = monitor only, skip new entries
+    active_strategy_id: Optional[int] = None  # DB id of the selected strategy
+    trade_direction: str = "BOTH"          # "CALL" | "PUT" | "BOTH"
+
     def __post_init__(self):
         # Give paper mode a default simulated balance on first creation
         if self.app_mode == "PAPER" and self.balance == 0.0:
@@ -54,7 +59,12 @@ class BotState:
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def reset(self, new_mode: str):
-        """Wipe all trading state for a clean mode switch, preserving the lock."""
+        """Wipe all trading state for a clean mode switch, preserving the lock.
+
+        trades_enabled, active_strategy_id, and trade_direction are user-facing
+        controls and are intentionally NOT reset — users expect them to survive
+        mode switches.
+        """
         self.app_mode = new_mode
         self.status = "Switching mode..."
         self.or_high = 0.0
@@ -111,6 +121,9 @@ class BotState:
             "live_option_price": self.live_option_price,
             "balance": self.balance,
             "kite_auth_error": self.kite_auth_error,
+            "trades_enabled": self.trades_enabled,
+            "active_strategy_id": self.active_strategy_id,
+            "trade_direction": self.trade_direction,
             "option_prices": list(self.option_prices),
             "option_label": self.option_label,
             "option_expiry": self.option_expiry,

@@ -288,6 +288,32 @@
                     <!-- Status banner -->
                     <div id="kiteStatusBanner" style="display:none; align-items:center; gap:10px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:600; margin-bottom:14px;"></div>
 
+                    <!-- Live account info card (shown when authenticated) -->
+                    <div id="kiteAccountCard" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:14px 18px; margin-bottom:16px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <span style="font-size:11px; font-weight:700; color:#065f46; text-transform:uppercase; letter-spacing:0.07em;">Zerodha Account</span>
+                            <button onclick="loadKiteInfo()" title="Refresh" style="background:none; border:none; cursor:pointer; color:#059669; font-size:14px; padding:0 4px;">↻</button>
+                        </div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px 24px;">
+                            <div>
+                                <div style="font-size:10px; color:#6b7280; margin-bottom:2px;">Client ID</div>
+                                <div id="kiteClientId" style="font-size:14px; font-weight:700; color:#1e2328; font-family:monospace;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size:10px; color:#6b7280; margin-bottom:2px;">Account Name</div>
+                                <div id="kiteAccountName" style="font-size:13px; font-weight:600; color:#1e2328;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size:10px; color:#6b7280; margin-bottom:2px;">Available Balance</div>
+                                <div id="kiteAvailBalance" style="font-size:16px; font-weight:700; color:#059669;">—</div>
+                            </div>
+                            <div>
+                                <div style="font-size:10px; color:#6b7280; margin-bottom:2px;">Used Margin</div>
+                                <div id="kiteUsedMargin" style="font-size:15px; font-weight:600; color:#dc2626;">—</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Local-dev pending banner (shown when ?kite_pending=TOKEN) -->
                     <div id="kitePendingBanner" style="display:none; background:#f5f3ff; border:1px solid #c4b5fd; border-radius:8px; padding:14px 16px; margin-bottom:14px;">
                         <div style="font-size:13px; font-weight:700; color:#5b21b6; margin-bottom:6px;">📋 Your request_token is ready</div>
@@ -303,28 +329,30 @@
                         <div style="font-size:11px; color:#7c3aed; margin-top:8px;">⚠ This token expires in a few minutes — use it immediately on your local server.</div>
                     </div>
 
-                    <!-- Step 1: permanent credentials -->
-                    <div style="margin-bottom:18px;">
-                        <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">① Save API credentials <span style="font-weight:400; color:var(--text-muted);">— one-time setup</span></div>
-                        <div class="form-row" style="margin-bottom:10px;">
-                            <div class="form-group">
-                                <label>API Key <span style="font-size:10px;color:#DC2626;font-weight:700;">required</span></label>
-                                <input class="form-input" id="fKiteApiKey" placeholder="e.g. abc123xyz" autocomplete="off" spellcheck="false">
-                                <div class="form-hint">Found in your Kite Developer app</div>
+                    <!-- Step 1: permanent credentials — ADMIN ONLY -->
+                    <div id="kiteAdminSections">
+                        <div style="margin-bottom:18px;">
+                            <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">① Save API credentials <span style="font-weight:400; color:var(--text-muted);">— one-time setup</span></div>
+                            <div class="form-row" style="margin-bottom:10px;">
+                                <div class="form-group">
+                                    <label>API Key <span style="font-size:10px;color:#DC2626;font-weight:700;">required</span></label>
+                                    <input class="form-input" id="fKiteApiKey" placeholder="e.g. abc123xyz" autocomplete="off" spellcheck="false">
+                                    <div class="form-hint">Found in your Kite Developer app</div>
+                                </div>
+                                <div class="form-group">
+                                    <label>API Secret <span style="font-size:10px;color:#DC2626;font-weight:700;">required</span></label>
+                                    <input class="form-input" id="fKiteApiSecret" type="password" placeholder="Your Kite API Secret" autocomplete="off" spellcheck="false">
+                                    <div class="form-hint">Stored encrypted — used to exchange login tokens</div>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label>API Secret <span style="font-size:10px;color:#DC2626;font-weight:700;">required</span></label>
-                                <input class="form-input" id="fKiteApiSecret" type="password" placeholder="Your Kite API Secret" autocomplete="off" spellcheck="false">
-                                <div class="form-hint">Stored encrypted — used to exchange login tokens</div>
-                            </div>
+                            <button onclick="saveKiteCredentials()" style="padding:7px 16px; background:#2563EB; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">💾 Save Credentials</button>
+                            <span id="kiteCredMsg" style="font-size:12px; margin-left:10px;"></span>
                         </div>
-                        <button onclick="saveKiteCredentials()" style="padding:7px 16px; background:#2563EB; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">💾 Save Credentials</button>
-                        <span id="kiteCredMsg" style="font-size:12px; margin-left:10px;"></span>
-                    </div>
+                    </div><!-- /kiteAdminSections step-1 -->
 
                     <!-- Step 2: daily login -->
                     <div style="margin-bottom:18px; padding-top:14px; border-top:1px solid var(--border-color);">
-                        <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;">② Get today's access token <span style="font-weight:400; color:var(--text-muted);">— required every trading day</span></div>
+                        <div style="font-size:12px; font-weight:700; color:var(--text-primary); margin-bottom:8px;"><span id="kiteStepLabel">②</span> Get today's access token <span style="font-weight:400; color:var(--text-muted);">— required every trading day</span></div>
                         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                             <button onclick="kiteOAuthLogin()" id="kiteLoginBtn" style="display:inline-flex; align-items:center; gap:6px; padding:8px 16px; background:#2563EB; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">
                                 🔗 Login with Kite &amp; Auto-Save Token
@@ -337,7 +365,8 @@
                         </div>
                     </div>
 
-                    <!-- Divider + manual fallback -->
+                    <!-- Divider + manual fallback — ADMIN ONLY -->
+                    <div id="kiteAdminAdvanced">
                     <details id="kiteAdvancedDetails" style="margin-bottom:14px;">
                         <summary style="font-size:11px; color:var(--text-muted); cursor:pointer; user-select:none;">▸ Advanced / local dev options</summary>
                         <div style="margin-top:12px; display:flex; flex-direction:column; gap:14px;">
@@ -365,6 +394,7 @@
 
                         </div>
                     </details>
+                    </div><!-- /kiteAdminAdvanced -->
 
                     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                         <button onclick="clearKiteToken()" style="padding:7px 14px; background:var(--bg-card); border:1px solid var(--border-color); color:var(--down-red); border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">🗑 Clear Saved Token</button>
@@ -407,6 +437,24 @@ if (!TOKEN) window.location.href = '/login';
 const USER = JSON.parse(localStorage.getItem('orb_user') || '{}');
 
 function hdrs() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }; }
+
+// ── Admin-only sections ──
+// Show "Save API credentials" and "Advanced / local dev" only to admins.
+// Regular users use the app's global Kite credentials and only need the login button.
+(function applyAdminGating() {
+    const isAdmin = USER.is_admin === true;
+    const adminSections  = document.getElementById('kiteAdminSections');
+    const adminAdvanced  = document.getElementById('kiteAdminAdvanced');
+    const stepLabel      = document.getElementById('kiteStepLabel');
+
+    if (!isAdmin) {
+        if (adminSections) adminSections.style.display = 'none';
+        if (adminAdvanced) adminAdvanced.style.display = 'none';
+        if (stepLabel)     stepLabel.textContent = '①';    // renumber: only one step for regular users
+    } else {
+        if (stepLabel)     stepLabel.textContent = '②';    // admin: step 2 of 2
+    }
+})();
 
 // ── Sidebar ──
 let sidebarCollapsed = false;
@@ -488,7 +536,22 @@ async function loadProfile() {
     document.getElementById('fTradeConfirm').checked = u.trade_confirm_modal !== false;
 
     // Save to localStorage for other pages
-    localStorage.setItem('orb_user', JSON.stringify({ ...USER, ...u }));
+    const merged = { ...USER, ...u };
+    localStorage.setItem('orb_user', JSON.stringify(merged));
+
+    // Re-apply admin gating in case is_admin changed since page load
+    const adminSections = document.getElementById('kiteAdminSections');
+    const adminAdvanced = document.getElementById('kiteAdminAdvanced');
+    const stepLabel     = document.getElementById('kiteStepLabel');
+    if (merged.is_admin) {
+        if (adminSections) adminSections.style.display = '';
+        if (adminAdvanced) adminAdvanced.style.display = '';
+        if (stepLabel)     stepLabel.textContent = '②';
+    } else {
+        if (adminSections) adminSections.style.display = 'none';
+        if (adminAdvanced) adminAdvanced.style.display = 'none';
+        if (stepLabel)     stepLabel.textContent = '①';
+    }
 
     // Load quick stats
     loadStats();
@@ -604,9 +667,11 @@ async function loadKiteStatus() {
         // Pre-fill API key if stored
         if (d.kite_api_key) document.getElementById('fKiteApiKey').value = d.kite_api_key;
 
-        // Dim login button if credentials not yet saved
+        // Dim login button only for admins who haven't saved their API credentials yet.
+        // Regular users rely on the app's global Kite credentials, so the button is always enabled.
         const loginBtn = document.getElementById('kiteLoginBtn');
-        if (!d.has_api_secret) {
+        const isAdmin = USER.is_admin === true;
+        if (isAdmin && !d.has_api_secret) {
             loginBtn.disabled = true;
             loginBtn.title = 'Save your API Key & Secret first (Step ①)';
             loginBtn.style.opacity = '0.5';
@@ -624,6 +689,8 @@ async function loadKiteStatus() {
             banner.style.border = '1px solid #bbf7d0';
             banner.style.color = '#059669';
             banner.innerHTML = '✅ Valid token for today (' + (d.token_date || '') + ') — engine auto-restores on restart';
+            // Load live account info when authenticated
+            loadKiteInfo();
         } else {
             banner.style.display = 'flex';
             banner.style.background = '#fef9ec';
@@ -632,7 +699,25 @@ async function loadKiteStatus() {
             banner.innerHTML = d.has_api_secret
                 ? '⚠ No token for today — click "Login with Kite" to authenticate'
                 : '⚠ No credentials saved — complete Step ① then Step ②';
+            // Hide account card if no valid token
+            document.getElementById('kiteAccountCard').style.display = 'none';
         }
+    } catch (_) {}
+}
+
+async function loadKiteInfo() {
+    try {
+        const r = await fetch('/api/auth/kite-info', { headers: hdrs() });
+        const d = await r.json();
+        if (!d.ok) return;
+
+        const fmt = v => '₹' + Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+        document.getElementById('kiteClientId').textContent    = d.client_id || '—';
+        document.getElementById('kiteAccountName').textContent = d.name      || '—';
+        document.getElementById('kiteAvailBalance').textContent = d.balance ? fmt(d.balance.available) : '—';
+        document.getElementById('kiteUsedMargin').textContent   = d.balance ? fmt(d.balance.used)      : '—';
+        document.getElementById('kiteAccountCard').style.display = 'block';
     } catch (_) {}
 }
 

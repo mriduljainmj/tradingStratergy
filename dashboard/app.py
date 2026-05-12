@@ -5,24 +5,13 @@ import bcrypt
 from flask import Flask
 from flask_jwt_extended import JWTManager
 
-from config.settings import TradingConfig
-from core.state import BotState
-from dashboard.routes import (
-    dashboard_bp,
-    register_state,
-    register_mode_switcher,
-    register_backtester,
-    register_trading_config,
-    register_broker,
-    register_start_engine,
-    register_user_id,
-)
-from dashboard.auth_routes      import auth_bp, _seed_default_strategy, register_broker_ref, register_state_ref
+from dashboard.routes       import dashboard_bp
+from dashboard.auth_routes  import auth_bp, _seed_default_strategy
 from dashboard.analytics_routes import analytics_bp
 from dashboard.strategy_routes  import strategy_bp
-from dashboard.screener_routes  import screener_bp, register_screener_broker
+from dashboard.screener_routes  import screener_bp
 from db.database import init_db, SessionLocal
-from db.models import Strategy, User
+from db.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -42,24 +31,28 @@ def _ensure_default_user():
     try:
         existing = db.query(User).filter_by(email=email).first()
         if existing:
-            logger.info(f"Default user already exists: {email}")
+            # Ensure the default user always has admin rights (safe to re-run)
+            if not existing.is_admin:
+                existing.is_admin = True
+                db.commit()
+                logger.info(f"Default user promoted to admin: {email}")
+            else:
+                logger.info(f"Default user already exists: {email}")
             return
 
         username = email.split("@")[0]
-        # Make username unique if it already exists
-        base = username
-        counter = 1
+        base, counter = username, 1
         while db.query(User).filter_by(username=username).first():
             username = f"{base}{counter}"
             counter += 1
 
         pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        user = User(email=email, username=username, password_hash=pw_hash)
+        user = User(email=email, username=username, password_hash=pw_hash, is_admin=True)
         db.add(user)
         db.flush()
         _seed_default_strategy(db, user.id)
         db.commit()
-        logger.info(f"Default user created — email: {email}  username: {username}")
+        logger.info(f"Default user created (admin) — email: {email}  username: {username}")
     except Exception as e:
         db.rollback()
         logger.warning(f"Could not create default user: {e}")
@@ -67,43 +60,29 @@ def _ensure_default_user():
         db.close()
 
 
-def create_app(state: BotState, mode_switcher=None, backtester=None,
-               trading_config: TradingConfig = None, broker=None,
-               start_engine_fn=None, initial_mode: str = "PAPER",
-               user_id: int = None) -> Flask:
+def create_app() -> Flask:
+    """
+    Create and configure the Flask application.
+
+    All per-user trading state (BotState, KiteBroker, TradingEngine) is managed
+    by the EnginePool singleton in core/engine_pool.py.  Routes look up the
+    calling user's engine via JWT identity — no global state is injected here.
+    """
     template_dir = os.path.join(os.path.dirname(__file__), "templates")
     app = Flask(__name__, template_folder=template_dir)
 
-    # JWT + Flask session secret (share the same key)
+    # JWT + Flask session secret
     _secret = os.getenv("JWT_SECRET_KEY", "orb-dev-secret-change-in-prod")
-    app.config["SECRET_KEY"]          = _secret   # Flask session (used by /kite/callback)
-    app.config["JWT_SECRET_KEY"]      = _secret
+    app.config["SECRET_KEY"]               = _secret
+    app.config["JWT_SECRET_KEY"]           = _secret
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
     JWTManager(app)
 
-    # Init DB tables then seed the default local user (if configured)
+    # Init DB tables + migrations, then seed the default local user (if configured)
     init_db()
     _ensure_default_user()
 
-    # Register state + callbacks
-    register_state(state)
-    if mode_switcher:
-        register_mode_switcher(mode_switcher)
-    if backtester:
-        register_backtester(backtester)
-    if trading_config:
-        register_trading_config(trading_config)
-    if broker:
-        register_broker(broker)
-        register_broker_ref(broker)        # also expose to auth_routes for kite token ops
-        register_screener_broker(broker)   # expose to screener_routes for quote / history
-    register_state_ref(state)         # expose state to auth_routes
-    if start_engine_fn:
-        register_start_engine(start_engine_fn, initial_mode)
-    if user_id:
-        register_user_id(user_id)
-
-    # Register blueprints
+    # Register blueprints — no register_* calls needed; blueprints use the pool singleton
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(analytics_bp)

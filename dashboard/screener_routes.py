@@ -25,14 +25,6 @@ from db.models import Watchlist
 logger = logging.getLogger(__name__)
 screener_bp = Blueprint("screener", __name__)
 
-# Module-level broker ref injected from app.py
-_broker = None
-
-
-def register_screener_broker(broker):
-    global _broker
-    _broker = broker
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -44,18 +36,35 @@ def _bad(msg: str, code: int = 400):
     return jsonify({"ok": False, "error": msg}), code
 
 
-def _kite_symbols(symbols: list[str]) -> list[str]:
+def _get_broker():
+    """Return the requesting user's KiteBroker, or None if not authenticated."""
+    try:
+        from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
+        verify_jwt_in_request(optional=True)
+        uid_str = get_jwt_identity()
+        if uid_str is None:
+            return None
+        from core.engine_pool import engine_pool
+        ue = engine_pool.get(int(uid_str))
+        return ue.broker if ue else None
+    except Exception:
+        return None
+
+
+def _kite_symbols(symbols: list) -> list:
     """Convert bare NSE symbols to 'NSE:SYMBOL' format for Kite quote API."""
     return [f"NSE:{s}" for s in symbols]
 
 
-def _fetch_quotes(symbols: list[str]) -> dict:
+def _fetch_quotes(symbols: list, broker=None) -> dict:
     """
     Fetch live quotes for a list of NSE symbols.
     Returns dict keyed by bare symbol (without 'NSE:' prefix).
     Each value: {ltp, open, high, low, prev_close, change_pct, volume}
     """
-    if not _broker or not symbols:
+    if broker is None:
+        broker = _get_broker()
+    if not broker or not symbols:
         return {}
 
     kite_keys = _kite_symbols(symbols)
@@ -64,7 +73,7 @@ def _fetch_quotes(symbols: list[str]) -> dict:
     for i in range(0, len(kite_keys), 500):
         chunk = kite_keys[i:i + 500]
         try:
-            raw = _broker.kite.quote(chunk)
+            raw = broker.kite.quote(chunk)
         except Exception as e:
             logger.warning(f"Quote fetch failed: {e}")
             continue
@@ -106,7 +115,7 @@ def _compute_rsi(closes: list[float], period: int = 14) -> float | None:
     return round(100 - 100 / (1 + rs), 2)
 
 
-def _compute_technicals(symbol: str) -> dict:
+def _compute_technicals(symbol: str, broker=None) -> dict:
     """
     Fetch ~200 days of daily history for `symbol` and compute:
     MA20, MA50, MA200, RSI14, 52W High/Low, distance from extremes.
@@ -116,7 +125,9 @@ def _compute_technicals(symbol: str) -> dict:
     once per day by the broker's existing NFO cache; for NSE equities we
     fetch it here (may be a fresh network call).
     """
-    if not _broker:
+    if broker is None:
+        broker = _get_broker()
+    if not broker:
         return {"error": "Broker not available"}
 
     today   = datetime.date.today()
@@ -124,7 +135,7 @@ def _compute_technicals(symbol: str) -> dict:
 
     try:
         # Resolve NSE instrument token (single network call, ~100 KB JSON)
-        instruments = _broker.kite.instruments("NSE")
+        instruments = broker.kite.instruments("NSE")
         token = None
         for inst in instruments:
             if inst.get("tradingsymbol") == symbol and inst.get("segment") == "NSE":
@@ -133,7 +144,7 @@ def _compute_technicals(symbol: str) -> dict:
         if not token:
             return {"error": f"Instrument '{symbol}' not found on NSE"}
 
-        records = _broker.kite.historical_data(
+        records = broker.kite.historical_data(
             token,
             f"{from_dt} 09:15:00",
             f"{today} 15:30:00",
@@ -203,7 +214,8 @@ def sector_quotes():
     else:
         symbols = SECTORS[sector]
 
-    if not _broker:
+    broker = _get_broker()
+    if not broker:
         # Return empty quote placeholders so UI can still show the stock list
         rows = [
             {
@@ -218,7 +230,7 @@ def sector_quotes():
         ]
         return jsonify({"ok": True, "data": rows, "live": False})
 
-    quotes = _fetch_quotes(symbols)
+    quotes = _fetch_quotes(symbols, broker)
     rows = []
     for sym in symbols:
         q = quotes.get(sym, {})
@@ -244,7 +256,8 @@ def stock_technicals():
     symbol = request.args.get("symbol", "").strip().upper()
     if not symbol:
         return _bad("symbol is required")
-    result = _compute_technicals(symbol)
+    broker = _get_broker()
+    result = _compute_technicals(symbol, broker)
     return jsonify({"ok": "error" not in result, "symbol": symbol, **result})
 
 
@@ -256,9 +269,10 @@ def get_watchlist():
     uid = _uid()
     db  = SessionLocal()
     try:
-        items = db.query(Watchlist).filter_by(user_id=uid).order_by(Watchlist.added_at).all()
+        items  = db.query(Watchlist).filter_by(user_id=uid).order_by(Watchlist.added_at).all()
         symbols = [w.symbol for w in items]
-        quotes  = _fetch_quotes(symbols) if _broker and symbols else {}
+        broker  = _get_broker()
+        quotes  = _fetch_quotes(symbols, broker) if broker and symbols else {}
 
         data = []
         for w in items:
