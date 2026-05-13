@@ -60,12 +60,52 @@ def apply_config_dict(cfg: TradingConfig, data: dict):
                 logger.warning(f"Settings: failed to apply {field}={val!r}: {e}")
 
 
-def apply_settings_json(cfg: TradingConfig, settings_json: str):
-    """Load settings from a JSON string and apply to cfg in-place."""
+_MODES = ("BACKTEST", "PAPER", "LIVE")
+
+
+def _is_per_mode(data: dict) -> bool:
+    """Return True if data uses the per-mode format {BACKTEST: {...}, PAPER: {...}, LIVE: {...}}."""
+    return any(k in data for k in _MODES)
+
+
+def get_mode_settings(settings_json_str: str, mode: str) -> dict:
+    """Return the settings dict for a specific mode from the stored JSON.
+
+    Supports both:
+    - New per-mode format: {"BACKTEST": {...}, "PAPER": {...}, "LIVE": {...}}
+    - Legacy flat format:  {field: value, ...}  → applied to every mode equally
+    """
+    if not settings_json_str:
+        return {}
+    try:
+        data = json.loads(settings_json_str)
+        if _is_per_mode(data):
+            return dict(data.get(mode, {}))
+        # Legacy flat format — use as-is for all modes
+        return dict(data)
+    except Exception:
+        return {}
+
+
+def set_mode_settings(settings_json_str: str, mode: str, mode_data: dict) -> str:
+    """Write one mode's settings into the JSON blob and return the updated JSON string."""
+    try:
+        all_data = json.loads(settings_json_str) if settings_json_str else {}
+        # Migrate old flat format to per-mode on first write
+        if all_data and not _is_per_mode(all_data):
+            all_data = {m: dict(all_data) for m in _MODES}
+    except Exception:
+        all_data = {}
+    all_data[mode] = mode_data
+    return json.dumps(all_data)
+
+
+def apply_settings_json(cfg: TradingConfig, settings_json: str, mode: str = "PAPER"):
+    """Load settings for the given mode from a JSON string and apply to cfg in-place."""
     if not settings_json:
         return
     try:
-        data = json.loads(settings_json)
-        apply_config_dict(cfg, data)
+        mode_data = get_mode_settings(settings_json, mode)
+        apply_config_dict(cfg, mode_data)
     except Exception as e:
         logger.warning(f"Settings: failed to apply settings JSON: {e}")

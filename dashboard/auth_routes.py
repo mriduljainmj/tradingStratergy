@@ -625,6 +625,31 @@ def save_kite_token():
         db.close()
 
 
+@auth_bp.route("/api/auth/account", methods=["DELETE"])
+@jwt_required()
+def delete_account():
+    """Permanently delete the calling user's account and all associated data."""
+    uid = int(get_jwt_identity())
+    db  = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if not user:
+            return _bad("User not found.", 404)
+
+        # Stop and remove the engine from the pool before deleting
+        from core.engine_pool import engine_pool
+        engine_pool.remove(uid)
+
+        db.delete(user)
+        db.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        db.rollback()
+        return _bad(str(e), 500)
+    finally:
+        db.close()
+
+
 @auth_bp.route("/api/auth/kite-token", methods=["DELETE"])
 @jwt_required()
 def clear_kite_token():

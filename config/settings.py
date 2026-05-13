@@ -21,8 +21,8 @@ class TradingConfig:
 
     index_symbol: str = "NSE:NIFTY 50"
     index_token: int = 256265
-    lot_size: int = 25
-    qty_multiplier: float = 2.6
+    lot_size: int = 65          # NIFTY 50 lot size (65 units per lot as of 2024)
+    qty_multiplier: int = 1    # number of whole lots (qty = lot_size × qty_multiplier)
 
     target_pts: int = 130
     fib_trail: float = 0.7

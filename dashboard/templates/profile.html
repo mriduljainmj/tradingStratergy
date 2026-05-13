@@ -424,6 +424,15 @@
                     <button class="btn-cancel" onclick="loadProfile()">Discard</button>
                     <span class="save-msg" id="saveMsg"></span>
                 </div>
+
+                <!-- Danger Zone -->
+                <div class="form-section">
+                    <div class="form-section-title" style="color:#DC2626;">⚠ Danger Zone</div>
+                    <div class="danger-zone">
+                        <p>Permanently delete your account, all strategies, trade history, and credentials. <strong>This cannot be undone.</strong></p>
+                        <button class="btn-danger" onclick="deleteAccount()">🗑 Delete My Account</button>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -840,6 +849,38 @@ function showKiteCredMsg(msg, isErr) {
     el.textContent = msg;
     el.style.color = isErr ? 'var(--down-red)' : 'var(--up-green)';
     setTimeout(() => { el.textContent = ''; }, 5000);
+}
+
+// ── Delete Account ──────────────────────────────────────────────────────────
+async function deleteAccount() {
+    const confirmed = confirm(
+        'Delete your account?\n\n' +
+        'This will permanently remove your account, all strategies, trade history, ' +
+        'and saved credentials.\n\nThis action CANNOT be undone.'
+    );
+    if (!confirmed) return;
+
+    // Second confirmation — type username
+    const me = document.getElementById('fUsername').value || 'my account';
+    const typed = prompt(`To confirm, type your username "${me}" below:`);
+    if (typed !== me) {
+        alert('Username did not match — account was NOT deleted.');
+        return;
+    }
+
+    try {
+        const r = await fetch('/api/auth/account', { method: 'DELETE', headers: hdrs() });
+        const d = await r.json();
+        if (d.ok) {
+            localStorage.removeItem('orb_token');
+            localStorage.removeItem('orb_user');
+            window.location.href = '/login';
+        } else {
+            alert('Delete failed: ' + (d.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Delete failed: ' + e.message);
+    }
 }
 
 // ── Init

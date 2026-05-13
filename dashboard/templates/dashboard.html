@@ -847,6 +847,14 @@
                       <div class="pane-inner">
                           <div class="settings-section">
                               <div class="settings-section-title">🎯 Trade Rules</div>
+                              <div class="settings-field" style="grid-column:1/-1;display:flex;align-items:center;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--border-color);margin-bottom:4px;">
+                                  <span style="font-size:11px;font-weight:600;color:var(--text-muted);white-space:nowrap;">Trade Direction</span>
+                                  <div class="dir-seg" id="md-dir-BACKTEST">
+                                      <button class="ds-call" onclick="setModalDir('BACKTEST','CALL')">▲ CALL</button>
+                                      <button class="ds-both ds-active" onclick="setModalDir('BACKTEST','BOTH')">⇅ BOTH</button>
+                                      <button class="ds-put" onclick="setModalDir('BACKTEST','PUT')">🔻 PUT</button>
+                                  </div>
+                              </div>
                               <div class="settings-grid">
                                   <div class="settings-field">
                                       <label>Profit Target</label>
@@ -880,13 +888,15 @@
                               <div class="settings-grid">
                                   <div class="settings-field">
                                       <label>Lot Size</label>
-                                      <div class="field-hint">Units per lot (NIFTY = 25)</div>
-                                      <input class="settings-input" id="sf-lot_size" type="number" placeholder="25">
+                                      <div class="field-hint">Units per lot (NIFTY 50 = 65)</div>
+                                      <input class="settings-input" id="sf-lot_size" type="number" min="1" step="1" placeholder="65"
+                                             min="1" step="1" oninput="updateQtyDisplay('sf')">
                                   </div>
                                   <div class="settings-field">
-                                      <label>Number of Lots</label>
-                                      <div class="field-hint">How many lots to trade</div>
-                                      <input class="settings-input" id="sf-qty_multiplier" type="number" step="1" placeholder="1">
+                                      <label>Number of Lots <span id="sf-qty-display" style="font-weight:400;color:var(--text-muted);"></span></label>
+                                      <div class="field-hint">Whole lots only — total units = Lot Size × Lots</div>
+                                      <input class="settings-input" id="sf-qty_multiplier" type="number" min="1" step="1" placeholder="1"
+                                             min="1" step="1" oninput="updateQtyDisplay('sf')">
                                   </div>
                               </div>
                           </div>
@@ -903,6 +913,14 @@
                       <div class="pane-inner">
                           <div class="settings-section">
                               <div class="settings-section-title">🎯 Trade Rules</div>
+                              <div class="settings-field" style="grid-column:1/-1;display:flex;align-items:center;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--border-color);margin-bottom:4px;">
+                                  <span style="font-size:11px;font-weight:600;color:var(--text-muted);white-space:nowrap;">Trade Direction</span>
+                                  <div class="dir-seg" id="md-dir-PAPER">
+                                      <button class="ds-call" onclick="setModalDir('PAPER','CALL')">▲ CALL</button>
+                                      <button class="ds-both ds-active" onclick="setModalDir('PAPER','BOTH')">⇅ BOTH</button>
+                                      <button class="ds-put" onclick="setModalDir('PAPER','PUT')">🔻 PUT</button>
+                                  </div>
+                              </div>
                               <div class="settings-grid">
                                   <div class="settings-field">
                                       <label>Profit Target</label>
@@ -951,13 +969,15 @@
                               <div class="settings-grid">
                                   <div class="settings-field">
                                       <label>Lot Size</label>
-                                      <div class="field-hint">Units per lot (NIFTY = 25)</div>
-                                      <input class="settings-input" id="sf2-lot_size" type="number" placeholder="25">
+                                      <div class="field-hint">Units per lot (NIFTY 50 = 65)</div>
+                                      <input class="settings-input" id="sf2-lot_size" type="number" min="1" step="1" placeholder="65"
+                                             oninput="updateQtyDisplay('sf2')">
                                   </div>
                                   <div class="settings-field">
-                                      <label>Number of Lots</label>
-                                      <div class="field-hint">How many lots to trade</div>
-                                      <input class="settings-input" id="sf2-qty_multiplier" type="number" step="1" placeholder="1">
+                                      <label>Number of Lots <span id="sf2-qty-display" style="font-weight:400;color:var(--text-muted);"></span></label>
+                                      <div class="field-hint">Whole lots only — total units = Lot Size × Lots</div>
+                                      <input class="settings-input" id="sf2-qty_multiplier" type="number" min="1" step="1" placeholder="1"
+                                             oninput="updateQtyDisplay('sf2')">
                                   </div>
                               </div>
                           </div>
@@ -974,6 +994,14 @@
                       <div class="pane-inner">
                           <div class="settings-section">
                               <div class="settings-section-title">🎯 Trade Rules</div>
+                              <div class="settings-field" style="grid-column:1/-1;display:flex;align-items:center;gap:12px;padding-bottom:10px;border-bottom:1px solid var(--border-color);margin-bottom:4px;">
+                                  <span style="font-size:11px;font-weight:600;color:var(--text-muted);white-space:nowrap;">Trade Direction</span>
+                                  <div class="dir-seg" id="md-dir-LIVE">
+                                      <button class="ds-call" onclick="setModalDir('LIVE','CALL')">▲ CALL</button>
+                                      <button class="ds-both ds-active" onclick="setModalDir('LIVE','BOTH')">⇅ BOTH</button>
+                                      <button class="ds-put" onclick="setModalDir('LIVE','PUT')">🔻 PUT</button>
+                                  </div>
+                              </div>
                               <div class="settings-grid">
                                   <div class="settings-field">
                                       <label>Profit Target</label>
@@ -1022,13 +1050,15 @@
                               <div class="settings-grid">
                                   <div class="settings-field">
                                       <label>Lot Size</label>
-                                      <div class="field-hint">Units per lot (NIFTY = 25)</div>
-                                      <input class="settings-input" id="sf3-lot_size" type="number" placeholder="25">
+                                      <div class="field-hint">Units per lot (NIFTY 50 = 65)</div>
+                                      <input class="settings-input" id="sf3-lot_size" type="number" min="1" step="1" placeholder="65"
+                                             oninput="updateQtyDisplay('sf3')">
                                   </div>
                                   <div class="settings-field">
-                                      <label>Number of Lots</label>
-                                      <div class="field-hint">How many lots to trade</div>
-                                      <input class="settings-input" id="sf3-qty_multiplier" type="number" step="1" placeholder="1">
+                                      <label>Number of Lots <span id="sf3-qty-display" style="font-weight:400;color:var(--text-muted);"></span></label>
+                                      <div class="field-hint">Whole lots only — total units = Lot Size × Lots</div>
+                                      <input class="settings-input" id="sf3-qty_multiplier" type="number" min="1" step="1" placeholder="1"
+                                             oninput="updateQtyDisplay('sf3')">
                                   </div>
                               </div>
                           </div>
@@ -1771,54 +1801,51 @@
 
         // ── Settings Modal ──
         let settingsTab = 'BACKTEST';
+        let _currentAppMode = 'PAPER';   // kept in sync by pollData → used by openSettings
+
+        // ── Per-mode direction state (modal UI only, saved on Save) ────────────
+        const _modalDirs = { BACKTEST: 'BOTH', PAPER: 'BOTH', LIVE: 'BOTH' };
+
+        function setModalDir(mode, dir) {
+            _modalDirs[mode] = dir;
+            // Update button active states for that mode's seg control
+            const seg = document.getElementById('md-dir-' + mode);
+            if (!seg) return;
+            seg.querySelectorAll('button').forEach(b => b.classList.remove('ds-active'));
+            const map = { CALL: 'ds-call', BOTH: 'ds-both', PUT: 'ds-put' };
+            const active = seg.querySelector('.' + map[dir]);
+            if (active) active.classList.add('ds-active');
+        }
+
+        // Load one mode's settings from the API and fill its tab form
+        async function _loadModeSettings(mode) {
+            const prefixMap = { BACKTEST: 'sf', PAPER: 'sf2', LIVE: 'sf3' };
+            const prefix = prefixMap[mode];
+            if (!prefix) return;
+            try {
+                const r = await authFetch(`/api/settings?mode=${mode}`);
+                const cfg = await r.json();
+                if (cfg.error) return;
+                const fields = ['target_pts','fib_trail','entry_end_time','eod_exit_time',
+                                'strike_spacing','lot_size','qty_multiplier',
+                                'risk_free_rate','assumed_iv',
+                                'brokerage_per_order','stt_pct','exchange_charges_pct',
+                                'gst_pct','sebi_charges_pct','stamp_duty_pct'];
+                fields.forEach(f => {
+                    const el = document.getElementById(`${prefix}-${f}`);
+                    if (el && cfg[f] !== undefined) el.value = cfg[f];
+                });
+                // Set modal direction control
+                const dir = (cfg.trade_direction || 'BOTH').toUpperCase();
+                setModalDir(mode, dir);
+                // Refresh the units readout
+                updateQtyDisplay(prefix);
+            } catch (_) {}
+        }
 
         function openSettings() {
-            authFetch('/api/settings')
-                .then(r => r.json())
-                .then(cfg => {
-                    if (cfg.error) return;
-                    const fields = ['target_pts','fib_trail','entry_end_time','eod_exit_time',
-                                    'strike_spacing','lot_size','qty_multiplier',
-                                    'risk_free_rate','assumed_iv',
-                                    'brokerage_per_order','stt_pct','exchange_charges_pct',
-                                    'gst_pct','sebi_charges_pct','stamp_duty_pct'];
-                    ['sf','sf2','sf3'].forEach(prefix => {
-                        fields.forEach(f => {
-                            const el = document.getElementById(`${prefix}-${f}`);
-                            if (el && cfg[f] !== undefined) el.value = cfg[f];
-                        });
-                    });
-
-                    // Cross-tab sync: when any input changes, mirror value to the
-                    // same field in the other two tabs.
-                    let _syncing = false;
-                    document.querySelectorAll('.settings-input').forEach(input => {
-                        input.addEventListener('change', function() {
-                            if (_syncing) return;
-                            _syncing = true;
-                            const id = input.id;
-                            let prefix, field;
-                            if (id.startsWith('sf2-')) {
-                                prefix = 'sf2'; field = id.slice(4);
-                            } else if (id.startsWith('sf3-')) {
-                                prefix = 'sf3'; field = id.slice(4);
-                            } else if (id.startsWith('sf-')) {
-                                prefix = 'sf'; field = id.slice(3);
-                            } else {
-                                _syncing = false;
-                                return;
-                            }
-                            ['sf','sf2','sf3'].forEach(p => {
-                                if (p === prefix) return;
-                                const other = document.getElementById(`${p}-${field}`);
-                                if (other) other.value = input.value;
-                            });
-                            _syncing = false;
-                        });
-                    });
-                })
-                .catch(() => {});
-            switchSettingsTab(settingsTab);
+            const tab = _currentAppMode || settingsTab;
+            switchSettingsTab(tab);          // switches pane + loads that tab's data
             document.getElementById('settingsOverlay').classList.add('open');
         }
 
@@ -1828,6 +1855,8 @@
 
         function switchSettingsTab(tab) {
             settingsTab = tab;
+            // Load this tab's settings from server (each mode is independent)
+            _loadModeSettings(tab);
             // Remove all active classes from tabs
             ['BACKTEST','PAPER','LIVE'].forEach(m => {
                 const t = document.getElementById('stab-' + m);
@@ -1841,6 +1870,19 @@
             // Update save button color to match mode
             const colors = { BACKTEST: '#059669', PAPER: '#D97706', LIVE: '#DC2626' };
             document.getElementById('saveBtn').style.background = colors[tab] || 'var(--accent-blue)';
+        }
+
+        // Show "= X units" live next to Number of Lots label
+        function updateQtyDisplay(prefix) {
+            const lots   = parseFloat(document.getElementById(`${prefix}-qty_multiplier`)?.value) || 0;
+            const lotSz  = parseFloat(document.getElementById(`${prefix}-lot_size`)?.value) || 0;
+            const disp   = document.getElementById(`${prefix}-qty-display`);
+            if (!disp) return;
+            if (lots > 0 && lotSz > 0) {
+                disp.textContent = `= ${Math.round(lots * lotSz)} units`;
+            } else {
+                disp.textContent = '';
+            }
         }
 
         function updateBtSettingsSummary(cfg) {
@@ -1892,7 +1934,8 @@
                             'risk_free_rate','assumed_iv',
                             'brokerage_per_order','stt_pct','exchange_charges_pct',
                             'gst_pct','sebi_charges_pct','stamp_duty_pct'];
-            const payload = {};
+            // Include mode + direction (each mode saved independently)
+            const payload = { mode: settingsTab, trade_direction: _modalDirs[settingsTab] || 'BOTH' };
             fields.forEach(f => {
                 const el = document.getElementById(`${prefix}-${f}`);
                 if (el && el.value !== '') payload[f] = el.value;
@@ -1906,18 +1949,12 @@
             .then(res => {
                 if (res.ok) {
                     closeSettings();
-                    // Show toast with confirmed saved values + update Run-button summary
-                    if (res.settings) {
-                        showSettingsToast(res.settings);
-                        updateBtSettingsSummary(res.settings);
-                        // Sync ALL tab inputs so they reflect the real saved values
-                        const saved = res.settings;
-                        ['sf','sf2','sf3'].forEach(p => {
-                            fields.forEach(f => {
-                                const el2 = document.getElementById(`${p}-${f}`);
-                                if (el2 && saved[f] !== undefined) el2.value = saved[f];
-                            });
-                        });
+                    showSettingsToast(res.settings || {});
+                    // If saved mode is current mode, sync ECB direction too
+                    if (res.mode === _currentAppMode) {
+                        _tradeDirection = res.trade_direction || 'BOTH';
+                        _syncDirectionUI();
+                        if (res.settings) updateBtSettingsSummary(res.settings);
                     }
                 }
             })
@@ -2082,6 +2119,9 @@
                         updateOptionsChart(state);
                         checkTradeNotification(state);
                     }
+
+                    // Keep local mode cache in sync (used by openSettings)
+                    _currentAppMode = state.app_mode;
 
                     // Update hidden sidebar mode buttons (needed by switchMode JS)
                     ['BACKTEST', 'PAPER', 'LIVE'].forEach(m => {
@@ -2475,12 +2515,17 @@
         }
 
         // ── Flatpickr on ALL date inputs — weekends + NSE holidays disabled ───
+        // maxDate is yesterday — today and future dates cannot be backtested;
+        // use Paper or Live mode for same-day trading.
+        const _yesterday = new Date();
+        _yesterday.setDate(_yesterday.getDate() - 1);
+
         const fpOpts = {
             dateFormat:    'Y-m-d',
             altInput:      true,
             altFormat:     'D, d M Y',   // "Mon, 05 May 2025"
             disable:       [isNonTradingDay],
-            maxDate:       new Date(),
+            maxDate:       _yesterday,
             minDate:       '2020-01-01',
             disableMobile: true,
         };

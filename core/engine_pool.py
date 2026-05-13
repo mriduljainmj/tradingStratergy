@@ -80,7 +80,38 @@ class UserEngine:
         if self._engine:
             self._engine.stop()
         self.state.reset(new_mode)
+        # Apply saved settings for the new mode (config fields + trade_direction)
+        self._apply_mode_settings(new_mode)
         self.start(new_mode)
+
+    def _apply_mode_settings(self, mode: str):
+        """Load saved settings for *mode* from DB and apply to self.config + self.state."""
+        try:
+            from db.database import SessionLocal
+            from db.models import User
+            from config.config_utils import get_mode_settings, apply_config_dict
+            db = SessionLocal()
+            try:
+                user = db.get(User, self.user_id)
+                if user and user.settings_json:
+                    mode_data = get_mode_settings(user.settings_json, mode)
+                    if mode_data:
+                        apply_config_dict(self.config, mode_data)
+                        self.state.trade_direction = mode_data.get(
+                            "trade_direction",
+                            getattr(self.state, "trade_direction", "BOTH"),
+                        )
+                        logger.info(
+                            f"Engine: applied {mode} settings "
+                            f"(direction={self.state.trade_direction}) "
+                            f"for user {self.user_id}"
+                        )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(
+                f"Engine: failed to apply {mode} settings for user {self.user_id}: {e}"
+            )
 
     def stop(self):
         """Signal the running engine to stop."""
@@ -134,16 +165,20 @@ class EnginePool:
     # ── Internal helpers ───────────────────────────────────────────────────────
 
     def _load_settings(self, user_id: int, ue: UserEngine):
-        """Load user's saved settings from DB and apply to ue.config."""
+        """Load user's saved settings for the initial mode (PAPER) from DB."""
         try:
             from db.database import SessionLocal
             from db.models import User
-            from config.config_utils import apply_settings_json
+            from config.config_utils import get_mode_settings, apply_config_dict
             db = SessionLocal()
             try:
                 user = db.get(User, user_id)
                 if user and user.settings_json:
-                    apply_settings_json(ue.config, user.settings_json)
+                    # Engines start in PAPER mode — load PAPER settings as initial config
+                    mode_data = get_mode_settings(user.settings_json, "PAPER")
+                    if mode_data:
+                        apply_config_dict(ue.config, mode_data)
+                        ue.state.trade_direction = mode_data.get("trade_direction", "BOTH")
                     logger.info(f"EnginePool: settings loaded for user {user_id}")
             finally:
                 db.close()

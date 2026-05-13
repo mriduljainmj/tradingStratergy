@@ -26,23 +26,6 @@ def _ue():
     return engine_pool.get_or_create(_uid())
 
 
-def _persist_settings(user_id: int, cfg):
-    """Save per-user TradingConfig overrides to the DB."""
-    try:
-        from db.database import SessionLocal
-        from db.models import User
-        db = SessionLocal()
-        try:
-            user = db.get(User, user_id)
-            if user:
-                user.settings_json = json.dumps(config_to_dict(cfg))
-                db.commit()
-                logger.info(f"Settings persisted for user {user_id}")
-        finally:
-            db.close()
-    except Exception as e:
-        logger.warning(f"Settings persist failed for user {user_id}: {e}")
-
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
 
@@ -92,18 +75,100 @@ def get_balance():
 @dashboard_bp.route("/api/settings", methods=["GET"])
 @jwt_required()
 def get_settings():
-    return jsonify(config_to_dict(_ue().config))
+    """Return saved settings for a specific mode (or the current mode).
+
+    Query param: ?mode=BACKTEST|PAPER|LIVE
+    """
+    from config.config_utils import get_mode_settings
+    from db.database import SessionLocal
+    from db.models import User
+
+    uid  = _uid()
+    ue   = _ue()
+    mode = (request.args.get("mode", "") or "").upper()
+    if mode not in ("BACKTEST", "PAPER", "LIVE"):
+        mode = ue.state.app_mode   # default: current running mode
+
+    db = SessionLocal()
+    try:
+        user     = db.get(User, uid)
+        raw_json = user.settings_json if user else ""
+    finally:
+        db.close()
+
+    mode_data = get_mode_settings(raw_json, mode)
+
+    # Fill gaps with live config defaults (so UI always has something to show)
+    result = {**config_to_dict(ue.config), **mode_data}
+    result["trade_direction"] = mode_data.get(
+        "trade_direction",
+        getattr(ue.state, "trade_direction", "BOTH"),
+    )
+    return jsonify(result)
 
 
 @dashboard_bp.route("/api/settings", methods=["POST"])
 @jwt_required()
 def update_settings():
+    """Save settings for a specific mode.
+
+    Body: { "mode": "PAPER", ...config fields..., "trade_direction": "CALL" }
+    Settings are saved per-mode in settings_json.
+    If the saved mode matches the running mode the live engine is updated too.
+    """
+    from config.config_utils import get_mode_settings, set_mode_settings
+    from db.database import SessionLocal
+    from db.models import User
+
     uid  = _uid()
     ue   = engine_pool.get_or_create(uid)
     data = request.json or {}
-    apply_config_dict(ue.config, data)
-    _persist_settings(uid, ue.config)
-    return jsonify({"ok": True, "settings": config_to_dict(ue.config)})
+
+    mode = (data.pop("mode", None) or ue.state.app_mode).upper()
+    if mode not in ("BACKTEST", "PAPER", "LIVE"):
+        mode = ue.state.app_mode
+
+    # Separate trade_direction from config fields
+    direction = (data.pop("trade_direction", None) or "").upper()
+    if direction not in ("CALL", "PUT", "BOTH"):
+        # Preserve existing direction for this mode if not sent
+        db = SessionLocal()
+        try:
+            user     = db.get(User, uid)
+            existing = get_mode_settings(user.settings_json if user else "", mode)
+            direction = existing.get("trade_direction", "BOTH")
+        finally:
+            db.close()
+
+    # Build the mode dict: config fields + direction
+    mode_dict = {**data, "trade_direction": direction}
+
+    # Persist to DB
+    db = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if user:
+            user.settings_json = set_mode_settings(
+                user.settings_json or "", mode, mode_dict
+            )
+            db.commit()
+            logger.info(f"Settings persisted ({mode}) for user {uid}")
+    except Exception as e:
+        logger.warning(f"Settings persist failed for user {uid}: {e}")
+    finally:
+        db.close()
+
+    # Apply immediately if this is the currently running mode
+    if mode == ue.state.app_mode:
+        apply_config_dict(ue.config, data)
+        ue.state.trade_direction = direction
+        labels = {"CALL": "CALL only", "PUT": "PUT only", "BOTH": "CALL & PUT"}
+        ue.state.logs.append(
+            f"[--:--:--] ⚙ {mode} settings updated — direction: {labels[direction]}"
+        )
+
+    return jsonify({"ok": True, "mode": mode, "settings": config_to_dict(ue.config),
+                    "trade_direction": direction})
 
 
 # ── Mode switching ────────────────────────────────────────────────────────────
@@ -127,16 +192,40 @@ def switch_mode():
 @dashboard_bp.route("/api/trade-direction", methods=["POST"])
 @jwt_required()
 def set_trade_direction():
-    """Set which direction the engine may enter trades.
+    """Set trade direction for the current mode and persist it.
 
     Body: {"direction": "CALL" | "PUT" | "BOTH"}
     """
+    from config.config_utils import get_mode_settings, set_mode_settings
+    from db.database import SessionLocal
+    from db.models import User
+
+    uid       = _uid()
     ue        = _ue()
     direction = ((request.json or {}).get("direction", "BOTH") or "BOTH").upper()
     if direction not in ("CALL", "PUT", "BOTH"):
         return jsonify({"ok": False, "error": "direction must be CALL, PUT, or BOTH"}), 400
+
+    mode = ue.state.app_mode
     ue.state.trade_direction = direction
-    labels = {"CALL": "CALL only ☎", "PUT": "PUT only 🔻", "BOTH": "CALL & PUT"}
+
+    # Persist direction in the current mode's settings
+    db = SessionLocal()
+    try:
+        user = db.get(User, uid)
+        if user:
+            existing = get_mode_settings(user.settings_json or "", mode)
+            existing["trade_direction"] = direction
+            user.settings_json = set_mode_settings(
+                user.settings_json or "", mode, existing
+            )
+            db.commit()
+    except Exception as e:
+        logger.warning(f"Direction persist failed for user {uid}: {e}")
+    finally:
+        db.close()
+
+    labels = {"CALL": "CALL only ▲", "PUT": "PUT only 🔻", "BOTH": "CALL & PUT"}
     ue.state.logs.append(f"[--:--:--] 🎯 Trade direction set to {labels[direction]}")
     return jsonify({"ok": True, "trade_direction": direction})
 
@@ -218,12 +307,16 @@ def run_historical_backtest():
             if is_kite_auth_error(Exception(err)):
                 ue.state.kite_auth_error = True
 
+    today = datetime.date.today()
+
     if mode == "single":
         date_str = data.get("date", "")
         try:
             date = datetime.date.fromisoformat(date_str)
         except ValueError:
             return jsonify({"error": "Invalid date. Use YYYY-MM-DD format."}), 400
+        if date >= today:
+            return jsonify({"error": "Backtest is not available for today or future dates. Switch to Paper or Live mode to trade today."}), 400
         result = ue.backtester.run_day(date)
         _check_auth(result)
         return jsonify(result)
@@ -234,6 +327,8 @@ def run_historical_backtest():
             to_date   = datetime.date.fromisoformat(data.get("to_date",   ""))
         except ValueError:
             return jsonify({"error": "Invalid dates. Use YYYY-MM-DD format."}), 400
+        if to_date >= today:
+            return jsonify({"error": "Backtest end date must be before today. Switch to Paper or Live mode to trade today."}), 400
         result = ue.backtester.run_range(from_date, to_date)
         _check_auth(result)
         return jsonify(result)
