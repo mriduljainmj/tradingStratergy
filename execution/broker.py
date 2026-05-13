@@ -148,21 +148,27 @@ class KiteBroker:
 
     def get_funds(self) -> dict:
         """
-        Returns available cash and used margin from Kite.
+        Returns available margin and used margin from Kite (equity / NFO segment).
         Format: {"available": float, "used": float, "total": float}
-        Returns zeros on failure (e.g. not authenticated).
+
+        Kite's margin response has several sub-fields under "available":
+          - net            → total available margin (what Kite app shows) ✓
+          - available.cash → raw cash only (excludes collateral / payin)  ✗
+        We use `net` to match exactly what the Kite app displays.
+
+        NIFTY options are in the equity (NSE F&O) segment — not commodity (MCX).
         """
         try:
-            margins = self.kite.margins(segment="equity")
-            available = margins.get("available", {}).get("cash", 0.0)
-            used      = margins.get("utilised",  {}).get("exposure", 0.0)
-            # For commodity / NFO segments, check that segment too
-            nfo = self.kite.margins(segment="commodity")
-            nfo_available = nfo.get("available", {}).get("cash", 0.0)
-            # Return whichever has data
-            best_available = max(available, nfo_available)
-            return {"available": round(best_available, 2), "used": round(used, 2),
-                    "total": round(best_available + used, 2)}
+            margins   = self.kite.margins(segment="equity")
+            # `net` = total available margin as displayed in the Kite app
+            available = float(margins.get("net", 0.0))
+            # utilised.debits = total blocked margin (span + exposure + premium etc.)
+            used      = float(margins.get("utilised", {}).get("debits", 0.0))
+            return {
+                "available": round(available, 2),
+                "used":      round(used, 2),
+                "total":     round(available + used, 2),
+            }
         except Exception as e:
             logger.warning(f"get_funds failed: {e}")
             return {"available": 0.0, "used": 0.0, "total": 0.0}

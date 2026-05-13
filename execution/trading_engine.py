@@ -339,6 +339,10 @@ class TradingEngine:
                         self.state.live_pnl         = 0.0
                         self.state.live_option_price = 0.0
                         self._save_trade("LIVE" if real_money else "PAPER")
+                        # Refresh balance immediately after trade closes so the
+                        # dashboard reflects the updated P&L without waiting 60s
+                        self._fetch_balance(real_money)
+                        balance_tick = 0
                         logger.info("Trade complete. Shutting down engine.")
                         break
 
@@ -442,6 +446,8 @@ class TradingEngine:
                     self.strategy.target_prem = fill + cfg.target_pts
                     self.strategy.state.target_prem = round(self.strategy.target_prem, 2)
                     logger.info(f"Real fill (BUY): ₹{fill:.2f} | Target updated: ₹{self.strategy.target_prem:.2f}")
+                # Refresh balance immediately after BUY so used margin shows up
+                self._fetch_balance(real_money=True)
 
         elif signal["action"] == "SELL":
             logger.info(f"{signal['reason']} — Exit: ₹{signal['price']:.2f} | P&L: ₹{signal['pnl']:.2f}")
