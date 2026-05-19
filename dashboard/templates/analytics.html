@@ -871,7 +871,7 @@ async function runBacktest() {
     try {
         const r = await fetch('/api/backtest/run', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders(),
             body: JSON.stringify({ mode: 'range', from_date: fromVal, to_date: toVal }),
         });
         const d = await r.json();
@@ -958,10 +958,25 @@ const today = new Date(); const ago = new Date(); ago.setDate(ago.getDate()-90);
 document.getElementById('toDate').value   = today.toISOString().split('T')[0];
 document.getElementById('fromDate').value = ago.toISOString().split('T')[0];
 
-// Preset backtest range to last 30 days
-const btTo = new Date(); const btFrom = new Date(); btFrom.setDate(btFrom.getDate()-30);
-document.getElementById('btTo').value   = btTo.toISOString().split('T')[0];
-document.getElementById('btFrom').value = btFrom.toISOString().split('T')[0];
+// Helper: walk back from d until we land on a weekday (Mon–Fri)
+function lastTradingDay(d) {
+    const dt = new Date(d);
+    dt.setDate(dt.getDate() - 1);          // start from yesterday
+    while (dt.getDay() === 0 || dt.getDay() === 6) {   // skip Sun(0) / Sat(6)
+        dt.setDate(dt.getDate() - 1);
+    }
+    return dt;
+}
+
+// Preset backtest — default To = last trading day, From = 30 days before that
+const btToDate   = lastTradingDay(new Date());
+const btFromDate = new Date(btToDate); btFromDate.setDate(btFromDate.getDate() - 30);
+const btLastDay  = btToDate.toISOString().split('T')[0];
+document.getElementById('btTo').value   = btLastDay;
+document.getElementById('btFrom').value = btFromDate.toISOString().split('T')[0];
+// Prevent selecting today or future in the pickers
+document.getElementById('btTo').max   = btLastDay;
+document.getElementById('btFrom').max = btLastDay;
 
 // Load with default Paper tab
 switchMode('paper');

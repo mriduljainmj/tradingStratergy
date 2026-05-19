@@ -144,6 +144,8 @@ async function doLogin() {
         if (d.ok) {
             localStorage.setItem('orb_token', d.token);
             localStorage.setItem('orb_user',  JSON.stringify(d.user));
+            // Signal dashboard to show login-success toast + risk disclosure
+            sessionStorage.setItem('orb_just_logged_in', '1');
             showMsg('login-ok', '✓ Welcome back ' + d.user.username + '! Redirecting…', false);
             setTimeout(() => window.location.href = '/', 800);
         } else {
@@ -176,6 +178,7 @@ async function doRegister() {
         if (d.ok) {
             localStorage.setItem('orb_token', d.token);
             localStorage.setItem('orb_user',  JSON.stringify(d.user));
+            sessionStorage.setItem('orb_just_logged_in', '1');
             showMsg('reg-ok', '✓ Account created! Redirecting…', false);
             setTimeout(() => window.location.href = '/', 800);
         } else {

@@ -202,33 +202,64 @@ class KiteBroker:
                 logger.warning(f"Failed to load NFO instruments: {e}")
         return _nfo_cache["data"]
 
-    def find_option_token(self, strike: int, option_type: str,
-                          on_or_after: datetime.date) -> Optional[int]:
+    def find_option_contract(self, strike: int, option_type: str,
+                             on_or_after: datetime.date) -> Optional[dict]:
         """
-        Find the instrument token for a NIFTY option with the nearest expiry
-        on or after `on_or_after`.  option_type must be 'CE' or 'PE'.
+        Return the full NFO instrument record for the nearest NIFTY option
+        expiring on or after `on_or_after`.
+        Normalises expiry to datetime.date regardless of what kiteconnect returns,
+        so the >= comparison never raises a TypeError.
+        Returns None if no matching contract is found.
         """
         instruments = self.get_nfo_instruments()
-        candidates = [
-            inst for inst in instruments
-            if (inst.get("name") == "NIFTY"
-                and inst.get("instrument_type") == option_type
-                and int(inst.get("strike", 0)) == int(strike)
-                and inst.get("expiry") >= on_or_after)
-        ]
+
+        def _as_date(v):
+            """Coerce datetime/date/str to datetime.date."""
+            if isinstance(v, datetime.datetime):
+                return v.date()
+            if isinstance(v, datetime.date):
+                return v
+            try:
+                return datetime.date.fromisoformat(str(v)[:10])
+            except Exception:
+                return None
+
+        candidates = []
+        for inst in instruments:
+            if inst.get("name") != "NIFTY":
+                continue
+            if inst.get("instrument_type") != option_type:
+                continue
+            try:
+                if int(inst.get("strike", 0)) != int(strike):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            expiry = _as_date(inst.get("expiry"))
+            if expiry is None or expiry < on_or_after:
+                continue
+            candidates.append((expiry, inst))
+
         if not candidates:
             logger.warning(
                 f"No NFO instrument found for NIFTY {strike}{option_type} "
                 f"expiring on/after {on_or_after}"
             )
             return None
-        candidates.sort(key=lambda x: x["expiry"])   # nearest expiry first
-        chosen = candidates[0]
-        logger.debug(
+
+        candidates.sort(key=lambda x: x[0])   # nearest expiry first
+        expiry, chosen = candidates[0]
+        logger.info(
             f"Resolved NIFTY{strike}{option_type} → "
-            f"{chosen['tradingsymbol']} (expiry {chosen['expiry']})"
+            f"{chosen['tradingsymbol']} (expiry {expiry})"
         )
-        return chosen["instrument_token"]
+        return chosen
+
+    def find_option_token(self, strike: int, option_type: str,
+                          on_or_after: datetime.date) -> Optional[int]:
+        """Return the instrument token for the nearest-expiry NIFTY option."""
+        contract = self.find_option_contract(strike, option_type, on_or_after)
+        return contract["instrument_token"] if contract else None
 
     def find_option_tradingsymbol(self, strike: int, option_type: str,
                                   on_or_after: datetime.date) -> Optional[str]:
@@ -239,26 +270,13 @@ class KiteBroker:
         weekly and monthly contracts and cannot be safely derived without the
         instruments list.
         """
-        instruments = self.get_nfo_instruments()
-        candidates = [
-            inst for inst in instruments
-            if (inst.get("name") == "NIFTY"
-                and inst.get("instrument_type") == option_type
-                and int(inst.get("strike", 0)) == int(strike)
-                and inst.get("expiry") >= on_or_after)
-        ]
-        if not candidates:
-            logger.warning(
-                f"No tradingsymbol found for NIFTY {strike}{option_type} "
-                f"expiring on/after {on_or_after}"
-            )
+        contract = self.find_option_contract(strike, option_type, on_or_after)
+        if not contract:
             return None
-        candidates.sort(key=lambda x: x["expiry"])
-        chosen = candidates[0]
         logger.info(
-            f"Order symbol: {chosen['tradingsymbol']} (expiry {chosen['expiry']})"
+            f"Order symbol: {contract['tradingsymbol']} (expiry {contract.get('expiry')})"
         )
-        return chosen["tradingsymbol"]
+        return contract["tradingsymbol"]
 
     # ── Real-time option price (paper / live) ──────────────────────────────────
 
@@ -282,14 +300,24 @@ class KiteBroker:
 
     def get_option_history(self, strike: int, option_type: str,
                            trade_date: datetime.date,
-                           interval: str = "minute") -> list:
+                           interval: str = "minute") -> tuple:
         """
         Fetch real 1-min OHLC candles for a NIFTY option on `trade_date`.
-        Returns an empty list if Kite has no data (contract too old, holiday, etc.).
+        Returns (records, contract_info) where:
+          - records      : list of OHLCV dicts (empty on failure)
+          - contract_info: dict with tradingsymbol, expiry, token (or None)
+
+        The contract_info lets the caller verify exactly which contract was fetched
+        and display it in the UI — critical for confirming weekly vs monthly expiry.
         """
-        token = self.find_option_token(strike, option_type, trade_date)
-        if not token:
-            return []
+        contract = self.find_option_contract(strike, option_type, trade_date)
+        if not contract:
+            return [], None
+
+        token        = contract["instrument_token"]
+        tradingsymbol = contract["tradingsymbol"]
+        expiry       = contract.get("expiry")
+
         try:
             records = self.kite.historical_data(
                 token,
@@ -298,16 +326,21 @@ class KiteBroker:
                 interval,
             )
             logger.info(
-                f"Fetched {len(records)} real NFO candles for "
-                f"NIFTY{strike}{option_type} on {trade_date}"
+                f"Fetched {len(records)} candles for "
+                f"{tradingsymbol} (expiry {expiry}) on {trade_date}"
             )
-            return records
+            contract_info = {
+                "tradingsymbol": tradingsymbol,
+                "expiry":        str(expiry),
+                "token":         token,
+            }
+            return records, contract_info
         except Exception as e:
             logger.warning(
-                f"Option history fetch failed for NIFTY{strike}{option_type} "
+                f"Option history fetch failed for {tradingsymbol} "
                 f"on {trade_date}: {e}"
             )
-            return []
+            return [], None
 
     # ── Live order fill price ──────────────────────────────────────────────────
 

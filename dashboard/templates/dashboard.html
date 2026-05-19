@@ -689,6 +689,195 @@
             .ecb-left, .ecb-right { flex-wrap: wrap; gap: 8px; }
             .ecb-select { min-width: 0; flex: 1; }
         }
+
+        /* ════════════════════════════════════════════
+           LOGIN TOAST
+           ════════════════════════════════════════════ */
+        .login-toast {
+            position: fixed; top: 20px; right: 20px; z-index: 10000;
+            background: #fff; border: 1px solid #D1FAE5; border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.13);
+            padding: 12px 14px 12px 16px;
+            display: flex; align-items: center; gap: 12px;
+            min-width: 240px; max-width: 320px;
+            transform: translateY(-80px); opacity: 0; pointer-events: none;
+            transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s;
+        }
+        .login-toast.show { transform: translateY(0); opacity: 1; pointer-events: all; }
+        .lt-icon {
+            width: 32px; height: 32px; border-radius: 50%; background: #D1FAE5;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; font-size: 15px; color: #065F46;
+        }
+        .lt-content .lt-title { font-size: 13px; font-weight: 700; color: #065F46; }
+        .lt-content .lt-sub   { font-size: 11px; color: #6B7280; margin-top: 2px; }
+        .lt-close {
+            background: none; border: none; color: #9CA3AF; cursor: pointer;
+            font-size: 14px; padding: 0 2px; line-height: 1; margin-left: auto; flex-shrink: 0;
+        }
+        .lt-close:hover { color: #374151; }
+
+        /* ════════════════════════════════════════════
+           RISK DISCLOSURE MODAL
+           ════════════════════════════════════════════ */
+        .risk-overlay {
+            display: none; position: fixed; inset: 0; z-index: 9500;
+            background: rgba(0,0,0,0.45); backdrop-filter: blur(4px);
+            align-items: center; justify-content: center; padding: 20px;
+        }
+        .risk-overlay.open { display: flex; }
+        .risk-modal {
+            background: #fff; border-radius: 16px; width: 100%; max-width: 540px;
+            max-height: 88vh; display: flex; flex-direction: column;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.22);
+            animation: riskIn 0.35s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        @keyframes riskIn {
+            from { opacity:0; transform: scale(0.92) translateY(20px); }
+            to   { opacity:1; transform: none; }
+        }
+        .risk-header {
+            display: flex; align-items: center; gap: 12px;
+            padding: 20px 24px 16px; border-bottom: 1px solid #E5E7EB; flex-shrink: 0;
+        }
+        .risk-header-icon {
+            width: 38px; height: 38px; border-radius: 50%; background: #EFF6FF;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; flex-shrink: 0; color: #2563EB;
+        }
+        .risk-header h3 { font-size: 16px; font-weight: 700; color: #111827; margin: 0; }
+        .risk-body {
+            padding: 20px 24px; overflow-y: auto; flex: 1;
+            font-size: 13px; color: #374151; line-height: 1.7;
+        }
+        .risk-body p { margin: 0 0 12px; }
+        .risk-body a { color: #2563EB; text-decoration: none; font-weight: 500; }
+        .risk-body a:hover { text-decoration: underline; }
+        .risk-body ul { margin: 0 0 12px; padding: 0; list-style: none; }
+        .risk-body ul li {
+            display: flex; gap: 10px; align-items: flex-start;
+            padding: 4px 0; color: #4B5563;
+        }
+        .risk-body ul li::before { content: "•"; color: #9CA3AF; flex-shrink: 0; }
+        .risk-studies {
+            background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px;
+            padding: 14px 16px; margin: 12px 0;
+        }
+        .risk-studies-title { font-size: 12px; font-weight: 700; color: #111827; margin-bottom: 10px; }
+        .risk-source { font-size: 11px; color: #9CA3AF; text-align: center; margin: 12px 0 0; }
+        .risk-source a { color: #9CA3AF; }
+        .risk-footer {
+            padding: 16px 24px; border-top: 1px solid #E5E7EB;
+            text-align: right; flex-shrink: 0;
+        }
+        .risk-accept-btn {
+            padding: 10px 32px; background: #2563EB; color: #fff;
+            border: none; border-radius: 8px; font-size: 14px; font-weight: 700;
+            cursor: pointer; transition: opacity 0.15s;
+        }
+        .risk-accept-btn:hover { opacity: 0.88; }
+        @media (max-width: 600px) {
+            .risk-modal { max-height: 92vh; border-radius: 16px 16px 0 0; }
+            .risk-overlay { align-items: flex-end; padding: 0; }
+        }
+
+        /* ════════════════════════════════════════════
+           OPTION CHAIN PANEL
+           ════════════════════════════════════════════ */
+        .oc-panel {
+            background: var(--bg-surface); border: 1px solid var(--border-color);
+            border-radius: 8px; overflow: hidden; flex-shrink: 0;
+            display: none; flex-direction: column;
+            max-height: 340px;
+        }
+        .oc-panel.visible { display: flex; }
+        /* Tab bar */
+        .oc-tabs {
+            display: flex; align-items: center; gap: 0;
+            padding: 0 14px; border-bottom: 1px solid var(--border-color);
+            background: var(--bg-card); flex-shrink: 0;
+        }
+        .oc-tab {
+            padding: 9px 14px; font-size: 12px; font-weight: 600; border: none;
+            background: none; color: var(--text-muted); cursor: pointer;
+            border-bottom: 2px solid transparent; margin-bottom: -1px;
+            transition: color 0.15s; white-space: nowrap;
+        }
+        .oc-tab:hover  { color: var(--text-main); }
+        .oc-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+        .oc-tabs-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+        /* Controls bar */
+        .oc-controls {
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+            padding: 7px 14px; border-bottom: 1px solid var(--border-color);
+            background: var(--bg-card); flex-shrink: 0;
+        }
+        .oc-spot-lbl { font-size: 13px; font-weight: 700; color: var(--text-main); font-family: monospace; }
+        .oc-expiry-sel {
+            background: var(--bg-surface); border: 1px solid var(--border-color);
+            color: var(--text-main); padding: 4px 8px; border-radius: 5px;
+            font-size: 12px; font-weight: 600; cursor: pointer; outline: none;
+            transition: border-color 0.15s;
+        }
+        .oc-expiry-sel:focus { border-color: var(--accent-blue); }
+        .oc-refresh-btn {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            color: var(--text-muted); border-radius: 5px; padding: 4px 9px;
+            cursor: pointer; font-size: 14px; transition: all 0.15s; line-height: 1;
+        }
+        .oc-refresh-btn:hover { color: var(--accent-blue); border-color: var(--accent-blue); }
+        .oc-ts { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+        /* Scrollable table body */
+        .oc-scroll { overflow-y: auto; flex: 1; }
+        /* Table */
+        .oc-tbl {
+            width: 100%; border-collapse: collapse; font-size: 12px;
+            table-layout: fixed;
+        }
+        .oc-tbl thead th {
+            padding: 5px 10px; font-size: 10px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.04em; border-bottom: 2px solid var(--border-color);
+            position: sticky; top: 0; background: var(--bg-surface); z-index: 5;
+            white-space: nowrap;
+        }
+        .oc-th-call { text-align: right; color: #2962FF; }
+        .oc-th-put  { text-align: left;  color: #F23645; }
+        .oc-th-str  { text-align: center; color: var(--text-muted); width: 90px; }
+        .oc-tbl td  { padding: 3px 10px; border-bottom: 1px solid var(--border-color); }
+        /* Call / Put sides */
+        .oc-td-call { text-align: right; }
+        .oc-td-put  { text-align: left; }
+        .oc-td-str  { text-align: center; font-weight: 700; color: var(--text-main); font-size: 12px; }
+        /* ITM shading */
+        .oc-itm-call { background: rgba(242,54,69,0.045); }
+        .oc-itm-put  { background: rgba(41,98,255,0.045); }
+        /* ATM row */
+        .oc-atm td  { }
+        .oc-atm .oc-td-str {
+            color: var(--accent-blue); background: rgba(37,99,235,0.10);
+            border-radius: 3px;
+        }
+        /* OI cell with mini bar */
+        .oc-oi-wrap { display: flex; flex-direction: column; gap: 2px; }
+        .oc-oi-num  { font-size: 11px; font-weight: 600; color: var(--text-main); font-family: monospace; }
+        .oc-bar-bg  { height: 3px; background: var(--border-color); border-radius: 2px; }
+        .oc-bar-fill { height: 3px; border-radius: 2px; }
+        .oc-bar-c   { background: rgba(41,98,255,0.65); }
+        .oc-bar-p   { background: rgba(242,54,69,0.65); }
+        /* LTP cell */
+        .oc-ltp     { font-size: 12px; font-weight: 600; color: var(--text-main); font-family: monospace; }
+        .oc-chg-pos { font-size: 9px; color: var(--up-green); }
+        .oc-chg-neg { font-size: 9px; color: var(--down-red); }
+        /* IV cell */
+        .oc-iv { font-size: 10px; color: var(--text-muted); }
+        /* Error / loading states */
+        .oc-msg { text-align: center; padding: 28px 16px; color: var(--text-muted); font-size: 13px; }
+        /* Collapse button in tab bar */
+        .oc-close-btn {
+            background: none; border: none; color: var(--text-muted);
+            cursor: pointer; font-size: 16px; padding: 0 4px; line-height: 1;
+        }
+        .oc-close-btn:hover { color: var(--text-main); }
     </style>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -818,6 +1007,7 @@
                   </button>
               </div>
               <button class="gear-btn" onclick="openSettings()" title="Strategy Settings">⚙</button>
+              <button id="ocToggleBtn" class="gear-btn" onclick="toggleOptionChain()" title="Option Chain" style="font-size:12px;font-weight:700;">⛓ OC</button>
           </div>
       </div>
 
@@ -1334,6 +1524,46 @@
               </div>
 
           </div>
+
+<!-- ════════════════════════════════════════════════════════
+     OPTION CHAIN PANEL  (full-width, below the main grid)
+     ════════════════════════════════════════════════════════ -->
+<div class="oc-panel" id="ocPanel">
+    <!-- Tab bar -->
+    <div class="oc-tabs">
+        <button class="oc-tab active" onclick="ocSwitchTab('chain', this)">Option Chain</button>
+        <div class="oc-tabs-right">
+            <button class="oc-close-btn" onclick="hideOptionChain()" title="Close">✕</button>
+        </div>
+    </div>
+    <!-- Controls -->
+    <div class="oc-controls">
+        <span class="oc-spot-lbl" id="ocSpotLbl">NIFTY —</span>
+        <select class="oc-expiry-sel" id="ocExpirySel" onchange="fetchOC()"></select>
+        <button class="oc-refresh-btn" onclick="fetchOC()" title="Refresh">↻</button>
+        <span class="oc-ts" id="ocTs"></span>
+    </div>
+    <!-- Scrollable table -->
+    <div class="oc-scroll" id="ocScroll">
+        <table class="oc-tbl">
+            <thead>
+                <tr>
+                    <th class="oc-th-call" style="width:17%">Call OI (L)</th>
+                    <th class="oc-th-call" style="width:12%">IV %</th>
+                    <th class="oc-th-call" style="width:12%">Call LTP</th>
+                    <th class="oc-th-str"  style="width:10%">Strike</th>
+                    <th class="oc-th-put"  style="width:12%">Put LTP</th>
+                    <th class="oc-th-put"  style="width:12%">IV %</th>
+                    <th class="oc-th-put"  style="width:17%">Put OI (L)</th>
+                </tr>
+            </thead>
+            <tbody id="ocTbody">
+                <tr><td colspan="7" class="oc-msg">Click <strong>Option Chain</strong> button to load data.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
       </div>
 
     </div>
@@ -1631,7 +1861,6 @@
         async function _ensureLiveOptHistory(appMode, optLabel) {
             // Only run in live/paper mode; skip if nothing changed or already fetching
             if (appMode !== 'PAPER' && appMode !== 'LIVE') {
-                // Reset when leaving live/paper so next session starts fresh
                 if (_liveOptLabel) { _liveOptLabel = ''; _liveOptBase = []; }
                 return;
             }
@@ -1654,7 +1883,12 @@
                 const d   = await res.json();
                 if (d.ok && d.data.length) {
                     _liveOptBase = d.data;
-                    console.debug(`[OptChart] Backfilled ${d.data.length} candles for ${optLabel}`);
+                    rawOptCandles = d.data;
+                    // Update label to show exact resolved contract (e.g. NIFTY2651923400PE)
+                    if (d.tradingsymbol) {
+                        document.getElementById('optLabel').innerText = d.tradingsymbol;
+                    }
+                    console.debug(`[OptChart] Backfilled ${d.data.length} candles for ${d.tradingsymbol || optLabel}`);
                 }
             } catch(e) { console.warn('[OptChart] Backfill fetch failed:', e); }
             _liveOptFetching = false;
@@ -2167,10 +2401,8 @@
                         // Stats
                         document.getElementById('liveEntry').textContent = '₹' + state.entry_prem.toFixed(2);
                         document.getElementById('liveLtp').textContent   = '₹' + state.live_option_price.toFixed(2);
-                        // Qty — read from the config qty or fallback
-                        const qty = (state.live_option_price > 0 && state.entry_prem > 0)
-                            ? Math.round(Math.abs(state.live_pnl) / Math.abs(state.live_option_price - state.entry_prem) || 0)
-                            : 0;
+                        // Qty — use the server-provided config value (stable, never fluctuates)
+                        const qty = state.qty || 0;
                         document.getElementById('liveQty').textContent = qty > 0 ? qty : '—';
                         // P&L amount with flash
                         const pnlEl = document.getElementById('livePnlAmount');
@@ -2287,7 +2519,14 @@
             .then(res => res.json())
             .then(data => {
                 hideChartLoader();
-                if (data.error) { status.innerText = '⚠ ' + data.error; return; }
+                if (data.error) {
+                    status.innerText = '⚠ ' + data.error;
+                    status.style.whiteSpace = 'normal';
+                    status.style.maxWidth   = '600px';
+                    return;
+                }
+                status.style.whiteSpace = '';
+                status.style.maxWidth   = '';
                 if (btTab === 'single') {
                     displayDayResult(data);
                     setViewingDate(body.date);
@@ -2394,7 +2633,11 @@
                             optSeries.setMarkers(snapMarkers(rawOptMarkers, optTf));
                             document.getElementById('optionsWrapper').classList.add('visible');
                             optChart.timeScale().fitContent();
-                            console.debug(`[OptChart] Loaded ${od.data.length} real candles (was BS fallback)`);
+                            // Show the exact resolved contract (tradingsymbol) in the header
+                            if (od.tradingsymbol) {
+                                document.getElementById('optLabel').innerText = od.tradingsymbol;
+                            }
+                            console.debug(`[OptChart] Loaded ${od.data.length} real candles for ${od.tradingsymbol || ''} (was BS fallback)`);
                         }
                     })
                     .catch(() => {});
@@ -2515,33 +2758,57 @@
         }
 
         // ── Flatpickr on ALL date inputs — weekends + NSE holidays disabled ───
-        // maxDate is yesterday — today and future dates cannot be backtested;
-        // use Paper or Live mode for same-day trading.
-        const _yesterday = new Date();
-        _yesterday.setDate(_yesterday.getDate() - 1);
+        // After 15:30 IST the NSE session is complete — today becomes a valid
+        // backtest date.  Before close, cap at yesterday.
+        function _istNowMinutes() {
+            const utcMin = new Date().getUTCHours() * 60 + new Date().getUTCMinutes();
+            return (utcMin + 330) % 1440;   // 330 = UTC+5:30 offset; 1440 = mins/day
+        }
+        const _marketClosed = _istNowMinutes() >= 930;  // 930 = 15*60+30
+
+        // Ceiling: today if market is closed, yesterday if still open/pre-open
+        const _ceiling = new Date();
+        _ceiling.setHours(0, 0, 0, 0);
+        if (!_marketClosed) _ceiling.setDate(_ceiling.getDate() - 1);
+
+        // Walk back from ceiling until we land on a trading day
+        function lastTradingDay() {
+            const d = new Date(_ceiling);
+            while (isNonTradingDay(d)) d.setDate(d.getDate() - 1);
+            return d;
+        }
+        const _lastTradingDay     = lastTradingDay();
+        const _lastTradingDayStr  = _lastTradingDay.toISOString().slice(0, 10);
 
         const fpOpts = {
             dateFormat:    'Y-m-d',
             altInput:      true,
             altFormat:     'D, d M Y',   // "Mon, 05 May 2025"
             disable:       [isNonTradingDay],
-            maxDate:       _yesterday,
+            maxDate:       _lastTradingDay,
             minDate:       '2020-01-01',
             disableMobile: true,
         };
 
         // Sidebar inputs — auto-run on date select
-        flatpickr('#btDate', { ...fpOpts, onChange: (_, dateStr) => {
-            if (dateStr) runBacktest();
-        }});
-        flatpickr('#btFrom', { ...fpOpts, onChange: (_, dateStr) => {
-            const t = document.getElementById('btTo').value;
-            if (dateStr && t) runBacktest();
-        }});
-        flatpickr('#btTo', { ...fpOpts, onChange: (_, dateStr) => {
-            const f = document.getElementById('btFrom').value;
-            if (f && dateStr) runBacktest();
-        }});
+        // Default single-day to the last trading day so it runs immediately
+        flatpickr('#btDate', { ...fpOpts, defaultDate: _lastTradingDayStr,
+            onChange: (_, dateStr) => { if (dateStr) runBacktest(); }
+        });
+        // Default range: last 30 trading days → last trading day
+        const _rangeFrom = new Date(_lastTradingDay); _rangeFrom.setDate(_rangeFrom.getDate() - 30);
+        flatpickr('#btFrom', { ...fpOpts, defaultDate: _rangeFrom.toISOString().slice(0,10),
+            onChange: (_, dateStr) => {
+                const t = document.getElementById('btTo').value;
+                if (dateStr && t) runBacktest();
+            }
+        });
+        flatpickr('#btTo', { ...fpOpts, defaultDate: _lastTradingDayStr,
+            onChange: (_, dateStr) => {
+                const f = document.getElementById('btFrom').value;
+                if (f && dateStr) runBacktest();
+            }
+        });
 
         // Overlay inputs — same picker, no auto-run (user presses ▶ Run)
         flatpickr('#dpcDate', fpOpts);
@@ -2716,7 +2983,10 @@
                 // Show in the options chart panel
                 const wrapper = document.getElementById('optionsWrapper');
                 wrapper.classList.add('visible');
-                document.getElementById('optLabel').innerText = d.label || (_altStrike + ' ' + _altStrikeType);
+                // Show the exact tradingsymbol resolved by backend (e.g. NIFTY2651923400PE)
+                document.getElementById('optLabel').innerText =
+                    d.tradingsymbol || d.label || (_altStrike + ' ' + _altStrikeType);
+
                 rawOptCandles = d.data;
                 optSeries.setData(d.data);
                 optSeries.setMarkers([]);
@@ -2850,7 +3120,297 @@
             .then(r => r.json())
             .then(cfg => { if (!cfg.error) updateBtSettingsSummary(cfg); })
             .catch(() => {});
+
+        // ══════════════════════════════════════════════════════════
+        //  OPTION CHAIN
+        // ══════════════════════════════════════════════════════════
+        let _ocVisible  = false;
+        let _ocTimer    = null;
+        let _ocLoading  = false;
+
+        function showOptionChain() {
+            _ocVisible = true;
+            const p = document.getElementById('ocPanel');
+            if (p) {
+                p.classList.add('visible');
+                // Move it inside page-content after the grid
+                const pc = document.querySelector('.page-content');
+                if (pc && p.parentNode !== pc) pc.appendChild(p);
+            }
+            // Update the toggle button state if present
+            const btn = document.getElementById('ocToggleBtn');
+            if (btn) btn.classList.add('active');
+            fetchOC();
+            if (!_ocTimer) _ocTimer = setInterval(fetchOC, 30000);
+        }
+
+        function hideOptionChain() {
+            _ocVisible = false;
+            const p = document.getElementById('ocPanel');
+            if (p) p.classList.remove('visible');
+            const btn = document.getElementById('ocToggleBtn');
+            if (btn) btn.classList.remove('active');
+            if (_ocTimer) { clearInterval(_ocTimer); _ocTimer = null; }
+        }
+
+        function toggleOptionChain() {
+            _ocVisible ? hideOptionChain() : showOptionChain();
+        }
+
+        function ocSwitchTab(name, el) {
+            document.querySelectorAll('.oc-tab').forEach(t => t.classList.remove('active'));
+            if (el) el.classList.add('active');
+            // Future tabs can switch content here
+        }
+
+        async function fetchOC() {
+            if (_ocLoading) return;
+            _ocLoading = true;
+
+            // Spin the refresh button to indicate loading
+            const refreshBtn = document.querySelector('.oc-refresh-btn');
+            if (refreshBtn) refreshBtn.style.animation = 'chartSpin 0.65s linear infinite';
+
+            const expiry = document.getElementById('ocExpirySel')?.value || '';
+            try {
+                const r = await authFetch(
+                    '/api/option-chain-nse' +
+                    (expiry ? '?expiry=' + encodeURIComponent(expiry) : '')
+                );
+                const d = await r.json();
+                if (!d.ok && !d.data) {
+                    // Surface Kite auth error if that's what caused the failure
+                    if (d.error && (d.error.includes('api_key') || d.error.includes('access_token'))) {
+                        const banner = document.getElementById('kiteAuthBanner');
+                        if (banner) banner.classList.add('visible');
+                    }
+                    throw new Error(d.error || 'Fetch failed');
+                }
+                _renderOC(d);
+            } catch (e) {
+                const tbody = document.getElementById('ocTbody');
+                if (tbody) tbody.innerHTML =
+                    `<tr><td colspan="7" class="oc-msg" style="color:var(--down-red)">
+                        ⚠ Option chain unavailable — ${e.message}.
+                        <br><span style="font-size:10px;color:var(--text-muted)">
+                        Requires a valid Kite access token and an active trading session.</span>
+                    </td></tr>`;
+            } finally {
+                _ocLoading = false;
+                if (refreshBtn) refreshBtn.style.animation = '';
+            }
+        }
+
+        function _renderOC(d) {
+            // Spot label
+            const spotEl = document.getElementById('ocSpotLbl');
+            if (spotEl && d.spot) {
+                spotEl.textContent = 'NIFTY ' + Number(d.spot).toLocaleString('en-IN', {maximumFractionDigits: 2});
+            }
+
+            // Populate / refresh expiry dropdown
+            const sel = document.getElementById('ocExpirySel');
+            if (sel && d.expiries && d.expiries.length) {
+                const prev = sel.value;
+                sel.innerHTML = d.expiries
+                    .map(e => `<option value="${e}"${e === (prev || d.expiry) ? ' selected' : ''}>${e}</option>`)
+                    .join('');
+                // Ensure active expiry is selected
+                if (!sel.value && d.expiry) sel.value = d.expiry;
+            }
+
+            // Timestamp
+            const ts = document.getElementById('ocTs');
+            if (ts) ts.textContent =
+                (d.stale ? '⚠ stale · ' : '') +
+                new Date().toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+
+            const rows   = d.data || [];
+            const spot   = d.spot || 0;
+            const atm    = d.atm  || 0;
+
+            // Find max OI for scaling bars
+            const maxCOI = Math.max(1, ...rows.map(r => (r.ce && r.ce.oi) || 0));
+            const maxPOI = Math.max(1, ...rows.map(r => (r.pe && r.pe.oi) || 0));
+
+            // Show ATM ± 10 (20 visible strikes)
+            const atmIdx = rows.findIndex(r => r.strike === atm);
+            const start  = Math.max(0, atmIdx - 10);
+            const end    = Math.min(rows.length, atmIdx + 11);
+            const vis    = rows.slice(start, end);
+
+            function fmtOI(v)  { if (!v) return '—'; return v >= 1e5 ? (v/1e5).toFixed(2)+'L' : v >= 1000 ? (v/1000).toFixed(1)+'K' : String(v); }
+            function fmtLTP(v) { return (v && v > 0) ? Number(v).toFixed(2) : '—'; }
+            function fmtIV(v)  { return (v && v > 0) ? Number(v).toFixed(1) + '%' : '—'; }
+            function fmtChg(v, side) {
+                if (!v || v === 0) return '';
+                const cls = (side === 'c' ? (v < 0 ? 'oc-chg-neg' : 'oc-chg-pos')
+                                          : (v > 0 ? 'oc-chg-neg' : 'oc-chg-pos'));
+                return `<br><span class="${cls}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+            }
+
+            const html = vis.map(row => {
+                const s   = row.strike;
+                const ce  = row.ce || {};
+                const pe  = row.pe || {};
+                const isATM     = s === atm;
+                const isITMCall = s < spot;
+                const isITMPut  = s > spot;
+                const rowCls = [
+                    isATM      ? 'oc-atm'      : '',
+                    isITMCall  ? 'oc-itm-call' : '',
+                    isITMPut   ? 'oc-itm-put'  : '',
+                ].filter(Boolean).join(' ');
+
+                const cPct = ((ce.oi || 0) / maxCOI * 100).toFixed(1);
+                const pPct = ((pe.oi || 0) / maxPOI * 100).toFixed(1);
+
+                return `<tr class="${rowCls}">
+                    <td class="oc-td-call">
+                        <div class="oc-oi-wrap">
+                            <span class="oc-oi-num">${fmtOI(ce.oi)}</span>
+                            <div class="oc-bar-bg" style="direction:rtl">
+                                <div class="oc-bar-fill oc-bar-c" style="width:${cPct}%"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="oc-td-call oc-iv">${fmtIV(ce.iv)}</td>
+                    <td class="oc-td-call">
+                        <span class="oc-ltp">${fmtLTP(ce.ltp)}</span>${fmtChg(ce.chg_pct, 'c')}
+                    </td>
+                    <td class="oc-td-str">${s}</td>
+                    <td class="oc-td-put">
+                        <span class="oc-ltp">${fmtLTP(pe.ltp)}</span>${fmtChg(pe.chg_pct, 'p')}
+                    </td>
+                    <td class="oc-td-put oc-iv">${fmtIV(pe.iv)}</td>
+                    <td class="oc-td-put">
+                        <div class="oc-oi-wrap">
+                            <span class="oc-oi-num">${fmtOI(pe.oi)}</span>
+                            <div class="oc-bar-bg">
+                                <div class="oc-bar-fill oc-bar-p" style="width:${pPct}%"></div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            const tbody = document.getElementById('ocTbody');
+            if (tbody) {
+                tbody.innerHTML = html || '<tr><td colspan="7" class="oc-msg">No data for this expiry.</td></tr>';
+                // Scroll ATM row into view
+                setTimeout(() => {
+                    const atmRow = tbody.querySelector('.oc-atm');
+                    if (atmRow) atmRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }, 80);
+            }
+        }
     </script>
+
+<!-- ════════════════════════════════════════════════════════
+     LOGIN SUCCESS TOAST
+     ════════════════════════════════════════════════════════ -->
+<div class="login-toast" id="loginToast" role="status" aria-live="polite">
+    <div class="lt-icon">✓</div>
+    <div class="lt-content">
+        <div class="lt-title">Login successful</div>
+        <div class="lt-sub" id="loginToastSub">Welcome back!</div>
+    </div>
+    <button class="lt-close" onclick="dismissLoginToast()" aria-label="Dismiss">✕</button>
+</div>
+
+<!-- ════════════════════════════════════════════════════════
+     RISK DISCLOSURE MODAL (shown once per session on login)
+     ════════════════════════════════════════════════════════ -->
+<div class="risk-overlay" id="riskOverlay" role="dialog" aria-modal="true" aria-labelledby="riskTitle">
+    <div class="risk-modal">
+        <div class="risk-header">
+            <div class="risk-header-icon">ℹ</div>
+            <h3 id="riskTitle">Risk disclosures on derivatives</h3>
+        </div>
+        <div class="risk-body">
+            <p>By using the platform you accept the terms and conditions of the platform. If you do not wish to accept the terms of using our platform, we request you to kindly refrain from using this platform.</p>
+            <p>Some of the important terms are highlighted below and you can read the complete terms here <a href="https://zerodha.com/terms-conditions" target="_blank" rel="noopener">Terms &amp; Conditions</a></p>
+            <ul>
+                <li>We rely on multiple third-party services, which may malfunction or not work at all for eg: non-generation of entry/exit signal, delay in signal generation, etc. due to unforeseen circumstances beyond our reasonable control and you agree that this is possible.</li>
+                <li>Profit or Losses is completely borne by the users, we are not liable for your losses and you accept it.</li>
+            </ul>
+            <div class="risk-studies">
+                <div class="risk-studies-title">Some studies have shown</div>
+                <ul>
+                    <li>9 out of 10 individual traders in equity Futures and Options Segment incurred losses.</li>
+                    <li>On an average, loss makers registered net trading loss close to ₹50,000.</li>
+                    <li>Over and above the net trading losses incurred, loss makers expended an additional 28% of net trading losses as transaction costs.</li>
+                    <li>Those making net trading profits incurred between 15% to 50% of such profits as transaction cost.</li>
+                </ul>
+            </div>
+            <p class="risk-source">
+                Source: <a href="https://www.sebi.gov.in" target="_blank" rel="noopener">SEBI</a> study dated January 25, 2023 on "Analysis of Profit and Loss of Individual Traders dealing in equity Futures and Options (F&amp;O) Segment", wherein Aggregate Level findings are based on annual Profit/Loss incurred by individual traders in equity F&amp;O during FY 2021-22.
+            </p>
+        </div>
+        <div class="risk-footer">
+            <button class="risk-accept-btn" onclick="acceptRiskDisclosure()">Accept</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Login toast + Risk disclosure ─────────────────────────────────────────────
+(function () {
+    const LOGIN_FLAG = 'orb_just_logged_in';
+    const RISK_FLAG  = 'orb_risk_accepted';   // sessionStorage — resets each browser session
+
+    /* Toast ------------------------------------------------------------------ */
+    function showLoginToast(username) {
+        const toast = document.getElementById('loginToast');
+        const sub   = document.getElementById('loginToastSub');
+        if (!toast) return;
+        if (username) sub.textContent = 'Welcome back, ' + username + '!';
+        requestAnimationFrame(() => {
+            toast.classList.add('show');
+            setTimeout(dismissLoginToast, 4500);
+        });
+    }
+
+    window.dismissLoginToast = function () {
+        const t = document.getElementById('loginToast');
+        if (t) t.classList.remove('show');
+    };
+
+    /* Risk modal ------------------------------------------------------------- */
+    window.acceptRiskDisclosure = function () {
+        sessionStorage.setItem(RISK_FLAG, '1');
+        const el = document.getElementById('riskOverlay');
+        if (el) el.classList.remove('open');
+    };
+
+    /* Close on backdrop click ------------------------------------------------ */
+    const overlay = document.getElementById('riskOverlay');
+    if (overlay) overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) { /* intentionally no-op — user must click Accept */ }
+    });
+
+    /* On page load: check if redirected from login page ---------------------- */
+    if (sessionStorage.getItem(LOGIN_FLAG) === '1') {
+        sessionStorage.removeItem(LOGIN_FLAG);
+
+        // Show toast immediately
+        try {
+            const user = JSON.parse(localStorage.getItem('orb_user') || '{}');
+            showLoginToast(user.username || '');
+        } catch (_) {
+            showLoginToast('');
+        }
+
+        // Show risk disclosure (unless already accepted this session)
+        if (!sessionStorage.getItem(RISK_FLAG)) {
+            setTimeout(function () {
+                const el = document.getElementById('riskOverlay');
+                if (el) el.classList.add('open');
+            }, 900);   // slight delay so toast is visible first
+        }
+    }
+}());
+</script>
 
 <!-- ── Trade Execution Notification Modal ── -->
 <div id="tradeNotifModal" style="display:none; position:fixed; inset:0; z-index:9000; align-items:flex-end; justify-content:flex-end; padding:24px; pointer-events:none;">

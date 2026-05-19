@@ -139,8 +139,11 @@ class EnginePool:
     def get_or_create(self, user_id: int, api_key: str = "") -> UserEngine:
         """Return an existing UserEngine or create and configure a new one.
 
-        On creation the user's saved settings are loaded from the DB so
-        TradingConfig immediately reflects their preferences.
+        On creation:
+          1. User's saved settings are loaded from DB (TradingConfig).
+          2. If today's Kite access token is in the DB, the session is restored
+             automatically — this handles server-restart recovery so the engine
+             and KiteTicker reconnect without the user needing to re-authenticate.
         """
         with self._lock:
             if user_id not in self._engines:
@@ -148,6 +151,15 @@ class EnginePool:
                 ue = UserEngine(user_id, api_key)
                 self._load_settings(user_id, ue)
                 self._engines[user_id] = ue
+                # Restore Kite session in a background thread so the request
+                # that triggered creation isn't blocked by network I/O.
+                import threading
+                threading.Thread(
+                    target=self._restore_kite_session,
+                    args=(user_id, ue),
+                    daemon=True,
+                    name=f"SessionRestore-{user_id}",
+                ).start()
             return self._engines[user_id]
 
     def remove(self, user_id: int):
@@ -163,6 +175,73 @@ class EnginePool:
         return list(self._engines.values())
 
     # ── Internal helpers ───────────────────────────────────────────────────────
+
+    def _restore_kite_session(self, user_id: int, ue: UserEngine):
+        """
+        Try to restore today's Kite session from the encrypted token in the DB.
+        Called in a background thread immediately after a new UserEngine is created
+        so that server restarts are transparent — users don't need to re-authenticate
+        as long as their access token is still valid for today.
+
+        On success:
+          • Broker's access token is set and validated (kite.profile() call).
+          • Trading engine is started in PAPER mode (if not already running),
+            BUT ONLY if no trade has already been completed today — this prevents
+            the engine from double-starting (and re-entering the same trade) when
+            the user reloads the page after a trade has already finished.
+        """
+        try:
+            from db.database import SessionLocal
+            db = SessionLocal()
+            try:
+                ok = ue.broker.restore_from_db(db, user_id)
+                already_traded_today = self._has_trade_today(db, user_id, ue.state.app_mode)
+            finally:
+                db.close()
+
+            if ok:
+                logger.info(
+                    f"EnginePool: Kite session auto-restored from DB "
+                    f"for user {user_id}."
+                )
+                ue.state.kite_auth_error = False
+                if not ue.is_running:
+                    if already_traded_today:
+                        logger.info(
+                            f"EnginePool: trade already completed today for user "
+                            f"{user_id} — skipping auto-start to prevent re-entry."
+                        )
+                    else:
+                        ue.start("PAPER")
+            else:
+                logger.info(
+                    f"EnginePool: No valid token in DB for user {user_id} "
+                    f"(user must log in via Kite OAuth)."
+                )
+        except Exception as e:
+            logger.warning(
+                f"EnginePool: session restore failed for user {user_id}: {e}"
+            )
+
+    def _has_trade_today(self, db, user_id: int, mode: str) -> bool:
+        """Return True if the user already has a completed trade recorded today."""
+        try:
+            import datetime
+            from db.models import Trade
+            today = datetime.date.today()
+            trade = (
+                db.query(Trade)
+                .filter(
+                    Trade.user_id == user_id,
+                    Trade.date    == today,
+                    Trade.trade_mode == mode,
+                )
+                .first()
+            )
+            return trade is not None
+        except Exception as e:
+            logger.warning(f"EnginePool: _has_trade_today check failed: {e}")
+            return False  # safe default: allow start if we can't check
 
     def _load_settings(self, user_id: int, ue: UserEngine):
         """Load user's saved settings for the initial mode (PAPER) from DB."""

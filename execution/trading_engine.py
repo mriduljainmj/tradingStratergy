@@ -33,6 +33,40 @@ class TradingEngine:
     def stop(self):
         self._stop_event.set()
 
+    def _trade_already_completed_today(self, real_money: bool) -> bool:
+        """Return True if a completed trade for today is already saved in the DB.
+
+        Used as a pre-flight guard in run_live() to prevent:
+        1. Double-entry when the engine auto-restarts after a trade finishes.
+        2. False "Target Hit" exits during _backfill_session() which uses
+           Black-Scholes pricing (no real option LTPs) and can over-estimate
+           the option premium, triggering targets that never actually traded.
+        """
+        if not self.user_id:
+            return False
+        try:
+            from db.database import SessionLocal
+            from db.models import Trade
+            db = SessionLocal()
+            try:
+                today     = _now().date()
+                mode_str  = "LIVE" if real_money else "PAPER"
+                trade = (
+                    db.query(Trade)
+                    .filter(
+                        Trade.user_id    == self.user_id,
+                        Trade.date       == today,
+                        Trade.trade_mode == mode_str,
+                    )
+                    .first()
+                )
+                return trade is not None
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"_trade_already_completed_today check failed: {e}")
+            return False   # safe default: allow the run if we can't check
+
     def _save_trade(self, trade_mode: str):
         """Persist the just-completed trade to the analytics DB."""
         if not self.user_id:
@@ -121,54 +155,32 @@ class TradingEngine:
         logger.error("Could not fetch NIFTY chart data for any of the last 7 days.")
 
     def run_backtest(self):
-        logger.info("Mode: BACKTEST — fetching 1-min historical data.")
-        self.fetch_chart_data()
+        """BACKTEST mode entry-point.
 
-        today = _now().date()
-        records = self.broker.get_historical_data(
-            self.config.index_token,
-            f"{today} 09:15:00",
-            f"{today} 15:30:00",
-            "minute",
-        )
-        for r in records:
-            if self._stopped():
-                break
-            dt = r["date"]
-            signal = self.strategy.process_tick(
-                int(dt.timestamp()), dt.time(), r["open"], r["high"], r["low"], r["close"]
-            )
-            # Gate: skip BUY entry if trades are disabled
-            if signal and signal["action"] == "BUY" and not getattr(self.state, "trades_enabled", True):
-                self.state.logs.append(
-                    f"[{dt.strftime('%H:%M:%S')}] ⏸ {signal['type']} breakout "
-                    f"₹{signal['price']:.0f} — Take Trades is OFF, skipped"
-                )
-                self.strategy.in_position = False
-                self.strategy.has_traded  = False
-                self.strategy.strike      = None
-                self.strategy.target_prem = None
-                self.state.position_type  = "NONE"
-                self.state.entry_prem     = 0.0
-                self.state.target_prem    = 0.0
-                self.state.option_prices  = []
-                self.state.option_label   = ""
-                self.state.option_expiry  = ""
-                if self.state.markers:        self.state.markers.pop()
-                if self.state.option_markers: self.state.option_markers.pop()
-                signal = None
-            if signal:
-                self._handle_signal(signal)
-                if signal["action"] == "SELL":
-                    break
+        The NIFTY chart and all trade stats in BACKTEST mode are driven
+        entirely by the date picker via /api/backtest/run → HistoricalBacktester.
+        This engine thread is intentionally idle so it does NOT:
 
-        if self.state.position_type == "NONE":
-            logger.info("No trades triggered today.")
-        logger.info("Backtest complete.")
+        • Call fetch_chart_data() — that would load TODAY's candles into
+          state.candles and the poll loop would render today's data in the
+          chart even though the date picker shows a historical date.
+        • Run the strategy on today's data — that would set today's OR /
+          position state and trigger the LOW BALANCE warning (state.balance
+          is 0 in BACKTEST mode by design).
+        """
+        logger.info("BACKTEST mode active — waiting for historical date selection.")
+        self.state.status = "Select a date to run backtest"
 
     def _backfill_session(self):
         """Replay today's 1-min historical ticks so the strategy has correct OR and
-        position state when paper/live mode is started mid-session."""
+        position state when paper/live mode is started mid-session.
+
+        After entry is detected we immediately fetch today's real 1-min option
+        OHLC from Kite and feed those prices back into the strategy for all
+        remaining ticks.  This prevents the Black-Scholes fallback from firing
+        false "Target Hit" exits during the replay (BS can over-estimate the
+        option premium at intraday extremes).
+        """
         now = _now()
         if now.time() <= datetime.time(9, 20):
             return  # OR window hasn't closed yet — nothing to backfill
@@ -190,17 +202,79 @@ class TradingEngine:
             return
 
         logger.info(f"Backfilling {len(records)} ticks to establish OR and position state…")
+
+        # minute-timestamp → real option close price.
+        # Populated once entry is detected; subsequent ticks use real prices.
+        opt_price_map: dict = {}
+
         for r in records:
             if self._stopped():
                 break
-            dt = r["date"]
+            dt  = r["date"]
+            ts  = int(dt.timestamp())
+
+            # Use the real option close for this minute if we have it
+            real_opt = opt_price_map.get(ts)
+
             signal = self.strategy.process_tick(
-                int(dt.timestamp()), dt.time(),
+                ts, dt.time(),
                 r["open"], r["high"], r["low"], r["close"],
+                real_opt,
             )
             if signal:
                 self._handle_signal(signal)
-                if signal["action"] == "SELL":
+
+                if signal["action"] == "BUY":
+                    # Entry detected — load today's real 1m option data so all
+                    # remaining backfill ticks use actual market prices instead
+                    # of Black-Scholes.
+                    strike   = self.strategy.strike
+                    opt_type = "CE" if self.state.position_type == "CALL" else "PE"
+                    try:
+                        opt_records, _contract = self.broker.get_option_history(
+                            strike, opt_type, today
+                        )
+                        for opt_r in opt_records:
+                            opt_ts = int(opt_r["date"].timestamp())
+                            opt_price_map[opt_ts] = opt_r["close"]
+
+                        # Override the BS-estimated entry premium with the real
+                        # option price at the entry tick.
+                        entry_real = opt_price_map.get(ts)
+                        if entry_real:
+                            ep = round(entry_real, 2)
+                            self.state.entry_prem          = ep
+                            self.strategy.target_prem      = round(entry_real + self.config.target_pts, 2)
+                            self.state.target_prem         = self.strategy.target_prem
+                            # Fix the opening candle on the option chart
+                            if self.state.option_prices:
+                                self.state.option_prices[0] = {
+                                    **self.state.option_prices[0],
+                                    "open": ep, "high": ep, "low": ep, "close": ep,
+                                }
+                            # Fix the BUY marker label on the option chart
+                            pt = self.state.position_type
+                            for m in reversed(self.state.option_markers):
+                                if "BUY" in m.get("text", ""):
+                                    m["text"] = f"BUY {pt} @ ₹{ep:.0f}"
+                                    break
+                            logger.info(
+                                f"Backfill: real entry ₹{entry_real:.2f} "
+                                f"(BS was ₹{signal['price']:.2f}) | "
+                                f"target ₹{self.strategy.target_prem:.2f}"
+                            )
+                        logger.info(
+                            f"Backfill: loaded {len(opt_price_map)} real option ticks "
+                            f"for NIFTY{strike}{opt_type} — Black-Scholes disabled"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Backfill: could not load real option data "
+                            f"(falling back to Black-Scholes): {e}"
+                        )
+                    # Do NOT break — continue replaying remaining ticks with real prices
+
+                elif signal["action"] == "SELL":
                     logger.info("Trade already completed in backfill — entering monitoring state.")
                     break
 
@@ -224,6 +298,11 @@ class TradingEngine:
         Returns True if enough balance is available.
         Logs a warning + adds to state.logs if balance is low.
         """
+        # Balance is not applicable in BACKTEST mode (state.balance is always 0
+        # there by design) — skip the check entirely to avoid false warnings.
+        if self.state.app_mode == "BACKTEST":
+            return True
+
         if not real_money:
             # Paper: check against simulated balance
             available = self.state.balance
@@ -245,6 +324,24 @@ class TradingEngine:
     def run_live(self, real_money: bool = False):
         mode = "REAL MONEY" if real_money else "PAPER TRADING"
         logger.info(f"Mode: {mode} LIVE — connecting to market.")
+
+        # ── Guard: skip if today's trade is already saved in the DB ─────────
+        # The backfill replays today's NIFTY ticks using Black-Scholes option
+        # pricing (no real LTPs available at that stage).  Black-Scholes can
+        # over-estimate the option premium at extreme intraday swings and fire
+        # a false "Target Hit" that never happened in the real market.  If a
+        # completed trade record already exists in the DB for today, we skip
+        # the entire run so the engine never enters or exits on fake BS prices
+        # and never double-counts a trade.
+        if self._trade_already_completed_today(real_money):
+            logger.info(
+                "Today's trade already in DB — skipping run to prevent "
+                "double-entry or false Black-Scholes exit."
+            )
+            self.state.status = "Trade done for today"
+            self.strategy.has_traded = True
+            return
+
         self.fetch_chart_data()
         self._fetch_balance(real_money)
         self._backfill_session()  # establish OR + position before live loop
@@ -364,7 +461,7 @@ class TradingEngine:
         Runs in a background thread — safe to call fire-and-forget.
         """
         try:
-            records = self.broker.get_option_history(strike, opt_type, trade_date)
+            records, _contract = self.broker.get_option_history(strike, opt_type, trade_date)
             if not records:
                 logger.info(
                     f"No option history for NIFTY{strike}{opt_type} on {trade_date} "
@@ -382,16 +479,23 @@ class TradingEngine:
                 ],
                 key=lambda c: c["time"],
             )
-            # Merge: keep historical candles that don't overlap live ticks
-            existing_times = {c["time"] for c in self.state.option_prices}
-            new_hist = [c for c in hist if c["time"] not in existing_times]
+            # Historical OHLC from Kite is the authoritative source for all
+            # completed past minutes.  Only keep any live-generated candle for
+            # the current open minute so the very latest partial-minute tick
+            # isn't thrown away.
+            current_minute_ts = (int(_now().timestamp()) // 60) * 60
+            live_open_minute = [
+                c for c in self.state.option_prices
+                if c["time"] >= current_minute_ts
+            ]
             self.state.option_prices = sorted(
-                new_hist + self.state.option_prices,
+                hist + live_open_minute,
                 key=lambda c: c["time"],
             )
             logger.info(
-                f"Option chart backfilled: {len(new_hist)} historical candles "
-                f"prepended for NIFTY{strike}{opt_type}"
+                f"Option chart backfilled: {len(hist)} historical candles "
+                f"(authoritative) + {len(live_open_minute)} live open-minute "
+                f"candle(s) for NIFTY{strike}{opt_type}"
             )
         except Exception as e:
             logger.warning(f"Option chart backfill failed for NIFTY{strike}{opt_type}: {e}")
@@ -417,6 +521,38 @@ class TradingEngine:
                 args=(signal["strike"], _opt_suffix, _trade_date),
                 daemon=True,
             ).start()
+
+            if not real_money:
+                # ── Paper mode: replace BS-estimated entry with real Kite LTP ──
+                # The strategy calculates the entry premium using Black-Scholes
+                # at the NIFTY breakout price.  The real market option price is
+                # often different.  Fetch it now so the P&L, target, and chart
+                # all reflect what you would actually have paid.
+                opt_type   = "CE" if signal["type"] == "CALL" else "PE"
+                real_entry = self.broker.get_option_ltp(signal["strike"], opt_type)
+                if real_entry:
+                    old_bs = self.state.entry_prem
+                    ep     = round(real_entry, 2)
+                    self.state.entry_prem          = ep
+                    self.strategy.target_prem      = round(real_entry + cfg.target_pts, 2)
+                    self.state.target_prem         = self.strategy.target_prem
+                    # Fix the opening candle on the option chart
+                    if self.state.option_prices:
+                        self.state.option_prices[0] = {
+                            **self.state.option_prices[0],
+                            "open": ep, "high": ep, "low": ep, "close": ep,
+                        }
+                    # Fix the BUY marker on the option chart so its label matches
+                    # the real entry price (strategy wrote the BS estimate earlier)
+                    pt = self.state.position_type
+                    for m in reversed(self.state.option_markers):
+                        if "BUY" in m.get("text", ""):
+                            m["text"] = f"BUY {pt} @ ₹{ep:.0f}"
+                            break
+                    logger.info(
+                        f"Paper entry: BS ₹{old_bs:.2f} → real LTP ₹{real_entry:.2f} | "
+                        f"target ₹{self.strategy.target_prem:.2f}"
+                    )
 
             if real_money:
                 opt_type = "CE" if signal["type"] == "CALL" else "PE"

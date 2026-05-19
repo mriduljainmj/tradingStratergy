@@ -55,7 +55,12 @@ def health():
 @dashboard_bp.route("/api/state")
 @jwt_required()
 def get_state():
-    return jsonify(_ue().state.to_dict())
+    ue = _ue()
+    d = ue.state.to_dict()
+    # Expose the configured trade quantity so the UI can display it directly
+    # rather than trying to back-calculate it from live_pnl (which fluctuates).
+    d["qty"] = ue.config.qty
+    return jsonify(d)
 
 
 @dashboard_bp.route("/api/balance")
@@ -307,7 +312,14 @@ def run_historical_backtest():
             if is_kite_auth_error(Exception(err)):
                 ue.state.kite_auth_error = True
 
-    today = datetime.date.today()
+    # Use IST for "today" and "market closed" so checks are timezone-correct
+    # regardless of the server's local timezone (Render runs UTC).
+    _IST         = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    _now_ist     = datetime.datetime.now(tz=_IST)
+    today        = _now_ist.date()
+    # NSE market session ends at 15:30 IST.  After that, today's data is
+    # complete and can be backtested just like any other historical day.
+    market_closed = _now_ist.time() >= datetime.time(15, 30)
 
     if mode == "single":
         date_str = data.get("date", "")
@@ -315,8 +327,10 @@ def run_historical_backtest():
             date = datetime.date.fromisoformat(date_str)
         except ValueError:
             return jsonify({"error": "Invalid date. Use YYYY-MM-DD format."}), 400
-        if date >= today:
-            return jsonify({"error": "Backtest is not available for today or future dates. Switch to Paper or Live mode to trade today."}), 400
+        if date > today:
+            return jsonify({"error": "Backtest date cannot be in the future."}), 400
+        if date == today and not market_closed:
+            return jsonify({"error": "Today's session is not yet complete — use Paper or Live mode to trade today."}), 400
         result = ue.backtester.run_day(date)
         _check_auth(result)
         return jsonify(result)
@@ -327,8 +341,12 @@ def run_historical_backtest():
             to_date   = datetime.date.fromisoformat(data.get("to_date",   ""))
         except ValueError:
             return jsonify({"error": "Invalid dates. Use YYYY-MM-DD format."}), 400
-        if to_date >= today:
-            return jsonify({"error": "Backtest end date must be before today. Switch to Paper or Live mode to trade today."}), 400
+        if to_date > today:
+            return jsonify({"error": "Backtest end date cannot be in the future."}), 400
+        if to_date == today and not market_closed:
+            return jsonify({"error": "Today's session is not yet complete — use Paper or Live mode to trade today. Set the end date to yesterday or earlier."}), 400
+        if from_date > to_date:
+            return jsonify({"error": "From date must be before To date."}), 400
         result = ue.backtester.run_range(from_date, to_date)
         _check_auth(result)
         return jsonify(result)
@@ -358,7 +376,13 @@ def option_chart():
         return jsonify({"ok": False, "error": "Invalid date format"}), 400
 
     try:
-        records = ue.broker.get_option_history(strike, opt_type, trade_date, interval)
+        records, contract = ue.broker.get_option_history(strike, opt_type, trade_date, interval)
+        if contract is None:
+            return jsonify({
+                "ok":    False,
+                "error": f"No NFO contract found for NIFTY {strike}{opt_type} "
+                         f"expiring on/after {trade_date}",
+            }), 404
         candles = [
             {
                 "time":  int(r["date"].timestamp()),
@@ -367,8 +391,18 @@ def option_chart():
             }
             for r in records
         ]
-        return jsonify({"ok": True, "data": candles,
-                        "label": f"NIFTY {strike} {opt_type}"})
+        return jsonify({
+            "ok":            True,
+            "data":          candles,
+            "label":         f"NIFTY {strike} {opt_type}",
+            # Exact contract resolved — lets the UI display the actual expiry
+            # so users can verify against Kite (weekly vs monthly mismatch check)
+            "tradingsymbol": contract["tradingsymbol"],
+            "expiry":        contract["expiry"],
+            # Include the instrument token so the frontend can subscribe to
+            # live WebSocket ticks for this contract (ticker overlay).
+            "token":         contract["token"],
+        })
     except Exception as e:
         from execution.broker import is_kite_auth_error
         if is_kite_auth_error(e):
@@ -447,4 +481,172 @@ def nifty_history():
         from execution.broker import is_kite_auth_error
         if is_kite_auth_error(e):
             ue.state.kite_auth_error = True
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── Option Chain (Kite Connect) ───────────────────────────────────────────────
+# Uses the existing Kite session — reliable, no external scraping needed.
+# NSE blocks server-side requests with Akamai, so Kite is the only stable source.
+
+import time as _time_mod
+
+_kite_oc_cache: dict = {"data": None, "ts": 0.0, "expiry": ""}
+
+
+def _fmt_exp(d: datetime.date) -> str:
+    """Format a date as 'DD-Mon-YYYY' (e.g. '22-May-2026') matching NSE/Kite style."""
+    return d.strftime("%d-%b-%Y")
+
+
+def _parse_exp(s: str) -> datetime.date | None:
+    """Parse 'DD-Mon-YYYY' or ISO 'YYYY-MM-DD' back to a date. Returns None on failure."""
+    for fmt in ("%d-%b-%Y", "%Y-%m-%d"):
+        try:
+            return datetime.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _as_date_oc(v) -> datetime.date | None:
+    if isinstance(v, datetime.datetime):
+        return v.date()
+    if isinstance(v, datetime.date):
+        return v
+    try:
+        return datetime.date.fromisoformat(str(v)[:10])
+    except Exception:
+        return None
+
+
+@dashboard_bp.route("/api/option-chain-nse")
+@jwt_required()
+def option_chain_nse():
+    """
+    Return NIFTY option chain via Kite Connect (LTP + OI for ATM ± 15 strikes).
+    Results are server-cached for 30 seconds.
+
+    Query params:
+      expiry  — 'DD-Mon-YYYY'  (default: nearest upcoming expiry)
+    """
+    ue         = _ue()
+    expiry_str = (request.args.get("expiry", "") or "").strip()
+
+    # ── Serve from 30-second cache ────────────────────────────────────────────
+    now = _time_mod.time()
+    cached = _kite_oc_cache["data"]
+    if cached and (now - _kite_oc_cache["ts"]) < 30 and _kite_oc_cache["expiry"] == expiry_str:
+        return jsonify({"ok": True, "cached": True, **cached})
+
+    try:
+        # 1 — Spot price
+        spot = ue.broker.get_ltp("NSE:NIFTY 50")
+
+        # 2 — NFO instruments (cached by broker, refreshed once per day)
+        insts = ue.broker.get_nfo_instruments()
+
+        # 3 — Filter NIFTY options
+        today      = datetime.date.today()
+        nifty_opts = [
+            i for i in insts
+            if i.get("name") == "NIFTY"
+            and i.get("instrument_type") in ("CE", "PE")
+        ]
+
+        # 4 — Build sorted list of upcoming expiries
+        exp_dates = sorted(
+            {
+                d
+                for i in nifty_opts
+                if (d := _as_date_oc(i.get("expiry"))) and d >= today
+            }
+        )
+        expiry_labels = [_fmt_exp(d) for d in exp_dates]
+
+        # 5 — Select target expiry
+        target_date: datetime.date | None = None
+        if expiry_str:
+            target_date = _parse_exp(expiry_str)
+        if target_date is None or target_date not in exp_dates:
+            target_date = exp_dates[0] if exp_dates else None
+
+        if target_date is None:
+            return jsonify({"ok": False, "error": "No upcoming NIFTY expiry found"}), 404
+
+        target_label = _fmt_exp(target_date)
+
+        # 6 — ATM and ± 15 strikes (step = 50)
+        step    = 50
+        atm_raw = round(spot / step) * step
+        strikes = {atm_raw + i * step for i in range(-15, 16)}
+
+        # 7 — Instruments for target expiry + relevant strikes
+        target_insts = [
+            i for i in nifty_opts
+            if _as_date_oc(i.get("expiry")) == target_date
+            and int(float(i.get("strike", 0))) in strikes
+        ]
+
+        if not target_insts:
+            return jsonify({
+                "ok":       True,
+                "spot":     spot,
+                "atm":      atm_raw,
+                "expiry":   target_label,
+                "expiries": expiry_labels,
+                "data":     [],
+                "error":    f"No contracts found for {target_label}",
+            })
+
+        # 8 — Batch quote (Kite allows up to 500 symbols per call)
+        symbols = [f"NFO:{i['tradingsymbol']}" for i in target_insts]
+        quotes  = ue.broker.kite.quote(symbols)
+
+        # 9 — Build chain dict  {strike: {ce: {...}, pe: {...}}}
+        chain: dict[int, dict] = {}
+        for inst in target_insts:
+            sym       = f"NFO:{inst['tradingsymbol']}"
+            q         = quotes.get(sym, {})
+            sk        = int(float(inst["strike"]))
+            side      = inst["instrument_type"].lower()   # "ce" or "pe"
+            if sk not in chain:
+                chain[sk] = {"strike": sk, "ce": {}, "pe": {}}
+
+            ltp        = float(q.get("last_price", 0) or 0)
+            oi         = int(  q.get("oi",         0) or 0)
+            volume     = int(  q.get("volume",      0) or 0)
+            prev_close = float((q.get("ohlc") or {}).get("close", 0) or 0)
+            chg_pct    = round((ltp - prev_close) / prev_close * 100, 2) if prev_close else 0.0
+            chain[sk][side] = {
+                "ltp":     round(ltp, 2),
+                "oi":      oi,
+                "oi_chg":  0,
+                "volume":  volume,
+                "iv":      0.0,
+                "chg_pct": chg_pct,
+            }
+
+        sorted_rows = sorted(chain.values(), key=lambda x: x["strike"])
+        atm_nearest = min(chain.keys(), key=lambda k: abs(k - spot)) if chain else atm_raw
+
+        result = {
+            "spot":     round(spot, 2),
+            "atm":      atm_nearest,
+            "expiry":   target_label,
+            "expiries": expiry_labels,
+            "data":     sorted_rows,
+        }
+
+        # Cache the result
+        _kite_oc_cache["data"]   = result
+        _kite_oc_cache["ts"]     = _time_mod.time()
+        _kite_oc_cache["expiry"] = expiry_str
+
+        return jsonify({"ok": True, **result})
+
+    except Exception as e:
+        from execution.broker import is_kite_auth_error
+        if is_kite_auth_error(e):
+            ue.state.kite_auth_error = True
+        logger.warning(f"Kite option-chain failed: {e}")
         return jsonify({"ok": False, "error": str(e)}), 500

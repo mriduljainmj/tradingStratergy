@@ -47,6 +47,7 @@ class BotState:
     option_prices: List[dict] = field(default_factory=list)   # {"time": int, "value": float}
     option_label: str = ""                                     # e.g. "NIFTY 24000 CE"
     option_expiry: str = ""                                    # e.g. "Exp 8 May"
+    option_token: int = 0                                      # Kite instrument_token for the active option
     target_prem: float = 0.0
     exit_reason: str = ""             # "Target Hit" | "Trailing SL Hit" | "EOD Force Close"
     used_real_options: bool = False   # True when real Kite NFO prices were used
@@ -92,6 +93,7 @@ class BotState:
         self.option_prices = []
         self.option_label = ""
         self.option_expiry = ""
+        self.option_token = 0
         self.target_prem = 0.0
         self.exit_reason = ""
         self.used_real_options = False

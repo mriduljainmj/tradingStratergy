@@ -32,11 +32,24 @@ class HistoricalBacktester:
                 "minute",
             )
         except Exception as e:
-            logger.error(f"Failed to fetch 1-min data for {date}: {e}")
+            logger.error(f"Backtest: Kite API error for {date}: {e}")
             return {"error": str(e), "date": str(date)}
 
+        logger.info(f"Backtest: fetched {len(records)} 1m candles for NIFTY on {date}")
+
         if not records:
-            return {"error": "No data returned (market holiday?)", "date": str(date)}
+            # Kite returns an empty list for market holidays.
+            # It can also return empty for ~10–20 minutes right after market close
+            # while the day's data is being finalised — try again shortly if so.
+            return {
+                "error": (
+                    f"No data returned for {date}. "
+                    "This is either a market holiday or the data is not yet "
+                    "finalised (Kite publishes intraday data ~15 min after 15:30). "
+                    "Please try again shortly."
+                ),
+                "date": str(date),
+            }
 
         def to_candles(recs):
             return [
@@ -145,8 +158,8 @@ class HistoricalBacktester:
         replace the Black-Scholes estimates in `state`.  Falls back silently
         if Kite has no data for that date/contract.
         """
-        suffix  = "CE" if state.position_type == "CALL" else "PE"
-        records = self.broker.get_option_history(strategy.strike, suffix, date)
+        suffix          = "CE" if state.position_type == "CALL" else "PE"
+        records, _contract = self.broker.get_option_history(strategy.strike, suffix, date)
 
         if not records:
             logger.info(

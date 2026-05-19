@@ -107,13 +107,29 @@ class ORBStrategy:
                 low_p   = bs(tick_high,  self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
                 close_p = bs(tick_close, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv)
 
-        self.state.option_prices.append({
-            "time": unix_time,
-            "open":  round(open_p,  2),
-            "high":  round(high_p,  2),
-            "low":   round(low_p,   2),
-            "close": round(close_p, 2),
-        })
+        # ── Build proper 1-minute OHLC candles ────────────────────────────────
+        # The live loop fires every second, so we must aggregate ticks into
+        # 1-minute buckets rather than appending a new "candle" every second.
+        # Round unix_time DOWN to the minute start so every second in the same
+        # minute shares the same timestamp — identical to Kite's candle format.
+        # For backtest/backfill the input is already 1-minute data, so
+        # minute_ts == unix_time and the behaviour is unchanged.
+        minute_ts = (unix_time // 60) * 60
+        if self.state.option_prices and self.state.option_prices[-1]["time"] == minute_ts:
+            # Same minute — update high / low / close in-place
+            cur = self.state.option_prices[-1]
+            cur["high"]  = max(cur["high"],  round(high_p,  2))
+            cur["low"]   = min(cur["low"],   round(low_p,   2))
+            cur["close"] = round(close_p, 2)
+        else:
+            # New minute — open a fresh candle
+            self.state.option_prices.append({
+                "time":  minute_ts,
+                "open":  round(open_p,  2),
+                "high":  round(high_p,  2),
+                "low":   round(low_p,   2),
+                "close": round(close_p, 2),
+            })
 
         # Trailing stop is anchored to the Fibonacci level on NIFTY price
         # (matches the orange "Trail SL" line drawn on the chart).
@@ -128,14 +144,16 @@ class ORBStrategy:
                 trail_sl_price = h - rng * cfg.fib_trail
                 if tick_low <= trail_sl_price:
                     triggered = "Trailing SL Hit"
-                    exit_prem = bs(trail_sl_price, self.strike, T_current,
-                                   cfg.risk_free_rate, cfg.assumed_iv)
+                    # Use the real option price (close_p) — it equals real_option_price
+                    # in paper/live mode, or bs(tick_close) in backtest.
+                    # Using bs(trail_sl_price) was incorrect: it ignores the actual
+                    # market price and produces wildly different P&L vs real trading.
+                    exit_prem = close_p
             else:
                 trail_sl_price = l + rng * cfg.fib_trail
                 if tick_high >= trail_sl_price:
                     triggered = "Trailing SL Hit"
-                    exit_prem = bs(trail_sl_price, self.strike, T_current,
-                                   cfg.risk_free_rate, cfg.assumed_iv)
+                    exit_prem = close_p
 
         if not triggered and high_p >= self.target_prem:
             triggered, exit_prem = "Target Hit", self.target_prem
