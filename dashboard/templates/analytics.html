@@ -196,6 +196,10 @@
         .bt-win  { color: var(--up-green);  font-weight: 700; }
         .bt-loss { color: var(--down-red);   font-weight: 700; }
         .bt-none { color: var(--text-muted); }
+        /* Direction buttons inside analytics backtest */
+        .bt-dir-btn { padding: 4px 10px; font-size: 11px; font-weight: 700; border: 1px solid var(--border-color); border-radius: 5px; cursor: pointer; background: var(--bg-base); color: var(--text-muted); transition: all 0.15s; }
+        .bt-dir-btn:hover { border-color: #6d28d9; color: #6d28d9; }
+        .bt-dir-btn.bt-dir-active { background: #ede9fe; color: #6d28d9; border-color: #6d28d9; }
 
         /* ── Trade mode badge in table ── */
         .mode-pill { display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px; }
@@ -228,10 +232,10 @@
 <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
         <div class="brand-logo">ORB</div>
-        <span class="brand-text">Architecture</span>
+        <span class="brand-text">ORB Console</span>
     </div>
     <nav class="sidebar-nav">
-        <div class="nav-section-label">Main</div>
+        <div class="nav-section-label">Trading</div>
         <a href="/" class="nav-item">
             <span class="nav-icon">📊</span><span class="nav-text">Dashboard</span>
         </a>
@@ -241,6 +245,7 @@
         <a href="/screener" class="nav-item">
             <span class="nav-icon">🔍</span><span class="nav-text">Screener</span>
         </a>
+        <div class="nav-section-label">Config</div>
         <a href="/strategy-builder" class="nav-item">
             <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
         </a>
@@ -435,14 +440,229 @@
         <!-- ═══ BACKTEST VIEW ═══ -->
         <div id="backtestView">
 
-            <!-- Date range runner -->
-            <div class="bt-runner">
+            <!-- ── Single strategy runner ── -->
+            <div class="bt-runner" style="flex-wrap:wrap;gap:10px;align-items:center;">
                 <label>From</label>
                 <input type="date" id="btFrom">
                 <label>To</label>
                 <input type="date" id="btTo">
+                <!-- Direction selector -->
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <label style="margin:0 4px 0 0;">Direction</label>
+                    <button id="btDir-CALL" class="bt-dir-btn" onclick="setBtDir('CALL')">▲ CALL</button>
+                    <button id="btDir-BOTH" class="bt-dir-btn bt-dir-active" onclick="setBtDir('BOTH')">⇅ BOTH</button>
+                    <button id="btDir-PUT"  class="bt-dir-btn" onclick="setBtDir('PUT')">▼ PUT</button>
+                </div>
                 <button class="btn-bt" id="btRunBtn" onclick="runBacktest()">▶ Run Backtest</button>
+                <button class="btn-bt" style="background:#7c3aed;" onclick="showBtCompare()">⚔ Compare Strategies</button>
+                <button class="btn-bt" style="background:#d97706;" onclick="showBtOpt()">⚡ Optimize</button>
                 <span class="bt-notice" id="btNotice">Select a date range (max 60 days) and click Run</span>
+            </div>
+
+            <!-- ── Compare two strategies (hidden by default) ── -->
+            <div id="btComparePanel" style="display:none;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <h3 style="margin:0;font-size:14px;font-weight:700;">⚔ Compare Two Strategies</h3>
+                    <button onclick="hideBtCompare()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);">✕</button>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px;">
+                    <!-- Strategy A -->
+                    <div style="border:2px solid #2563eb;border-radius:8px;padding:12px;">
+                        <div style="font-size:12px;font-weight:800;color:#2563eb;margin-bottom:10px;">STRATEGY A</div>
+                        <div style="display:flex;flex-direction:column;gap:8px;">
+                            <div>
+                                <label style="font-size:11px;color:var(--text-muted);">Direction</label>
+                                <div style="display:flex;gap:4px;margin-top:4px;">
+                                    <button id="cmpA-CALL" class="bt-dir-btn" onclick="setCmpDir('A','CALL')">▲ CALL</button>
+                                    <button id="cmpA-BOTH" class="bt-dir-btn bt-dir-active" onclick="setCmpDir('A','BOTH')">⇅ BOTH</button>
+                                    <button id="cmpA-PUT"  class="bt-dir-btn" onclick="setCmpDir('A','PUT')">▼ PUT</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size:11px;color:var(--text-muted);">OR End Time</label>
+                                <input type="time" id="cmpA-orEnd" value="09:35" style="margin-top:4px;padding:4px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-base);color:var(--text-main);font-size:12px;">
+                            </div>
+                            <div>
+                                <label style="font-size:11px;color:var(--text-muted);">Target Points</label>
+                                <input type="number" id="cmpA-target" value="130" style="margin-top:4px;padding:4px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-base);color:var(--text-main);font-size:12px;width:80px;">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Strategy B -->
+                    <div style="border:2px solid #dc2626;border-radius:8px;padding:12px;">
+                        <div style="font-size:12px;font-weight:800;color:#dc2626;margin-bottom:10px;">STRATEGY B</div>
+                        <div style="display:flex;flex-direction:column;gap:8px;">
+                            <div>
+                                <label style="font-size:11px;color:var(--text-muted);">Direction</label>
+                                <div style="display:flex;gap:4px;margin-top:4px;">
+                                    <button id="cmpB-CALL" class="bt-dir-btn" onclick="setCmpDir('B','CALL')">▲ CALL</button>
+                                    <button id="cmpB-BOTH" class="bt-dir-btn" onclick="setCmpDir('B','BOTH')">⇅ BOTH</button>
+                                    <button id="cmpB-PUT"  class="bt-dir-btn bt-dir-active" onclick="setCmpDir('B','PUT')">▼ PUT</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size:11px;color:var(--text-muted);">OR End Time</label>
+                                <input type="time" id="cmpB-orEnd" value="09:35" style="margin-top:4px;padding:4px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-base);color:var(--text-main);font-size:12px;">
+                            </div>
+                            <div>
+                                <label style="font-size:11px;color:var(--text-muted);">Target Points</label>
+                                <input type="number" id="cmpB-target" value="130" style="margin-top:4px;padding:4px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-base);color:var(--text-main);font-size:12px;width:80px;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <button class="btn-bt" id="btCmpRunBtn" onclick="runBtCompare()">▶ Run Comparison (same date range)</button>
+                    <span id="btCmpNotice" style="font-size:12px;color:var(--text-muted);"></span>
+                </div>
+                <!-- Compare results -->
+                <div id="btCmpResults" style="display:none;margin-top:16px;">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px;">
+                        <div id="btCmpCardA" style="border-top:3px solid #2563eb;background:var(--bg-base);border-radius:8px;padding:12px;"></div>
+                        <div id="btCmpCardB" style="border-top:3px solid #dc2626;background:var(--bg-base);border-radius:8px;padding:12px;"></div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <div style="background:var(--bg-base);border-radius:8px;padding:12px;">
+                            <div style="font-size:11px;font-weight:700;color:#2563eb;margin-bottom:8px;">STRATEGY A — Equity</div>
+                            <div id="btCmpChartA" style="height:160px;width:100%;"></div>
+                        </div>
+                        <div style="background:var(--bg-base);border-radius:8px;padding:12px;">
+                            <div style="font-size:11px;font-weight:700;color:#dc2626;margin-bottom:8px;">STRATEGY B — Equity</div>
+                            <div id="btCmpChartB" style="height:160px;width:100%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Optimizer panel (hidden by default) ── -->
+            <div id="btOptPanel" style="display:none;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+                    <h3 style="margin:0;font-size:14px;font-weight:700;">⚡ Strategy Optimizer <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:6px;">— grid search over parameters (uses Black-Scholes pricing for speed)</span></h3>
+                    <button onclick="hideBtOpt()" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-muted);">✕</button>
+                </div>
+
+                <!-- Optimize for -->
+                <div style="margin-bottom:14px;">
+                    <label style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Optimize For</label>
+                    <div style="display:flex;gap:6px;margin-top:6px;">
+                        <button id="optMetric-total_pnl"    class="bt-dir-btn bt-dir-active" onclick="setOptMetric('total_pnl')">💰 Max P&amp;L</button>
+                        <button id="optMetric-win_rate"     class="bt-dir-btn"               onclick="setOptMetric('win_rate')">🎯 Win Rate</button>
+                        <button id="optMetric-profit_factor" class="bt-dir-btn"              onclick="setOptMetric('profit_factor')">⚖ Profit Factor</button>
+                    </div>
+                </div>
+
+                <!-- Parameter ranges -->
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:14px;">
+
+                    <!-- OR End Time -->
+                    <div style="background:var(--bg-base);border-radius:8px;padding:12px;">
+                        <div style="font-size:11px;font-weight:700;color:#d97706;margin-bottom:8px;text-transform:uppercase;">OR End Time</div>
+                        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="color:var(--text-muted);width:32px;">From</span>
+                                <select id="optOrFrom" onchange="updateOptCount()" style="flex:1;padding:4px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-surface);color:var(--text-main);font-size:12px;">
+                                    <option value="09:20">09:20</option><option value="09:25">09:25</option>
+                                    <option value="09:30">09:30</option><option value="09:35" selected>09:35</option>
+                                    <option value="09:40">09:40</option><option value="09:45">09:45</option>
+                                    <option value="09:50">09:50</option>
+                                </select>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="color:var(--text-muted);width:32px;">To</span>
+                                <select id="optOrTo" onchange="updateOptCount()" style="flex:1;padding:4px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-surface);color:var(--text-main);font-size:12px;">
+                                    <option value="09:20">09:20</option><option value="09:25">09:25</option>
+                                    <option value="09:30">09:30</option><option value="09:35">09:35</option>
+                                    <option value="09:40">09:40</option><option value="09:45" selected>09:45</option>
+                                    <option value="09:50">09:50</option>
+                                </select>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="color:var(--text-muted);width:32px;">Step</span>
+                                <select id="optOrStep" onchange="updateOptCount()" style="flex:1;padding:4px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-surface);color:var(--text-main);font-size:12px;">
+                                    <option value="5" selected>5 min</option>
+                                    <option value="10">10 min</option>
+                                    <option value="15">15 min</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Target Points -->
+                    <div style="background:var(--bg-base);border-radius:8px;padding:12px;">
+                        <div style="font-size:11px;font-weight:700;color:#2563eb;margin-bottom:8px;text-transform:uppercase;">Target Points</div>
+                        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="color:var(--text-muted);width:32px;">Min</span>
+                                <input type="number" id="optTgtMin" value="80"  min="20" max="500" step="10" onchange="updateOptCount()" style="flex:1;padding:4px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-surface);color:var(--text-main);font-size:12px;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="color:var(--text-muted);width:32px;">Max</span>
+                                <input type="number" id="optTgtMax" value="200" min="20" max="500" step="10" onchange="updateOptCount()" style="flex:1;padding:4px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-surface);color:var(--text-main);font-size:12px;">
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="color:var(--text-muted);width:32px;">Step</span>
+                                <input type="number" id="optTgtStep" value="20" min="5"  max="100" step="5"  onchange="updateOptCount()" style="flex:1;padding:4px 6px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-surface);color:var(--text-main);font-size:12px;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Direction -->
+                    <div style="background:var(--bg-base);border-radius:8px;padding:12px;">
+                        <div style="font-size:11px;font-weight:700;color:#059669;margin-bottom:8px;text-transform:uppercase;">Direction</div>
+                        <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                <input type="checkbox" id="optDirCall" checked onchange="updateOptCount()"> <span>▲ CALL</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                <input type="checkbox" id="optDirBoth" checked onchange="updateOptCount()"> <span>⇅ BOTH</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                <input type="checkbox" id="optDirPut"  checked onchange="updateOptCount()"> <span>▼ PUT</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Combo count + run -->
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <button class="btn-bt" id="btOptRunBtn" style="background:#d97706;" onclick="runOptimizer()">▶ Run Optimizer</button>
+                    <span id="optComboCount" style="font-size:12px;color:var(--text-muted);"></span>
+                    <span id="optNotice" style="font-size:12px;color:var(--text-muted);"></span>
+                </div>
+
+                <!-- Progress bar -->
+                <div id="optProgress" style="display:none;margin-top:12px;">
+                    <div style="background:var(--border-color);height:6px;border-radius:3px;overflow:hidden;">
+                        <div id="optProgressBar" style="background:#d97706;height:100%;width:0%;transition:width .3s;border-radius:3px;"></div>
+                    </div>
+                    <div id="optProgressText" style="font-size:11px;color:var(--text-muted);margin-top:4px;"></div>
+                </div>
+
+                <!-- Results table -->
+                <div id="optResults" style="display:none;margin-top:16px;">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                        <h4 style="margin:0;font-size:13px;font-weight:700;">🏆 All Combinations — ranked by <span id="optMetricLabel">Total P&amp;L</span></h4>
+                        <span id="optResultsMeta" style="font-size:11px;color:var(--text-muted);"></span>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                            <thead>
+                                <tr style="border-bottom:2px solid var(--border-color);">
+                                    <th style="padding:6px 10px;text-align:center;color:var(--text-muted);">#</th>
+                                    <th style="padding:6px 10px;text-align:left;cursor:pointer;color:var(--text-muted);" onclick="sortOptTable('direction')">Direction ↕</th>
+                                    <th style="padding:6px 10px;text-align:left;cursor:pointer;color:var(--text-muted);" onclick="sortOptTable('or_end_time')">OR End ↕</th>
+                                    <th style="padding:6px 10px;text-align:right;cursor:pointer;color:var(--text-muted);" onclick="sortOptTable('target_pts')">Target ↕</th>
+                                    <th style="padding:6px 10px;text-align:right;cursor:pointer;color:var(--text-muted);" onclick="sortOptTable('total_pnl')">Total P&amp;L ↕</th>
+                                    <th style="padding:6px 10px;text-align:right;cursor:pointer;color:var(--text-muted);" onclick="sortOptTable('win_rate')">Win% ↕</th>
+                                    <th style="padding:6px 10px;text-align:right;cursor:pointer;color:var(--text-muted);" onclick="sortOptTable('profit_factor')">P.Factor ↕</th>
+                                    <th style="padding:6px 10px;text-align:right;color:var(--text-muted);">Trades/Days</th>
+                                    <th style="padding:6px 10px;text-align:right;color:var(--text-muted);">W / L</th>
+                                </tr>
+                            </thead>
+                            <tbody id="optResultsTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- Results (hidden until first run) -->
@@ -466,6 +686,14 @@
                     <div id="btEquityChart"></div>
                 </div>
 
+                <!-- Performance by Market Trend -->
+                <div class="section" id="btTrendSection" style="display:none;">
+                    <div class="section-header"><h2>📊 Performance by Market Trend</h2>
+                        <span style="font-size:11px;color:var(--text-muted);">5-day SMA vs 20-day SMA on NIFTY daily closes</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:6px;" id="btTrendCards"></div>
+                </div>
+
                 <!-- Daily breakdown table -->
                 <div class="section">
                     <div class="section-header">
@@ -476,6 +704,8 @@
                         <table>
                             <thead><tr>
                                 <th>Date</th>
+                                <th>Market Trend</th>
+                                <th>NIFTY Chg%</th>
                                 <th>Position</th>
                                 <th>Entry ₹</th>
                                 <th>Exit ₹</th>
@@ -857,6 +1087,300 @@ function initBtChart() {
     }).observe(el);
 }
 
+// ── Direction state ──────────────────────────────────────────────────────────
+let _btDir   = 'BOTH';
+let _cmpDirA = 'BOTH';
+let _cmpDirB = 'PUT';
+
+function setBtDir(d) {
+    _btDir = d;
+    ['CALL','BOTH','PUT'].forEach(v => {
+        document.getElementById('btDir-' + v).classList.toggle('bt-dir-active', v === d);
+    });
+}
+function setCmpDir(side, d) {
+    if (side === 'A') _cmpDirA = d;
+    else              _cmpDirB = d;
+    ['CALL','BOTH','PUT'].forEach(v => {
+        document.getElementById(`cmp${side}-${v}`).classList.toggle('bt-dir-active', v === d);
+    });
+}
+function showBtCompare() { document.getElementById('btComparePanel').style.display = 'block'; }
+function hideBtCompare() { document.getElementById('btComparePanel').style.display = 'none'; }
+
+// ── Strategy Optimizer ────────────────────────────────────────────────────────
+let _optMetric     = 'total_pnl';
+let _optAllResults = [];      // cached for client-side re-sort
+let _optSortAsc    = false;   // toggle direction on column click
+
+function showBtOpt() { document.getElementById('btOptPanel').style.display = 'block'; updateOptCount(); }
+function hideBtOpt() { document.getElementById('btOptPanel').style.display = 'none'; }
+
+function setOptMetric(m) {
+    _optMetric = m;
+    ['total_pnl','win_rate','profit_factor'].forEach(k => {
+        const btn = document.getElementById('optMetric-' + k);
+        if (btn) btn.classList.toggle('bt-dir-active', k === m);
+    });
+    const labels = { total_pnl:'Total P&L', win_rate:'Win Rate', profit_factor:'Profit Factor' };
+    const el = document.getElementById('optMetricLabel');
+    if (el) el.textContent = labels[m] || m;
+    // Re-sort displayed results with new metric
+    if (_optAllResults.length) renderOptResults(_optAllResults, m);
+}
+
+function _buildOrTimes() {
+    const from = document.getElementById('optOrFrom').value;    // "09:20"
+    const to   = document.getElementById('optOrTo').value;
+    const step = parseInt(document.getElementById('optOrStep').value) || 5;
+    const [fh, fm] = from.split(':').map(Number);
+    const [th, tm] = to.split(':').map(Number);
+    const fromMin = fh * 60 + fm;
+    const toMin   = th * 60 + tm;
+    const times   = [];
+    for (let m = fromMin; m <= toMin; m += step) {
+        const hh = String(Math.floor(m / 60)).padStart(2, '0');
+        const mm = String(m % 60).padStart(2, '0');
+        times.push(`${hh}:${mm}`);
+    }
+    return times;
+}
+
+function _buildTargets() {
+    const min  = parseInt(document.getElementById('optTgtMin').value)  || 80;
+    const max  = parseInt(document.getElementById('optTgtMax').value)  || 200;
+    const step = parseInt(document.getElementById('optTgtStep').value) || 20;
+    const arr  = [];
+    for (let t = min; t <= max; t += step) arr.push(t);
+    return arr;
+}
+
+function _buildDirs() {
+    const dirs = [];
+    if (document.getElementById('optDirCall').checked) dirs.push('CALL');
+    if (document.getElementById('optDirBoth').checked) dirs.push('BOTH');
+    if (document.getElementById('optDirPut').checked)  dirs.push('PUT');
+    return dirs;
+}
+
+function updateOptCount() {
+    const n = _buildOrTimes().length * _buildTargets().length * _buildDirs().length;
+    const el = document.getElementById('optComboCount');
+    if (el) el.textContent = `${n} combination${n !== 1 ? 's' : ''} to test`;
+    if (n > 300) {
+        el.style.color = '#dc2626';
+        el.textContent += ' (max 300 — reduce ranges)';
+    } else {
+        el.style.color = 'var(--text-muted)';
+    }
+}
+
+async function runOptimizer() {
+    const fromVal = document.getElementById('btFrom').value;
+    const toVal   = document.getElementById('btTo').value;
+    if (!fromVal || !toVal) {
+        document.getElementById('optNotice').textContent = '⚠ Select a date range above first.';
+        return;
+    }
+    const or_times  = _buildOrTimes();
+    const targets   = _buildTargets();
+    const directions = _buildDirs();
+    if (!or_times.length || !targets.length || !directions.length) {
+        document.getElementById('optNotice').textContent = '⚠ Select at least one value per parameter.';
+        return;
+    }
+    const total = or_times.length * targets.length * directions.length;
+    if (total > 300) {
+        document.getElementById('optNotice').textContent = '⚠ Too many combinations (max 300). Reduce your ranges.';
+        return;
+    }
+
+    const btn = document.getElementById('btOptRunBtn');
+    const notice = document.getElementById('optNotice');
+    btn.disabled = true;
+    notice.textContent = '';
+    document.getElementById('optResults').style.display  = 'none';
+    document.getElementById('optProgress').style.display = 'block';
+
+    // Animate progress bar while waiting (indeterminate style)
+    let animPct = 0;
+    const animInterval = setInterval(() => {
+        animPct = Math.min(animPct + 1.5, 90);
+        document.getElementById('optProgressBar').style.width = animPct + '%';
+        document.getElementById('optProgressText').textContent =
+            `Running ${total} combinations across ${fromVal} → ${toVal} …`;
+    }, 300);
+
+    try {
+        const res = await fetch('/api/backtest/optimize', {
+            method:  'POST',
+            headers: authHeaders(),
+            body:    JSON.stringify({
+                from_date:  fromVal,
+                to_date:    toVal,
+                or_times,
+                targets,
+                directions,
+                metric:     _optMetric,
+            }),
+            signal: AbortSignal.timeout ? AbortSignal.timeout(180_000) : undefined,
+        });
+        const data = await res.json();
+
+        clearInterval(animInterval);
+        document.getElementById('optProgressBar').style.width = '100%';
+
+        if (data.error) {
+            notice.textContent = '❌ ' + data.error;
+            return;
+        }
+
+        _optAllResults = data.results || [];
+        renderOptResults(_optAllResults, _optMetric);
+
+        const meta = document.getElementById('optResultsMeta');
+        if (meta) meta.textContent =
+            `${data.total_combos} combos × ${data.days_tested} trading days`;
+        document.getElementById('optResults').style.display = 'block';
+        notice.textContent = `✅ Done! ${_optAllResults.length} results.`;
+    } catch(e) {
+        clearInterval(animInterval);
+        notice.textContent = '❌ Request failed or timed out.';
+    } finally {
+        btn.disabled = false;
+        document.getElementById('optProgress').style.display = 'none';
+        document.getElementById('optProgressBar').style.width = '0%';
+    }
+}
+
+function renderOptResults(results, metric) {
+    const tbody = document.getElementById('optResultsTbody');
+    if (!tbody) return;
+    const medalMap = ['🥇','🥈','🥉'];
+    tbody.innerHTML = results.map((r, i) => {
+        const pnlColor = r.total_pnl >= 0 ? '#059669' : '#dc2626';
+        const wrColor  = r.win_rate  >= 50 ? '#059669' : '#dc2626';
+        const pfColor  = r.profit_factor >= 1 ? '#059669' : '#dc2626';
+        const isTopRow = i < 3 ? `background:${['rgba(5,150,105,.07)','rgba(37,99,235,.05)','rgba(217,119,6,.05)'][i]};` : '';
+        const rankBadge = i < 3
+            ? `<span style="font-size:16px;">${medalMap[i]}</span>`
+            : `<span style="color:var(--text-muted);">${i + 1}</span>`;
+        const dirColor = { CALL:'#059669', PUT:'#dc2626', BOTH:'#7c3aed' }[r.direction] || 'inherit';
+        const highlight = (key) => key === metric
+            ? 'font-weight:800;text-decoration:underline dotted;' : '';
+        const pfVal = r.profit_factor === Infinity || r.profit_factor > 99
+            ? '∞' : r.profit_factor.toFixed(2);
+        return `<tr style="border-bottom:1px solid var(--border-color);${isTopRow}">
+            <td style="padding:7px 10px;text-align:center;">${rankBadge}</td>
+            <td style="padding:7px 10px;font-weight:700;color:${dirColor};">${r.direction}</td>
+            <td style="padding:7px 10px;">${r.or_end_time}</td>
+            <td style="padding:7px 10px;text-align:right;">${r.target_pts}</td>
+            <td style="padding:7px 10px;text-align:right;color:${pnlColor};${highlight('total_pnl')}">₹${r.total_pnl.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+            <td style="padding:7px 10px;text-align:right;color:${wrColor};${highlight('win_rate')}">${r.win_rate}%</td>
+            <td style="padding:7px 10px;text-align:right;color:${pfColor};${highlight('profit_factor')}">${pfVal}</td>
+            <td style="padding:7px 10px;text-align:right;">${r.trade_days} / ${r.total_days}</td>
+            <td style="padding:7px 10px;text-align:right;"><span style="color:#059669;">${r.wins}W</span> / <span style="color:#dc2626;">${r.losses}L</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function sortOptTable(col) {
+    if (!_optAllResults.length) return;
+    _optSortAsc = !_optSortAsc;
+    const sorted = [..._optAllResults].sort((a, b) => {
+        const va = a[col] ?? -Infinity;
+        const vb = b[col] ?? -Infinity;
+        return _optSortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+    });
+    renderOptResults(sorted, _optMetric);
+}
+
+// ── Compare two strategies ────────────────────────────────────────────────────
+let _cmpChartA = null, _cmpChartB = null, _cmpSeriesA = null, _cmpSeriesB = null;
+
+function _renderCmpCard(el, d, label, color) {
+    const pnl = d.total_pnl ?? 0;
+    const wr  = d.win_rate  ?? 0;
+    el.innerHTML = `
+        <div style="font-size:12px;font-weight:800;color:${color};margin-bottom:10px;">${label}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
+            <div><div style="color:var(--text-muted);font-size:10px;">Total P&L</div>
+                 <div style="font-weight:700;color:${pnl>=0?'#059669':'#dc2626'};">₹${pnl.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+            <div><div style="color:var(--text-muted);font-size:10px;">Win Rate</div>
+                 <div style="font-weight:700;color:${wr>=50?'#059669':'#dc2626'};">${wr}%</div></div>
+            <div><div style="color:var(--text-muted);font-size:10px;">Trades / Days</div>
+                 <div style="font-weight:700;">${d.trade_days??0} / ${d.total_days??0}</div></div>
+            <div><div style="color:var(--text-muted);font-size:10px;">W / L</div>
+                 <div style="font-weight:700;"><span style="color:#059669;">${d.wins??0}W</span> / <span style="color:#dc2626;">${d.losses??0}L</span></div></div>
+            <div><div style="color:var(--text-muted);font-size:10px;">Direction</div>
+                 <div style="font-weight:700;">${d.direction??'BOTH'}</div></div>
+        </div>`;
+}
+
+async function runBtCompare() {
+    const fromVal = document.getElementById('btFrom').value;
+    const toVal   = document.getElementById('btTo').value;
+    if (!fromVal || !toVal) { document.getElementById('btCmpNotice').textContent = '⚠ Select a date range first (above).'; return; }
+    const orA = document.getElementById('cmpA-orEnd').value || '09:35';
+    const orB = document.getElementById('cmpB-orEnd').value || '09:35';
+    const tgtA = parseInt(document.getElementById('cmpA-target').value) || 130;
+    const tgtB = parseInt(document.getElementById('cmpB-target').value) || 130;
+
+    const btn = document.getElementById('btCmpRunBtn');
+    btn.disabled = true; btn.textContent = '⏳ Running A…';
+    document.getElementById('btCmpNotice').textContent = '';
+    document.getElementById('btCmpResults').style.display = 'none';
+
+    try {
+        const [rA, rB] = await Promise.all([
+            fetch('/api/backtest/run', { method:'POST', headers: authHeaders(),
+                body: JSON.stringify({ mode:'range', from_date:fromVal, to_date:toVal,
+                                       direction: _cmpDirA, or_end_time: orA, target_pts: tgtA }) }).then(r=>r.json()),
+            fetch('/api/backtest/run', { method:'POST', headers: authHeaders(),
+                body: JSON.stringify({ mode:'range', from_date:fromVal, to_date:toVal,
+                                       direction: _cmpDirB, or_end_time: orB, target_pts: tgtB }) }).then(r=>r.json()),
+        ]);
+
+        if (rA.error || rB.error) {
+            document.getElementById('btCmpNotice').textContent = '❌ ' + (rA.error || rB.error);
+            return;
+        }
+
+        _renderCmpCard(document.getElementById('btCmpCardA'), rA, `STRATEGY A — ${_cmpDirA} | OR ${orA} | Target +${tgtA}`, '#2563eb');
+        _renderCmpCard(document.getElementById('btCmpCardB'), rB, `STRATEGY B — ${_cmpDirB} | OR ${orB} | Target +${tgtB}`, '#dc2626');
+
+        // Show results div BEFORE creating charts so clientWidth is non-zero
+        document.getElementById('btCmpResults').style.display = 'block';
+        document.getElementById('btCmpNotice').textContent = 'Done!';
+
+        // Use rAF so the browser has laid out the now-visible chart containers
+        requestAnimationFrame(() => {
+        const LC = LightweightCharts;
+        ['A','B'].forEach((s, i) => {
+            const cData = (i===0?rA:rB).cumulative || [];
+            const chartEl = document.getElementById(`btCmpChart${s}`);
+            const color   = i===0?'#2563eb':'#dc2626';
+            let ch = i===0?_cmpChartA:_cmpChartB;
+            if (ch) { ch.remove(); }
+            ch = LC.createChart(chartEl, { width: chartEl.clientWidth || chartEl.offsetWidth || 400, height: 160,
+                layout: { background:{color:'transparent'}, textColor: getComputedStyle(document.documentElement).getPropertyValue('--text-muted') },
+                grid: { vertLines:{color:'rgba(0,0,0,0.05)'}, horzLines:{color:'rgba(0,0,0,0.05)'} },
+                rightPriceScale: { borderVisible: false },
+                timeScale: { borderVisible: false, timeVisible: true },
+                crosshair: { mode: 1 },
+            });
+            const series = ch.addAreaSeries({ lineColor: color, topColor: color+'33', bottomColor: color+'00', lineWidth: 2 });
+            if (cData.length) { series.setData(cData.map(r=>({time:r.date, value:r.cumulative}))); ch.timeScale().fitContent(); }
+            if (i===0) { _cmpChartA=ch; _cmpSeriesA=series; } else { _cmpChartB=ch; _cmpSeriesB=series; }
+        });
+        }); // end requestAnimationFrame
+    } catch(e) {
+        document.getElementById('btCmpNotice').textContent = '❌ Request failed.';
+    } finally {
+        btn.disabled = false; btn.textContent = '▶ Run Comparison (same date range)';
+    }
+}
+
 async function runBacktest() {
     const fromVal = document.getElementById('btFrom').value;
     const toVal   = document.getElementById('btTo').value;
@@ -872,7 +1396,7 @@ async function runBacktest() {
         const r = await fetch('/api/backtest/run', {
             method: 'POST',
             headers: authHeaders(),
-            body: JSON.stringify({ mode: 'range', from_date: fromVal, to_date: toVal }),
+            body: JSON.stringify({ mode: 'range', from_date: fromVal, to_date: toVal, direction: _btDir }),
         });
         const d = await r.json();
 
@@ -912,11 +1436,54 @@ async function runBacktest() {
             btSeries.applyOptions({ lineColor: clr, topColor: clr.replace(')', ',0.2)').replace('rgb','rgba'), bottomColor: 'rgba(0,0,0,0.01)' });
         }
 
+        // ── Performance by Trend cards ────────────────────────────────────
+        const trendCfg = {
+            Uptrend:   { icon: '📈', color: '#059669', bg: 'rgba(5,150,105,0.08)',  border: '#059669' },
+            Downtrend: { icon: '📉', color: '#DC2626', bg: 'rgba(220,38,38,0.08)',  border: '#DC2626' },
+            Sideways:  { icon: '↔',  color: '#D97706', bg: 'rgba(217,119,6,0.08)', border: '#D97706' },
+        };
+        const pbt = d.perf_by_trend || {};
+        const trendSection = document.getElementById('btTrendSection');
+        const trendCards   = document.getElementById('btTrendCards');
+        if (Object.keys(pbt).length) {
+            trendCards.innerHTML = Object.entries(trendCfg).map(([label, cfg]) => {
+                const t = pbt[label] || { trades:0, wins:0, losses:0, win_rate:0, total_pnl:0, avg_pnl:0 };
+                const pnlColor = t.total_pnl >= 0 ? '#059669' : '#DC2626';
+                return `<div style="background:${cfg.bg};border:1.5px solid ${cfg.border};border-radius:10px;padding:14px;">
+                    <div style="font-size:13px;font-weight:800;color:${cfg.color};margin-bottom:10px;">${cfg.icon} ${label}</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
+                        <div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;">Trades</div>
+                             <div style="font-weight:700;">${t.trades}</div></div>
+                        <div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;">Win Rate</div>
+                             <div style="font-weight:700;color:${t.win_rate>=50?'#059669':'#DC2626'};">${t.win_rate}%</div></div>
+                        <div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;">W / L</div>
+                             <div style="font-weight:700;"><span style="color:#059669">${t.wins}W</span> / <span style="color:#DC2626">${t.losses}L</span></div></div>
+                        <div><div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;">Avg P&L</div>
+                             <div style="font-weight:700;color:${t.avg_pnl>=0?'#059669':'#DC2626'};">₹${t.avg_pnl.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+                        <div style="grid-column:span 2;border-top:1px solid ${cfg.border};padding-top:8px;margin-top:2px;">
+                            <div style="color:var(--text-muted);font-size:10px;text-transform:uppercase;">Total P&L</div>
+                            <div style="font-weight:800;font-size:16px;color:${pnlColor};">₹${t.total_pnl.toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+            trendSection.style.display = 'block';
+        } else {
+            trendSection.style.display = 'none';
+        }
+
         // ── Daily breakdown table ──
+        const trendBadge = t => {
+            const m = { Uptrend:'📈','Downtrend':'📉','Sideways':'↔','Unknown':'—' };
+            const c = { Uptrend:'#059669', Downtrend:'#DC2626', Sideways:'#D97706', Unknown:'var(--text-muted)' };
+            const bg= { Uptrend:'rgba(5,150,105,0.1)', Downtrend:'rgba(220,38,38,0.1)', Sideways:'rgba(217,119,6,0.1)', Unknown:'transparent' };
+            const label = t || 'Unknown';
+            return `<span style="background:${bg[label]||'transparent'};color:${c[label]||'var(--text-muted)'};padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;">${(m[label]||'')} ${label}</span>`;
+        };
         const tbody = document.getElementById('btDayTbody');
         document.getElementById('btRangeLabel').textContent = fromVal + ' → ' + toVal;
         if (!(d.cumulative || []).length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty">No trading days in range</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="empty">No trading days in range</td></tr>';
         } else {
             tbody.innerHTML = (d.cumulative || []).map(row => {
                 const taken = row.trade_taken;
@@ -930,8 +1497,14 @@ async function runBacktest() {
                 const realBadge = row.used_real_options
                     ? `<span style="color:#059669;font-size:10px;font-weight:700;">✓ Real</span>`
                     : taken ? `<span style="color:#D97706;font-size:10px;">BS est.</span>` : '—';
+                const chg = row.nifty_chg_pct;
+                const chgStr = chg != null
+                    ? `<span style="color:${chg>=0?'#059669':'#DC2626'};font-weight:600;">${chg>=0?'+':''}${chg.toFixed(2)}%</span>`
+                    : '—';
                 return `<tr class="bt-day-row">
                     <td style="font-weight:700">${row.date}</td>
+                    <td>${trendBadge(row.market_trend)}</td>
+                    <td>${chgStr}</td>
                     <td>${taken ? ptBadge : '<span class="bt-none">No trade</span>'}</td>
                     <td>${taken ? '₹' + (row.entry_prem || 0).toFixed(2) : '—'}</td>
                     <td>${taken ? '₹' + (row.exit_prem  || 0).toFixed(2) : '—'}</td>

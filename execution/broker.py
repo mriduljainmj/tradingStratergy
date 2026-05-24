@@ -62,6 +62,8 @@ class KiteBroker:
     def __init__(self, config: TradingConfig):
         self.config = config
         self.kite = KiteConnect(api_key=config.api_key)
+        # Historical data / NFO instruments can be large — increase from default 7 s
+        self.kite.reqsession.timeout = 30
 
     # ── Authentication ─────────────────────────────────────────────────────────
 
@@ -283,10 +285,14 @@ class KiteBroker:
     def get_option_ltp(self, strike: int, option_type: str) -> Optional[float]:
         """
         Fetch the live last-traded price of a NIFTY option from the exchange.
+        Uses get_expiry_date() so we skip holiday-truncated near-expiry contracts
+        and fetch from the same contract that was traded.
         Returns None if the instrument is not found or the quote fails.
         """
-        today = datetime.datetime.now(tz=_IST).date()
-        token = self.find_option_token(strike, option_type, today)
+        from core.options_math import OptionsMath
+        today      = datetime.datetime.now(tz=_IST).date()
+        min_expiry = OptionsMath.get_expiry_date(today)   # skips holiday Tuesdays
+        token = self.find_option_token(strike, option_type, min_expiry)
         if not token:
             return None
         try:
@@ -300,17 +306,23 @@ class KiteBroker:
 
     def get_option_history(self, strike: int, option_type: str,
                            trade_date: datetime.date,
-                           interval: str = "minute") -> tuple:
+                           interval: str = "minute",
+                           min_expiry: datetime.date = None) -> tuple:
         """
         Fetch real 1-min OHLC candles for a NIFTY option on `trade_date`.
         Returns (records, contract_info) where:
           - records      : list of OHLCV dicts (empty on failure)
           - contract_info: dict with tradingsymbol, expiry, token (or None)
 
-        The contract_info lets the caller verify exactly which contract was fetched
-        and display it in the UI — critical for confirming weekly vs monthly expiry.
+        min_expiry: override the on_or_after constraint used to find the contract.
+        Use this to pin the lookup to the holiday-adjusted expiry (e.g. June 2
+        weekly) when fetching data for a different calendar date (e.g. previous
+        trading day). Without it, find_option_contract uses trade_date directly
+        and may resolve to the wrong contract (e.g. May 26 monthly instead of
+        June 2 weekly) which shows completely different price levels.
         """
-        contract = self.find_option_contract(strike, option_type, trade_date)
+        effective_expiry = min_expiry if min_expiry else trade_date
+        contract = self.find_option_contract(strike, option_type, effective_expiry)
         if not contract:
             return [], None
 

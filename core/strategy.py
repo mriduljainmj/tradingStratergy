@@ -19,6 +19,7 @@ class ORBStrategy:
         self.has_traded: bool = False   # True after first entry — prevents re-entry
         self.target_prem: Optional[float] = None
         self.strike: Optional[int] = None
+        self._expiry_date: Optional[datetime.date] = None  # set at entry, used for DTE calc
 
     def process_tick(
         self,
@@ -40,17 +41,17 @@ class ORBStrategy:
         """
         self._update_extremes(tick_high, tick_low)
 
-        if t < datetime.time(9, 20):
+        if t < self.config.or_end_time:
             self._update_or(tick_high, tick_low)
             return None
 
         if (
-            t == datetime.time(9, 20)
+            t == self.config.or_end_time
             and not self.in_position
             and self.state.or_high > 0
             and "OR Locked" not in str(self.state.logs)
         ):
-            logger.info(f"OR Locked. High: {self.state.or_high:.2f}, Low: {self.state.or_low:.2f}")
+            logger.info(f"OR Locked at {self.config.or_end_time}. High: {self.state.or_high:.2f}, Low: {self.state.or_low:.2f}")
 
         if self.in_position:
             return self._manage_position(
@@ -85,7 +86,16 @@ class ORBStrategy:
         tick_close: float,
         real_option_price: Optional[float] = None,
     ) -> Optional[dict]:
-        T_current = 4 / 365.25
+        # Use actual days-to-expiry for Black-Scholes so pricing is proportional
+        # to real DTE (e.g. 11 days for a June 2 weekly) rather than a hardcoded
+        # 4 days that was left over from the old Thursday-expiry era.
+        if self._expiry_date is not None:
+            _IST_tz   = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+            tick_date = datetime.datetime.fromtimestamp(unix_time, tz=_IST_tz).date()
+            dte       = max((self._expiry_date - tick_date).days, 0.5)
+            T_current = dte / 365.25
+        else:
+            T_current = 4 / 365.25   # safe fallback before entry
         cfg = self.config
         is_call = self.state.position_type == "CALL"
         bs = OptionsMath.bs_call if is_call else OptionsMath.bs_put
@@ -225,9 +235,23 @@ class ORBStrategy:
         tick_low: float,
     ) -> Optional[dict]:
         cfg = self.config
-        T_entry = 4 / 365.25
 
         direction = getattr(self.state, "trade_direction", "BOTH").upper()
+
+        # ── Compute actual DTE so Black-Scholes uses the real time-value ─────────
+        # Hardcoding T=4/365 was fine when NIFTY expiry was always Thursday (≈4 DTE
+        # for a Monday/Tuesday trade).  With Tuesday expiry and holiday adjustments
+        # the true DTE can be 1–14 days, making the hardcoded value badly wrong.
+        # Example: May 22 trade with June 2 expiry → 11 DTE, not 4.
+        trade_date = datetime.datetime.fromtimestamp(unix_time).date()
+        expiry     = OptionsMath.get_expiry_date(trade_date)
+        dte        = max((expiry - trade_date).days, 1)   # at least 1 day floor
+        T_entry    = dte / 365.25
+        # Store expiry so _manage_position can use the same DTE for BS fallback.
+        self._expiry_date = expiry
+        logger.debug(f"Entry DTE={dte} ({trade_date} → expiry {expiry}), T_entry={T_entry:.5f}")
+
+        expiry_str = f"Exp {expiry.day} {expiry.strftime('%b')}"   # e.g. "Exp 2 Jun"
 
         if tick_high > self.state.or_high:
             if direction == "PUT":
@@ -258,15 +282,14 @@ class ORBStrategy:
         self.state.entry_prem = entry_prem
         self.state.target_prem = self.target_prem
         suffix = "CE" if self.state.position_type == "CALL" else "PE"
-
-        # Derive trade date from unix_time so expiry works correctly in backtest
-        trade_date = datetime.datetime.fromtimestamp(unix_time).date()
-        expiry     = OptionsMath.get_expiry_date(trade_date)
-        expiry_str = f"Exp {expiry.day} {expiry.strftime('%b')}"   # e.g. "Exp 26 Apr"
         self.state.option_label  = f"NIFTY {self.strike} {suffix}"
         self.state.option_expiry = expiry_str
         ep = round(entry_prem, 2)
-        self.state.option_prices = [{"time": unix_time, "open": ep, "high": ep, "low": ep, "close": ep}]
+        # Snap to minute boundary so this candle shares the same timestamp as
+        # subsequent candles produced by _manage_position (which uses minute_ts).
+        # Using raw unix_time here caused out-of-order candles and a broken chart.
+        entry_minute_ts = (unix_time // 60) * 60
+        self.state.option_prices = [{"time": entry_minute_ts, "open": ep, "high": ep, "low": ep, "close": ep}]
 
         self.state.entry_nifty_px = entry_px
 
@@ -279,7 +302,7 @@ class ORBStrategy:
             "text": f"BUY {pt} @ ₹{entry_px:.0f}",
         })
         self.state.option_markers.append({ # Options chart — show option premium
-            "time": unix_time, "position": pos, "color": color, "shape": shape,
+            "time": entry_minute_ts, "position": pos, "color": color, "shape": shape,
             "text": f"BUY {pt} @ ₹{entry_prem:.0f}",
         })
 

@@ -13,14 +13,14 @@ from config.settings import TradingConfig
 
 logger = logging.getLogger(__name__)
 
-_STRATEGY_FIELDS = ["target_pts", "fib_trail", "entry_end_time", "eod_exit_time", "strike_spacing"]
+_STRATEGY_FIELDS = ["target_pts", "fib_trail", "or_end_time", "entry_end_time", "eod_exit_time", "strike_spacing"]
 _POSITION_FIELDS = ["lot_size", "qty_multiplier"]
 _OPTIONS_FIELDS  = ["risk_free_rate", "assumed_iv"]
 _BROKER_FIELDS   = [
     "brokerage_per_order", "stt_pct", "exchange_charges_pct",
     "gst_pct", "sebi_charges_pct", "stamp_duty_pct",
 ]
-_TIME_FIELDS = {"entry_end_time", "eod_exit_time"}
+_TIME_FIELDS = {"or_end_time", "entry_end_time", "eod_exit_time"}
 
 ALL_FIELDS = _STRATEGY_FIELDS + _POSITION_FIELDS + _OPTIONS_FIELDS + _BROKER_FIELDS
 

@@ -30,6 +30,12 @@ class TradingEngine:
         self.strategy = ORBStrategy(config, state)
         self._stop_event = threading.Event()
 
+        # Previous trading day candles — fetched once and prepended to today's
+        # data so the chart shows the prior session for context (like TradingView).
+        self._prev_nifty_5m: list = []
+        self._prev_nifty_1m: list = []
+        self._prev_nifty_day: datetime.date | None = None
+
     def stop(self):
         self._stop_event.set()
 
@@ -78,10 +84,14 @@ class TradingEngine:
         entry_ts = st.markers[0]["time"]  if len(st.markers) > 0 else None
         exit_ts  = st.markers[-1]["time"] if len(st.markers) > 1 else None
         to_dt = lambda ts: datetime.datetime.fromtimestamp(ts, tz=_IST).replace(tzinfo=None) if ts else None
+        # Use the entry marker's date so the record isn't misdated if the
+        # server clock crosses midnight IST between entry and save.
+        trade_date = (datetime.datetime.fromtimestamp(entry_ts, tz=_IST).date()
+                      if entry_ts else _now().date())
         save_completed_trade(
             user_id       = self.user_id,
             trade_mode    = trade_mode,
-            date          = _now().date(),
+            date          = trade_date,
             position_type = st.position_type,
             entry_prem    = st.entry_prem,
             exit_prem     = st.exit_prem,
@@ -103,9 +113,13 @@ class TradingEngine:
     def fetch_chart_data(self):
         """Fetches 5-minute and 1-minute historical candles for the UI chart.
 
+        Loads TWO sessions (previous trading day + current/most-recent day) so
+        the NIFTY chart always shows prior-session context, just like TradingView.
+        Previous-day data is fetched once and cached; only the current day is
+        re-fetched on each 15-second poll cycle.
+
         When the market is closed (pre-open, post-close, weekend, holiday) we
-        fall back to the most recent day that has data so the NIFTY chart is
-        never empty in PAPER / LIVE mode.
+        fall back to the most recent day that has data so the chart is never blank.
         """
         def to_candles(records):
             return [
@@ -120,11 +134,13 @@ class TradingEngine:
         now   = _now()
         today = now.date()
 
-        # Try today first, then walk back up to 7 calendar days (covers weekends
-        # and single-day NSE holidays) to find the last day with candle data.
+        # ── Step 1: Find current trading day ─────────────────────────────────
+        current_day = None
+        current_5m: list = []
+        current_1m: list = []
+
         for delta in range(8):
             candidate = today - datetime.timedelta(days=delta)
-            # Skip future dates (shouldn't happen, but be safe)
             if candidate > today:
                 continue
             start = f"{candidate} 09:15:00"
@@ -134,25 +150,59 @@ class TradingEngine:
                     self.config.index_token, start, end, "5minute"
                 )
                 if records_5m:
-                    self.state.candles = to_candles(records_5m)
-                    # Also fetch 1m for the same winning date
+                    current_day = candidate
+                    current_5m  = to_candles(records_5m)
                     try:
                         records_1m = self.broker.get_historical_data(
                             self.config.index_token, start, end, "minute"
                         )
-                        self.state.candles_1m = to_candles(records_1m)
+                        current_1m = to_candles(records_1m)
                     except Exception as e:
                         logger.warning(f"1m chart fetch failed for {candidate}: {e}")
                     if delta > 0:
                         logger.info(
-                            f"Market closed for today — showing NIFTY chart "
-                            f"for last trading day: {candidate}"
+                            f"Market closed — showing NIFTY chart for {candidate}"
                         )
-                    return
+                    break
             except Exception as e:
                 logger.warning(f"5m chart fetch failed for {candidate}: {e}")
 
-        logger.error("Could not fetch NIFTY chart data for any of the last 7 days.")
+        if not current_day:
+            logger.error("Could not fetch NIFTY chart data for any of the last 7 days.")
+            return
+
+        # ── Step 2: Load previous trading day (once, cached) ─────────────────
+        # Previous day data is stable (market is closed), so we only fetch it
+        # on the first call.  Subsequent 15-second poll cycles skip this block.
+        if self._prev_nifty_day is None:
+            for delta in range(1, 10):
+                candidate = current_day - datetime.timedelta(days=delta)
+                start = f"{candidate} 09:15:00"
+                end   = f"{candidate} 15:30:00"
+                try:
+                    records_5m = self.broker.get_historical_data(
+                        self.config.index_token, start, end, "5minute"
+                    )
+                    if records_5m:
+                        self._prev_nifty_day = candidate
+                        self._prev_nifty_5m  = to_candles(records_5m)
+                        try:
+                            records_1m = self.broker.get_historical_data(
+                                self.config.index_token, start, end, "minute"
+                            )
+                            self._prev_nifty_1m = to_candles(records_1m)
+                        except Exception as e:
+                            logger.warning(f"1m prev-day fetch failed for {candidate}: {e}")
+                        logger.info(
+                            f"Loaded previous trading day for NIFTY chart: {candidate}"
+                        )
+                        break
+                except Exception as e:
+                    logger.warning(f"5m prev-day fetch failed for {candidate}: {e}")
+
+        # ── Step 3: Combine previous + current ───────────────────────────────
+        self.state.candles    = self._prev_nifty_5m + current_5m
+        self.state.candles_1m = self._prev_nifty_1m + current_1m
 
     def run_backtest(self):
         """BACKTEST mode entry-point.
@@ -204,8 +254,13 @@ class TradingEngine:
         logger.info(f"Backfilling {len(records)} ticks to establish OR and position state…")
 
         # minute-timestamp → real option close price.
-        # Populated once entry is detected; subsequent ticks use real prices.
-        opt_price_map: dict = {}
+        # Populated synchronously once entry is detected; subsequent ticks use
+        # real prices.  _has_real_data gates the neighbour-lookup fallback so we
+        # only use it after the map is loaded (avoids spurious None→fallback when
+        # no position is open yet).
+        opt_price_map:  dict  = {}
+        _has_real_data: bool  = False   # True once opt_price_map is populated
+        _last_real_opt: float = None    # rolling last-seen real price (neighbour fallback)
 
         for r in records:
             if self._stopped():
@@ -213,8 +268,28 @@ class TradingEngine:
             dt  = r["date"]
             ts  = int(dt.timestamp())
 
-            # Use the real option close for this minute if we have it
+            # ── real_opt resolution (three levels) ───────────────────────────
+            # 1. Exact timestamp match in the option price map.
             real_opt = opt_price_map.get(ts)
+
+            # 2. If real data is loaded but the exact ts is missing (minute-
+            #    boundary rounding or server tz drift), try ±60 s neighbours
+            #    first, then fall back to the running last-known price.
+            #    This prevents Black-Scholes from firing false exits when only
+            #    one or two candles are missing from Kite's API response.
+            if real_opt is None and _has_real_data:
+                real_opt = (opt_price_map.get(ts - 60)
+                            or opt_price_map.get(ts + 60)
+                            or _last_real_opt)
+                if real_opt is not None:
+                    logger.debug(
+                        f"Backfill ts {ts}: exact opt price missing — "
+                        f"using fallback ₹{real_opt:.2f}"
+                    )
+
+            # 3. Track rolling last-known price for the next iteration's fallback.
+            if real_opt is not None:
+                _last_real_opt = real_opt
 
             signal = self.strategy.process_tick(
                 ts, dt.time(),
@@ -228,20 +303,31 @@ class TradingEngine:
                     # Entry detected — load today's real 1m option data so all
                     # remaining backfill ticks use actual market prices instead
                     # of Black-Scholes.
+                    # Use get_expiry_date() so we fetch the SAME contract as the
+                    # live order (e.g. June 2 weekly), not the nearest calendar
+                    # expiry (e.g. May 26 monthly) which has different prices.
                     strike   = self.strategy.strike
                     opt_type = "CE" if self.state.position_type == "CALL" else "PE"
                     try:
+                        from core.options_math import OptionsMath
+                        min_expiry = OptionsMath.get_expiry_date(today)
                         opt_records, _contract = self.broker.get_option_history(
-                            strike, opt_type, today
+                            strike, opt_type, today, min_expiry=min_expiry
                         )
                         for opt_r in opt_records:
                             opt_ts = int(opt_r["date"].timestamp())
                             opt_price_map[opt_ts] = opt_r["close"]
+                        _has_real_data = len(opt_price_map) > 0
 
                         # Override the BS-estimated entry premium with the real
                         # option price at the entry tick.
-                        entry_real = opt_price_map.get(ts)
+                        # Try exact ts first, then ±60 s neighbours (same logic
+                        # as the per-tick fallback above).
+                        entry_real = (opt_price_map.get(ts)
+                                      or opt_price_map.get(ts - 60)
+                                      or opt_price_map.get(ts + 60))
                         if entry_real:
+                            _last_real_opt = entry_real
                             ep = round(entry_real, 2)
                             self.state.entry_prem          = ep
                             self.strategy.target_prem      = round(entry_real + self.config.target_pts, 2)
@@ -263,6 +349,32 @@ class TradingEngine:
                                 f"(BS was ₹{signal['price']:.2f}) | "
                                 f"target ₹{self.strategy.target_prem:.2f}"
                             )
+
+                            # ── Back-solve implied IV to calibrate BS fallback ──
+                            # When future ticks have no real option price we use
+                            # Black-Scholes.  Back-solving IV from the real entry
+                            # price makes BS match actual market conditions and
+                            # avoids over-estimated prices from the static default.
+                            try:
+                                is_call = self.state.position_type == "CALL"
+                                implied_iv = OptionsMath.implied_vol(
+                                    entry_real,
+                                    float(self.state.entry_nifty_px),
+                                    float(self.strategy.strike),
+                                    4 / 365.25,
+                                    self.config.risk_free_rate,
+                                    is_call=is_call,
+                                )
+                                if 0.02 <= implied_iv <= 2.0:
+                                    old_iv = self.config.assumed_iv
+                                    self.config.assumed_iv = round(implied_iv, 4)
+                                    logger.info(
+                                        f"Backfill: IV back-solved = {implied_iv:.1%} "
+                                        f"(was {old_iv:.1%}) — BS fallback calibrated"
+                                    )
+                            except Exception as _iv_err:
+                                logger.debug(f"Backfill: IV back-solve skipped: {_iv_err}")
+
                         logger.info(
                             f"Backfill: loaded {len(opt_price_map)} real option ticks "
                             f"for NIFTY{strike}{opt_type} — Black-Scholes disabled"
@@ -321,6 +433,110 @@ class TradingEngine:
             return False
         return True
 
+    def _restore_state_from_trade(self, trade, real_money: bool):
+        """Populate BotState from a completed DB Trade so the dashboard shows
+        the trade summary, NIFTY markers, and option chart after an engine
+        restart instead of an empty screen.
+
+        Called only when _trade_already_completed_today() is True so we never
+        overwrite live-session state with stale DB data.
+        """
+        st  = self.state
+        cfg = self.config
+
+        # ── Trade summary numbers ──────────────────────────────────────────────
+        st.or_high       = float(trade.or_high    or 0)
+        st.or_low        = float(trade.or_low     or 0)
+        st.entry_prem    = float(trade.entry_prem or 0)
+        st.exit_prem     = float(trade.exit_prem  or 0)
+        st.gross_pnl     = float(trade.gross_pnl  or 0)
+        st.total_charges = float(trade.charges    or 0)
+        st.net_pnl       = float(trade.net_pnl    or 0)
+        st.pnl           = st.net_pnl
+        st.exit_reason    = trade.exit_reason      or ""
+        st.position_type  = trade.position_type    or "NONE"
+        st.target_prem    = round(st.entry_prem + cfg.target_pts, 2)
+        # Trade is complete — ensure no stale live-stream values bleed through
+        # from a previous in-memory session (engine restart leaves these at 0
+        # via reset(), but be explicit for safety).
+        st.live_pnl          = 0.0
+        st.live_option_price = 0.0
+
+        # ── Option label + expiry → triggers frontend to auto-fetch the right chart ──
+        if trade.strike and trade.position_type in ("CALL", "PUT"):
+            from core.options_math import OptionsMath
+            opt_suffix      = "CE" if trade.position_type == "CALL" else "PE"
+            st.option_label = f"NIFTY {trade.strike} {opt_suffix}"
+
+            # Resolve expiry for the trade date (holiday-adjusted)
+            expiry = OptionsMath.get_expiry_date(trade.date)
+            st.option_expiry = f"Exp {expiry.day} {expiry.strftime('%b')}"
+
+            # Tell the frontend which date to fetch option candles for.
+            # Without this, _ensureLiveOptHistory defaults to TODAY which shows
+            # completely different prices if the trade was on a previous session.
+            st.option_chart_date = trade.date.isoformat()
+
+        # ── Rebuild NIFTY chart markers from DB timestamps ────────────────────
+        def _to_unix(naive_dt):
+            """DB stores naive datetimes in IST — attach timezone and convert."""
+            if not naive_dt:
+                return None
+            aware = naive_dt.replace(tzinfo=_IST)
+            return int(aware.timestamp())
+
+        entry_ts = _to_unix(trade.entry_time)
+        exit_ts  = _to_unix(trade.exit_time)
+
+        if entry_ts:
+            color = "#2962FF" if trade.position_type == "CALL" else "#F23645"
+            entry_min = (entry_ts // 60) * 60
+            st.markers.append({
+                "time":     entry_min,
+                "position": "belowBar",
+                "color":    color,
+                "shape":    "arrowUp",
+                "text":     f"BUY {trade.position_type} @ ₹{st.entry_prem:.0f}",
+            })
+            # Option chart entry marker
+            st.option_markers.append({
+                "time":     entry_min,
+                "position": "belowBar",
+                "color":    color,
+                "shape":    "arrowUp",
+                "text":     f"BUY @ ₹{st.entry_prem:.0f}",
+            })
+        if exit_ts:
+            exit_min = (exit_ts // 60) * 60
+            st.markers.append({
+                "time":     exit_min,
+                "position": "aboveBar",
+                "color":    "#FF6B00",
+                "shape":    "arrowDown",
+                "text":     f"SELL @ ₹{st.exit_prem:.0f} ({st.exit_reason})",
+            })
+            # Option chart exit marker
+            pnl_icon = "✅" if st.net_pnl >= 0 else "🔴"
+            st.option_markers.append({
+                "time":     exit_min,
+                "position": "aboveBar",
+                "color":    "#FF6B00",
+                "shape":    "arrowDown",
+                "text":     f"{pnl_icon} SELL @ ₹{st.exit_prem:.0f}",
+            })
+
+        pnl_sign = "+" if st.net_pnl >= 0 else ""
+        st.logs.append(
+            f"[Restored] {trade.date} | {st.position_type} {trade.strike} "
+            f"| Entry ₹{st.entry_prem:.0f} → Exit ₹{st.exit_prem:.0f} "
+            f"| {st.exit_reason} | Net P&L {pnl_sign}₹{st.net_pnl:.0f}"
+        )
+        logger.info(
+            f"State restored from DB trade: {trade.position_type} {trade.strike} "
+            f"| entry ₹{st.entry_prem} exit ₹{st.exit_prem} "
+            f"| Net P&L ₹{st.net_pnl:.2f}"
+        )
+
     def run_live(self, real_money: bool = False):
         mode = "REAL MONEY" if real_money else "PAPER TRADING"
         logger.info(f"Mode: {mode} LIVE — connecting to market.")
@@ -340,10 +556,58 @@ class TradingEngine:
             )
             self.state.status = "Trade done for today"
             self.strategy.has_traded = True
+
+            # ── Still load NIFTY chart and trade summary from DB ──────────────
+            # Without this, an engine restart wipes in-memory state and the
+            # dashboard shows a blank chart + empty trade summary.
+            self.fetch_chart_data()
+            try:
+                from db.database import SessionLocal
+                from db.models import Trade as TradeModel
+                db = SessionLocal()
+                try:
+                    today    = _now().date()
+                    mode_str = "LIVE" if real_money else "PAPER"
+                    trade = (
+                        db.query(TradeModel)
+                        .filter(
+                            TradeModel.user_id    == self.user_id,
+                            TradeModel.date       == today,
+                            TradeModel.trade_mode == mode_str,
+                        )
+                        .first()
+                    )
+                    if trade:
+                        self._restore_state_from_trade(trade, real_money)
+                        # Update status to include P&L summary
+                        pnl = trade.net_pnl or 0
+                        sign = "+" if pnl >= 0 else ""
+                        self.state.status = (
+                            f"Trade done for today | "
+                            f"{trade.position_type} {trade.strike} | "
+                            f"P&L {sign}₹{pnl:.0f}"
+                        )
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning(f"State restore from DB trade failed: {e}")
             return
 
         self.fetch_chart_data()
         self._fetch_balance(real_money)
+
+        # Pre-warm the NFO instruments cache so the first call to
+        # get_option_ltp() at the breakout moment never hits a cold cache.
+        # Without this, the instruments load lazily inside find_option_token(),
+        # and if the Kite API call is slow or fails at that exact second,
+        # get_option_ltp() returns None and the Black-Scholes estimate is
+        # saved as the entry price instead of the real market LTP.
+        try:
+            insts = self.broker.get_nfo_instruments()
+            logger.info(f"NFO instrument cache pre-warmed: {len(insts)} contracts")
+        except Exception as _e:
+            logger.warning(f"NFO pre-warm failed (will retry at breakout): {_e}")
+
         self._backfill_session()  # establish OR + position before live loop
 
         # If the day's trade already completed during backfill, stop cleanly.
@@ -366,6 +630,23 @@ class TradingEngine:
             try:
                 ltp = self.broker.get_ltp(self.config.index_symbol)
                 unix_time = int(now_dt.timestamp())
+
+                # ── Build live NIFTY candle (tick-by-tick) ───────────────────
+                # Aggregate every-second LTP ticks into 1-minute OHLC so the
+                # dashboard chart updates in real-time during the OR window
+                # (9:15–9:20) instead of waiting for fetch_chart_data().
+                minute_ts = (unix_time // 60) * 60
+                lc = self.state.live_nifty_candle
+                if lc is None or lc.get("time") != minute_ts:
+                    self.state.live_nifty_candle = {
+                        "time": minute_ts,
+                        "open": ltp, "high": ltp, "low": ltp, "close": ltp,
+                    }
+                else:
+                    lc["high"]  = max(lc["high"], ltp)
+                    lc["low"]   = min(lc["low"],  ltp)
+                    lc["close"] = ltp
+                self.state.live_nifty_ltp = ltp
 
                 # ── Refresh balance every 60 seconds ─────────────────────────
                 balance_tick += 1
@@ -436,14 +717,28 @@ class TradingEngine:
                         self.state.live_pnl         = 0.0
                         self.state.live_option_price = 0.0
                         self._save_trade("LIVE" if real_money else "PAPER")
+                        # Paper mode: reflect the closed trade's net P&L in the
+                        # simulated balance so the header balance is meaningful.
+                        if not real_money:
+                            self.state.balance = round(
+                                self.state.balance + self.state.net_pnl, 2
+                            )
+                            logger.info(
+                                f"Paper balance updated: ₹{self.state.balance:,.2f} "
+                                f"(net P&L ₹{self.state.net_pnl:+.2f})"
+                            )
                         # Refresh balance immediately after trade closes so the
-                        # dashboard reflects the updated P&L without waiting 60s
+                        # dashboard reflects the updated funds without waiting 60s
                         self._fetch_balance(real_money)
                         balance_tick = 0
                         logger.info("Trade complete. Shutting down engine.")
                         break
 
-                if now_dt.second % 15 == 0:
+                # Refresh the NIFTY chart every 15 s during market hours only.
+                # Post-close the candles are static — polling outside 09:15–15:35
+                # just wastes Kite API rate-limit quota.
+                if (now_dt.second % 15 == 0
+                        and datetime.time(9, 15) <= t <= datetime.time(15, 35)):
                     self.fetch_chart_data()
 
                 time.sleep(1)
@@ -459,9 +754,17 @@ class TradingEngine:
         prepend those historical candles to state.option_prices so the chart
         shows the entire session, not just from the entry tick onwards.
         Runs in a background thread — safe to call fire-and-forget.
+
+        Uses get_expiry_date() to find the same contract as the live order
+        (e.g. June 2 weekly) instead of letting find_option_contract pick the
+        nearest expiry (e.g. May 26 monthly) which has different price levels.
         """
         try:
-            records, _contract = self.broker.get_option_history(strike, opt_type, trade_date)
+            from core.options_math import OptionsMath
+            min_expiry = OptionsMath.get_expiry_date(trade_date)
+            records, _contract = self.broker.get_option_history(
+                strike, opt_type, trade_date, min_expiry=min_expiry
+            )
             if not records:
                 logger.info(
                     f"No option history for NIFTY{strike}{opt_type} on {trade_date} "
@@ -479,23 +782,26 @@ class TradingEngine:
                 ],
                 key=lambda c: c["time"],
             )
-            # Historical OHLC from Kite is the authoritative source for all
-            # completed past minutes.  Only keep any live-generated candle for
-            # the current open minute so the very latest partial-minute tick
-            # isn't thrown away.
-            current_minute_ts = (int(_now().timestamp()) // 60) * 60
-            live_open_minute = [
+            # Historical OHLC from Kite is authoritative for all completed past
+            # minutes.  Preserve live-generated candles that are NEWER than the
+            # last historical candle so the live loop's in-flight candles aren't
+            # dropped when this background HTTP fetch completes late.
+            # Using only the "current open minute" (old logic) dropped any
+            # complete-minute candles the live loop generated while we were
+            # fetching — those are now preserved.
+            last_hist_ts = hist[-1]["time"] if hist else 0
+            live_extra = [
                 c for c in self.state.option_prices
-                if c["time"] >= current_minute_ts
+                if c["time"] > last_hist_ts
             ]
             self.state.option_prices = sorted(
-                hist + live_open_minute,
+                hist + live_extra,
                 key=lambda c: c["time"],
             )
             logger.info(
                 f"Option chart backfilled: {len(hist)} historical candles "
-                f"(authoritative) + {len(live_open_minute)} live open-minute "
-                f"candle(s) for NIFTY{strike}{opt_type}"
+                f"(authoritative) + {len(live_extra)} live candle(s) "
+                f"newer than last hist for NIFTY{strike}{opt_type}"
             )
         except Exception as e:
             logger.warning(f"Option chart backfill failed for NIFTY{strike}{opt_type}: {e}")
@@ -553,15 +859,32 @@ class TradingEngine:
                         f"Paper entry: BS ₹{old_bs:.2f} → real LTP ₹{real_entry:.2f} | "
                         f"target ₹{self.strategy.target_prem:.2f}"
                     )
+                else:
+                    # get_option_ltp returned None — NFO instruments cache miss or
+                    # Kite API error.  The Black-Scholes estimate stays as entry_prem.
+                    # Check logs for instrument-cache or auth errors.
+                    logger.warning(
+                        f"Paper entry: could not fetch real LTP for "
+                        f"NIFTY{signal['strike']}{opt_type} — "
+                        f"using BS estimate ₹{self.state.entry_prem:.2f}. "
+                        f"Verify NFO instrument cache is populated."
+                    )
+                    t_str = _now().strftime("%H:%M:%S")
+                    self.state.logs.append(
+                        f"[{t_str}] ⚠ Entry LTP unavailable — "
+                        f"using BS ₹{self.state.entry_prem:.0f} as entry price"
+                    )
 
             if real_money:
-                opt_type = "CE" if signal["type"] == "CALL" else "PE"
+                from core.options_math import OptionsMath
+                opt_type   = "CE" if signal["type"] == "CALL" else "PE"
                 trade_date = _now().date()
-                # Use find_option_tradingsymbol to get the EXACT Kite tradingsymbol
-                # (e.g. "NIFTY2651423700PE" for weekly, "NIFTY26MAY23700PE" for monthly).
-                # build_nfo_symbol() generates the wrong format for Kite orders.
+                # Use the holiday-adjusted expiry as the minimum so we always
+                # resolve to the contract with adequate DTE (not a holiday-
+                # truncated near-expiry that expires the previous trading day).
+                min_expiry = OptionsMath.get_expiry_date(trade_date)
                 sym = self.broker.find_option_tradingsymbol(
-                    signal["strike"], opt_type, trade_date
+                    signal["strike"], opt_type, min_expiry
                 )
                 if not sym:
                     logger.error(
@@ -588,11 +911,15 @@ class TradingEngine:
         elif signal["action"] == "SELL":
             logger.info(f"{signal['reason']} — Exit: ₹{signal['price']:.2f} | P&L: ₹{signal['pnl']:.2f}")
             if real_money:
+                from core.options_math import OptionsMath
                 pos_type   = self.state.position_type
                 opt_type   = "CE" if pos_type == "CALL" else "PE"
                 trade_date = _now().date()
+                # Same holiday-adjusted minimum as the BUY — ensures SELL resolves
+                # to the exact same contract that was purchased earlier.
+                min_expiry = OptionsMath.get_expiry_date(trade_date)
                 sym = self.broker.find_option_tradingsymbol(
-                    self.strategy.strike, opt_type, trade_date
+                    self.strategy.strike, opt_type, min_expiry
                 )
                 if not sym:
                     logger.error(

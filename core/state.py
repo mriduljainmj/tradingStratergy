@@ -39,6 +39,18 @@ class BotState:
     active_strategy_id: Optional[int] = None  # DB id of the selected strategy
     trade_direction: str = "BOTH"          # "CALL" | "PUT" | "BOTH"
 
+    # --- LIVE NIFTY TICK CANDLE ---
+    # Built second-by-second from LTP in run_live() so the chart updates in
+    # real-time instead of waiting 15 s for fetch_chart_data() to refresh.
+    live_nifty_candle: Optional[dict] = None  # {"time":minute_ts, "open","high","low","close"}
+    live_nifty_ltp: float = 0.0               # latest raw NIFTY LTP
+
+    # --- OPTION CHART DATE ---
+    # Normally empty (frontend uses today). Set to YYYY-MM-DD when restoring
+    # from a DB trade so the option chart loads the actual trade date rather
+    # than today's prices (which can differ completely from the trade session).
+    option_chart_date: str = ""
+
     def __post_init__(self):
         # Give paper mode a default simulated balance on first creation
         if self.app_mode == "PAPER" and self.balance == 0.0:
@@ -90,6 +102,9 @@ class BotState:
             self.balance = 100_000.0
         elif new_mode == "BACKTEST":
             self.balance = 0.0   # not applicable in backtest
+        self.live_nifty_candle = None
+        self.live_nifty_ltp = 0.0
+        self.option_chart_date = ""
         self.option_prices = []
         self.option_label = ""
         self.option_expiry = ""
@@ -112,6 +127,8 @@ class BotState:
             "current_high": self.current_high,
             "current_low": self.current_low,
             "position_type": self.position_type,
+            "entry_nifty_px": self.entry_nifty_px,
+            "exit_nifty_px": self.exit_nifty_px,
             "entry_prem": self.entry_prem,
             "exit_prem": self.exit_prem,
             "gross_pnl": self.gross_pnl,
@@ -126,9 +143,13 @@ class BotState:
             "trades_enabled": self.trades_enabled,
             "active_strategy_id": self.active_strategy_id,
             "trade_direction": self.trade_direction,
+            "live_nifty_candle": self.live_nifty_candle,
+            "live_nifty_ltp": self.live_nifty_ltp,
+            "option_chart_date": self.option_chart_date,
             "option_prices": list(self.option_prices),
             "option_label": self.option_label,
             "option_expiry": self.option_expiry,
+            "option_token": self.option_token,
             "target_prem": self.target_prem,
             "used_real_options": self.used_real_options,
             "logs": list(self.logs),

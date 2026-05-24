@@ -887,10 +887,10 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-brand">
       <div class="brand-logo">ORB</div>
-      <span class="brand-text">Architecture</span>
+      <span class="brand-text">ORB Console</span>
     </div>
     <nav class="sidebar-nav">
-      <div class="nav-section-label">Main</div>
+      <div class="nav-section-label">Trading</div>
       <a href="/" class="nav-item active">
         <span class="nav-icon">📊</span><span class="nav-text">Dashboard</span>
       </a>
@@ -900,6 +900,7 @@
       <a href="/screener" class="nav-item">
         <span class="nav-icon">🔍</span><span class="nav-text">Screener</span>
       </a>
+      <div class="nav-section-label">Config</div>
       <a href="/strategy-builder" class="nav-item">
         <span class="nav-icon">⚡</span><span class="nav-text">Strategies</span>
       </a>
@@ -1057,6 +1058,11 @@
                                       <input class="settings-input" id="sf-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
                                   </div>
                                   <div class="settings-field">
+                                      <label>OR End Time</label>
+                                      <div class="field-hint">Opening Range window closes here (default 09:35)</div>
+                                      <input class="settings-input" id="sf-or_end_time" type="time">
+                                  </div>
+                                  <div class="settings-field">
                                       <label>Last Entry Time</label>
                                       <div class="field-hint">No new trades after this time</div>
                                       <input class="settings-input" id="sf-entry_end_time" type="time">
@@ -1121,6 +1127,11 @@
                                       <label>Trail SL — Fibonacci Level</label>
                                       <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
                                       <input class="settings-input" id="sf2-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>OR End Time</label>
+                                      <div class="field-hint">Opening Range window closes here (default 09:35)</div>
+                                      <input class="settings-input" id="sf2-or_end_time" type="time">
                                   </div>
                                   <div class="settings-field">
                                       <label>Last Entry Time</label>
@@ -1202,6 +1213,11 @@
                                       <label>Trail SL — Fibonacci Level</label>
                                       <div class="field-hint">0.382 = 38.2% of swing range (0–1 scale)</div>
                                       <input class="settings-input" id="sf3-fib_trail" type="number" step="0.01" placeholder="e.g. 0.382">
+                                  </div>
+                                  <div class="settings-field">
+                                      <label>OR End Time</label>
+                                      <div class="field-hint">Opening Range window closes here (default 09:35)</div>
+                                      <input class="settings-input" id="sf3-or_end_time" type="time">
                                   </div>
                                   <div class="settings-field">
                                       <label>Last Entry Time</label>
@@ -1775,10 +1791,10 @@
         function updateOptionsChart(state) {
             let prices = state.option_prices || [];
 
-            // In paper/live mode: merge full-day historical base with live ticks.
-            // _liveOptBase holds candles from 09:15; live ticks arrive every second
-            // from entry onwards. We keep historical candles that predate the first
-            // live tick so there's no gap or overlap.
+            // In paper/live mode: merge full-history base (previous day + today from
+            // 09:15) with live ticks from entry onwards.  _liveOptBase holds ALL
+            // historical candles; we take only those that predate the first live tick
+            // so there's no gap, overlap, or duplicate between the two sources.
             if (_liveOptBase.length) {
                 if (prices.length) {
                     const firstLiveTs = prices[0].time;
@@ -1858,7 +1874,7 @@
         let _liveOptBase     = [];    // full-day historical candles (fetched once)
         let _liveOptFetching = false; // guard against parallel fetches
 
-        async function _ensureLiveOptHistory(appMode, optLabel) {
+        async function _ensureLiveOptHistory(appMode, optLabel, optChartDate) {
             // Only run in live/paper mode; skip if nothing changed or already fetching
             if (appMode !== 'PAPER' && appMode !== 'LIVE') {
                 if (_liveOptLabel) { _liveOptLabel = ''; _liveOptBase = []; }
@@ -1868,27 +1884,41 @@
                 if (_liveOptLabel) { _liveOptLabel = ''; _liveOptBase = []; }
                 return;
             }
-            if (optLabel === _liveOptLabel || _liveOptFetching) return;
+            // Re-fetch if label OR date changed (trade from a different session)
+            const cacheKey = optLabel + '|' + (optChartDate || '');
+            if (cacheKey === _liveOptLabel || _liveOptFetching) return;
 
             // Mark immediately to prevent re-entry on next poll tick
             _liveOptFetching = true;
-            _liveOptLabel    = optLabel;
+            _liveOptLabel    = cacheKey;
             _liveOptBase     = [];
 
             const m = optLabel.match(/NIFTY\s+(\d+)\s+(CE|PE)/i);
             if (!m) { _liveOptFetching = false; return; }
             try {
-                const today = new Date().toISOString().slice(0, 10);
-                const res = await authFetch(`/api/option-chart?strike=${m[1]}&type=${m[2]}&date=${today}`);
+                // Use the trade date from state if provided (e.g. restored from DB
+                // after page refresh — avoids loading today's prices when the trade
+                // happened on a different session where levels were completely different).
+                const today     = new Date().toISOString().slice(0, 10);
+                const fetchDate = optChartDate || today;
+                const res = await authFetch(`/api/option-chart?strike=${m[1]}&type=${m[2]}&date=${fetchDate}`);
                 const d   = await res.json();
                 if (d.ok && d.data.length) {
                     _liveOptBase = d.data;
                     rawOptCandles = d.data;
-                    // Update label to show exact resolved contract (e.g. NIFTY2651923400PE)
+                    // Update label to show exact resolved contract (e.g. NIFTY2JUN23700CE)
                     if (d.tradingsymbol) {
                         document.getElementById('optLabel').innerText = d.tradingsymbol;
                     }
-                    console.debug(`[OptChart] Backfilled ${d.data.length} candles for ${d.tradingsymbol || optLabel}`);
+                    // Show expiry tag from API if not already set by state
+                    if (d.expiry) {
+                        const expiryEl = document.getElementById('optExpiryTag');
+                        if (expiryEl && !expiryEl.innerText) {
+                            expiryEl.innerText = 'Exp ' + d.expiry;
+                            expiryEl.style.display = 'inline-block';
+                        }
+                    }
+                    console.debug(`[OptChart] Loaded ${d.data.length} candles for ${d.tradingsymbol || optLabel} (${fetchDate})`);
                 }
             } catch(e) { console.warn('[OptChart] Backfill fetch failed:', e); }
             _liveOptFetching = false;
@@ -2060,7 +2090,7 @@
                 const r = await authFetch(`/api/settings?mode=${mode}`);
                 const cfg = await r.json();
                 if (cfg.error) return;
-                const fields = ['target_pts','fib_trail','entry_end_time','eod_exit_time',
+                const fields = ['target_pts','fib_trail','or_end_time','entry_end_time','eod_exit_time',
                                 'strike_spacing','lot_size','qty_multiplier',
                                 'risk_free_rate','assumed_iv',
                                 'brokerage_per_order','stt_pct','exchange_charges_pct',
@@ -2124,11 +2154,12 @@
             const el = document.getElementById('btSettingsSummary');
             if (!el || !cfg) return;
             const tgt   = cfg.target_pts     !== undefined ? `Target: ₹${cfg.target_pts}` : '';
+            const orEnd = cfg.or_end_time    !== undefined ? `OR End: ${cfg.or_end_time}` : '';
             const entry = cfg.entry_end_time !== undefined ? `Last Entry: ${cfg.entry_end_time}` : '';
             const eod   = cfg.eod_exit_time  !== undefined ? `Force-Close: ${cfg.eod_exit_time}` : '';
             const qty   = cfg.qty_multiplier !== undefined && cfg.lot_size !== undefined
                             ? `Qty: ${Math.round(cfg.lot_size * cfg.qty_multiplier)} (${cfg.qty_multiplier} lots)` : '';
-            const parts = [tgt, entry, eod, qty].filter(Boolean);
+            const parts = [tgt, orEnd, entry, eod, qty].filter(Boolean);
             if (parts.length) {
                 el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
                 el.style.display = '';
@@ -2163,7 +2194,7 @@
         function saveSettings() {
             const prefixMap = { BACKTEST: 'sf', PAPER: 'sf2', LIVE: 'sf3' };
             const prefix = prefixMap[settingsTab];
-            const fields = ['target_pts','fib_trail','entry_end_time','eod_exit_time',
+            const fields = ['target_pts','fib_trail','or_end_time','entry_end_time','eod_exit_time',
                             'strike_spacing','lot_size','qty_multiplier',
                             'risk_free_rate','assumed_iv',
                             'brokerage_per_order','stt_pct','exchange_charges_pct',
@@ -2221,7 +2252,9 @@
         function buildLevels(state) {
             const h = state.current_high, l = state.current_low, r = h - l;
             const orH = state.or_high, orL = state.or_low, orR = orH - orL;
-            const hasOR = orH > 0 && orL > 0 && orL < orH;
+            // hasOR: true as soon as we have any OR value; OR lines appear
+            // immediately on the first 9:15 tick, not only after orL < orH.
+            const hasOR = orH > 0 || orL > 0;
 
             if (state.position_type === 'CALL') {
                 return {
@@ -2256,13 +2289,22 @@
                     } : {}),
                 };
             } else if (hasOR) {
-                return {
-                    'High':  { p: orH,               c: '#2962FF', t: 'OR High',   s: 2, w: 2 },
-                    'Fib61': { p: orL + orR * 0.618, c: '#787B86', t: 'Fib 61.8%', s: 3, w: 1 },
-                    'Fib50': { p: orL + orR * 0.500, c: '#787B86', t: 'Fib 50%',   s: 3, w: 1 },
-                    'Fib38': { p: orL + orR * 0.382, c: '#787B86', t: 'Fib 38.2%', s: 3, w: 1 },
-                    'Low':   { p: orL,               c: '#F23645', t: 'OR Low',    s: 2, w: 2 },
-                };
+                // OR is forming (or formed, no position yet).
+                // orH and orL may be equal on the very first tick — show a single
+                // "OR (Forming…)" line and expand into High/Low as the range widens.
+                const orForming = orH === orL || orL === 0 || orH === 0;
+                const lines = {};
+                if (orH > 0) {
+                    lines['High'] = { p: orH, c: '#2962FF',
+                        t: orForming ? 'OR (Forming…)' : 'OR High', s: 2, w: 2 };
+                }
+                if (orL > 0 && !orForming) {
+                    lines['Low']   = { p: orL,               c: '#F23645', t: 'OR Low',    s: 2, w: 2 };
+                    lines['Fib61'] = { p: orL + orR * 0.618, c: '#787B86', t: 'Fib 61.8%', s: 3, w: 1 };
+                    lines['Fib50'] = { p: orL + orR * 0.500, c: '#787B86', t: 'Fib 50%',   s: 3, w: 1 };
+                    lines['Fib38'] = { p: orL + orR * 0.382, c: '#787B86', t: 'Fib 38.2%', s: 3, w: 1 };
+                }
+                return lines;
             }
             return null;
         }
@@ -2274,7 +2316,13 @@
                 return;
             }
 
-            if (state.current_high > 0 && state.current_low > 0 && state.current_low < state.current_high) {
+            // Draw lines when:
+            //  • We have a position with a valid swing range (Fib + OR reference), OR
+            //  • OR values are being tracked (even if equal on the very first tick of 9:15)
+            const hasRange  = state.current_high > 0 && state.current_low > 0 && state.current_low < state.current_high;
+            const hasOrData = state.or_high > 0 || state.or_low > 0;
+
+            if (hasRange || hasOrData) {
                 if (state.position_type !== lastPositionType) {
                     clearFibLines();
                     lastPositionType = state.position_type;
@@ -2298,6 +2346,23 @@
                 .then(state => {
                     if (!frozenChart) {
                         rawNiftyCandles = state.candles_1m && state.candles_1m.length ? state.candles_1m : state.candles;
+
+                        // Merge the live forming candle (built tick-by-tick in run_live)
+                        // so the chart and OR lines update every second, not every 15 s.
+                        if (state.live_nifty_candle && state.app_mode !== 'BACKTEST') {
+                            const lc   = state.live_nifty_candle;
+                            const last = rawNiftyCandles.length
+                                ? rawNiftyCandles[rawNiftyCandles.length - 1]
+                                : null;
+                            if (last && last.time === lc.time) {
+                                // Replace the incomplete last candle in-place
+                                rawNiftyCandles = [...rawNiftyCandles.slice(0, -1), lc];
+                            } else if (!last || last.time < lc.time) {
+                                // Append new minute candle (or first candle ever)
+                                rawNiftyCandles = [...rawNiftyCandles, lc];
+                            }
+                        }
+
                         candleSeries.setData(aggregateCandles(rawNiftyCandles, currentTf));
                         rawMarkers    = state.markers        || [];
                         rawOptMarkers = state.option_markers || [];
@@ -2349,7 +2414,7 @@
 
                         document.getElementById('logs').innerHTML = state.logs.map(l => `<div>${l}</div>`).join('');
                         // Backfill full-day option history on first entry (paper/live)
-                        _ensureLiveOptHistory(state.app_mode, state.option_label || '');
+                        _ensureLiveOptHistory(state.app_mode, state.option_label || '', state.option_chart_date || '');
                         updateOptionsChart(state);
                         checkTradeNotification(state);
                     }
@@ -2377,6 +2442,9 @@
                         chip.className = 'mode-chip mode-chip-' + state.app_mode;
                         chip.style.display = '';
                     }
+
+                    // Clear the backtest date badge when not in BACKTEST mode
+                    if (state.app_mode !== 'BACKTEST') setViewingDate(null);
 
                     // Show/hide backtest date-prompt overlay
                     const isBacktest = state.app_mode === 'BACKTEST';
@@ -2468,6 +2536,7 @@
                 clearFibLines();
                 clearOptionsChart();
                 closeRangeResults();
+                setViewingDate(null);
                 // Overlay: hide when leaving backtest, will re-appear via pollData if needed
                 const overlay = document.getElementById('datePromptOverlay');
                 if (overlay && mode !== 'BACKTEST') overlay.style.display = 'none';
@@ -2501,13 +2570,13 @@
             if (btTab === 'single') {
                 const date = document.getElementById('btDate').value;
                 if (!date) { status.innerText = 'Pick a date first.'; btn.disabled = false; return; }
-                body = { mode: 'single', date };
+                body = { mode: 'single', date, direction: _tradeDirection };
                 showChartLoader('Loading ' + date + '…');
             } else {
                 const from_date = document.getElementById('btFrom').value;
                 const to_date   = document.getElementById('btTo').value;
                 if (!from_date || !to_date) { status.innerText = 'Pick both dates.'; btn.disabled = false; return; }
-                body = { mode: 'range', from_date, to_date };
+                body = { mode: 'range', from_date, to_date, direction: _tradeDirection };
                 showChartLoader('Running backtest…');
             }
 
@@ -2551,7 +2620,7 @@
             authFetch('/api/backtest/run', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: 'single', date: dateStr })
+                body: JSON.stringify({ mode: 'single', date: dateStr, direction: _tradeDirection })
             })
             .then(res => res.json())
             .then(data => {

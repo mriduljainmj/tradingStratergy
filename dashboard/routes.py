@@ -321,6 +321,33 @@ def run_historical_backtest():
     # complete and can be backtested just like any other historical day.
     market_closed = _now_ist.time() >= datetime.time(15, 30)
 
+    direction = (data.get("direction", "BOTH") or "BOTH").upper()
+    if direction not in ("CALL", "PUT", "BOTH"):
+        direction = "BOTH"
+
+    # Optional per-request config overrides (used by analytics compare feature)
+    # These are applied temporarily to a cloned config — the live engine config
+    # is never mutated.
+    from config.settings import TradingConfig
+    from config.config_utils import apply_settings_json
+    import copy, dataclasses
+    bt_cfg = copy.copy(ue.backtester.config)   # shallow clone so overrides are isolated
+    if "or_end_time" in data:
+        try:
+            parts = str(data["or_end_time"]).split(":")
+            bt_cfg.or_end_time = datetime.time(int(parts[0]), int(parts[1]))
+        except Exception:
+            pass
+    if "target_pts" in data:
+        try:
+            bt_cfg.target_pts = int(data["target_pts"])
+        except Exception:
+            pass
+
+    # Use the (possibly overridden) config for this request's backtester
+    from execution.historical_backtest import HistoricalBacktester
+    backtester = HistoricalBacktester(bt_cfg, ue.backtester.broker)
+
     if mode == "single":
         date_str = data.get("date", "")
         try:
@@ -331,7 +358,7 @@ def run_historical_backtest():
             return jsonify({"error": "Backtest date cannot be in the future."}), 400
         if date == today and not market_closed:
             return jsonify({"error": "Today's session is not yet complete — use Paper or Live mode to trade today."}), 400
-        result = ue.backtester.run_day(date)
+        result = backtester.run_day(date, direction=direction)
         _check_auth(result)
         return jsonify(result)
 
@@ -347,11 +374,61 @@ def run_historical_backtest():
             return jsonify({"error": "Today's session is not yet complete — use Paper or Live mode to trade today. Set the end date to yesterday or earlier."}), 400
         if from_date > to_date:
             return jsonify({"error": "From date must be before To date."}), 400
-        result = ue.backtester.run_range(from_date, to_date)
+        result = backtester.run_range(from_date, to_date, direction=direction)
         _check_auth(result)
         return jsonify(result)
 
     return jsonify({"error": "mode must be 'single' or 'range'"}), 400
+
+
+# ── Strategy optimizer (grid search) ─────────────────────────────────────────
+
+@dashboard_bp.route("/api/backtest/optimize", methods=["POST"])
+@jwt_required()
+def run_backtest_optimize():
+    ue   = _ue()
+    data = request.json or {}
+
+    from_date_str = data.get("from_date", "")
+    to_date_str   = data.get("to_date",   "")
+    try:
+        from_date = datetime.date.fromisoformat(from_date_str)
+        to_date   = datetime.date.fromisoformat(to_date_str)
+    except ValueError:
+        return jsonify({"error": "Invalid dates. Use YYYY-MM-DD format."}), 400
+
+    _IST      = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    _now_ist  = datetime.datetime.now(tz=_IST)
+    today     = _now_ist.date()
+    if to_date > today:
+        to_date = today  # silently clamp to today
+
+    # ── Parameter ranges sent from the frontend ───────────────────────────────
+    or_times   = data.get("or_times",   ["09:20","09:25","09:30","09:35","09:40","09:45"])
+    targets    = [int(t) for t in data.get("targets",   [80, 100, 120, 140, 160, 180, 200])]
+    directions = [d.upper() for d in data.get("directions", ["CALL", "BOTH", "PUT"])
+                  if d.upper() in ("CALL", "PUT", "BOTH")]
+    metric     = data.get("metric", "total_pnl")
+    if metric not in ("total_pnl", "win_rate", "profit_factor", "trade_days"):
+        metric = "total_pnl"
+
+    if not or_times or not targets or not directions:
+        return jsonify({"error": "No parameter combinations to test."}), 400
+
+    import copy
+    from execution.historical_backtest import HistoricalBacktester
+
+    bt_cfg    = copy.copy(ue.backtester.config)
+    backtester = HistoricalBacktester(bt_cfg, ue.backtester.broker)
+
+    result = backtester.optimize(
+        from_date, to_date,
+        or_times=or_times,
+        targets=targets,
+        directions=directions,
+        metric=metric,
+    )
+    return jsonify(result)
 
 
 # ── Option chart ──────────────────────────────────────────────────────────────
@@ -375,15 +452,8 @@ def option_chart():
     except ValueError:
         return jsonify({"ok": False, "error": "Invalid date format"}), 400
 
-    try:
-        records, contract = ue.broker.get_option_history(strike, opt_type, trade_date, interval)
-        if contract is None:
-            return jsonify({
-                "ok":    False,
-                "error": f"No NFO contract found for NIFTY {strike}{opt_type} "
-                         f"expiring on/after {trade_date}",
-            }), 404
-        candles = [
+    def _to_candles(records):
+        return [
             {
                 "time":  int(r["date"].timestamp()),
                 "open":  r["open"], "high": r["high"],
@@ -391,9 +461,49 @@ def option_chart():
             }
             for r in records
         ]
+
+    try:
+        # Use get_expiry_date() so we consistently resolve the same contract
+        # as the live order (e.g. June 2 weekly) rather than the nearest
+        # calendar expiry (e.g. May 26 monthly) which has different prices.
+        from core.options_math import OptionsMath
+        min_expiry = OptionsMath.get_expiry_date(trade_date)
+
+        records, contract = ue.broker.get_option_history(
+            strike, opt_type, trade_date, interval, min_expiry=min_expiry
+        )
+        if contract is None:
+            return jsonify({
+                "ok":    False,
+                "error": f"No NFO contract found for NIFTY {strike}{opt_type} "
+                         f"expiring on/after {min_expiry}",
+            }), 404
+
+        candles = _to_candles(records)
+
+        # Also fetch the previous trading day for the SAME contract (min_expiry
+        # is passed so we don't accidentally switch to a different expiry when
+        # fetching data for an earlier date).
+        # Skip weekends and NSE holidays so we never waste an API call on a day
+        # that has no data and immediately try the day before.
+        prev_candles: list = []
+        for delta in range(1, 10):   # wider range: skipped days don't count as attempts
+            prev_date = trade_date - datetime.timedelta(days=delta)
+            if not OptionsMath.is_trading_day(prev_date):
+                continue
+            try:
+                prev_records, _ = ue.broker.get_option_history(
+                    strike, opt_type, prev_date, interval, min_expiry=min_expiry
+                )
+                if prev_records:
+                    prev_candles = _to_candles(prev_records)
+                    break
+            except Exception:
+                pass   # holiday / no data — try the day before
+
         return jsonify({
             "ok":            True,
-            "data":          candles,
+            "data":          prev_candles + candles,
             "label":         f"NIFTY {strike} {opt_type}",
             # Exact contract resolved — lets the UI display the actual expiry
             # so users can verify against Kite (weekly vs monthly mismatch check)
@@ -408,6 +518,156 @@ def option_chart():
         if is_kite_auth_error(e):
             ue.state.kite_auth_error = True
         return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# ── Recalculate a saved trade's entry price from real Kite data ───────────────
+
+@dashboard_bp.route("/api/trade/<int:trade_id>/recalculate-entry", methods=["POST"])
+@jwt_required()
+def recalculate_trade_entry(trade_id):
+    """
+    Re-fetch the real 1-min option LTP at entry_time from Kite historical data,
+    then update entry_prem + recalculate gross_pnl / charges / net_pnl in the DB.
+
+    Use this to correct a trade that was saved with a Black-Scholes entry price
+    (e.g. when get_option_ltp failed at the moment of the breakout).
+    Also patches the live in-memory state so the dashboard updates immediately
+    without requiring an engine restart.
+    """
+    from db.database import SessionLocal
+    from db.models import Trade as TradeModel
+    from core.options_math import OptionsMath
+
+    _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    uid  = _uid()
+    ue   = _ue()
+    cfg  = ue.config
+
+    db = SessionLocal()
+    try:
+        trade = db.get(TradeModel, trade_id)
+        if not trade or trade.user_id != uid:
+            return jsonify({"ok": False, "error": "Trade not found"}), 404
+
+        if not trade.entry_time or not trade.strike or not trade.position_type:
+            return jsonify({"ok": False, "error":
+                            "Trade missing entry_time, strike, or position_type"}), 400
+
+        opt_type   = "CE" if trade.position_type == "CALL" else "PE"
+        trade_date = trade.date   # datetime.date
+
+        # ── Fetch real 1-min option history ───────────────────────────────────
+        min_expiry = OptionsMath.get_expiry_date(trade_date)
+        records, contract_info = ue.broker.get_option_history(
+            trade.strike, opt_type, trade_date,
+            interval="minute", min_expiry=min_expiry,
+        )
+        if not records:
+            return jsonify({"ok": False, "error":
+                f"No 1-min data from Kite for NIFTY{trade.strike}{opt_type} "
+                f"on {trade_date} (expiry {min_expiry})"}), 404
+
+        # Build timestamp → close map (round to minute boundary)
+        opt_price_map: dict = {}
+        for r in records:
+            r_dt = r["date"]
+            if r_dt.tzinfo is None:
+                r_dt = r_dt.replace(tzinfo=_IST)
+            opt_price_map[(int(r_dt.timestamp()) // 60) * 60] = r["close"]
+
+        # Entry time is stored as naive IST in the DB
+        entry_aware = trade.entry_time.replace(tzinfo=_IST)
+        entry_ts    = (int(entry_aware.timestamp()) // 60) * 60
+
+        # Exact match, then ±1 minute tolerance for any second-level offset
+        real_entry = (opt_price_map.get(entry_ts)
+                      or opt_price_map.get(entry_ts - 60)
+                      or opt_price_map.get(entry_ts + 60))
+
+        if real_entry is None:
+            closest = min(opt_price_map, key=lambda k: abs(k - entry_ts), default=None)
+            return jsonify({"ok": False,
+                "error": f"No option candle within ±1 min of entry {trade.entry_time}",
+                "closest_ts": closest,
+                "closest_price": opt_price_map.get(closest),
+            }), 404
+
+        # ── Recalculate P&L with the correct entry ────────────────────────────
+        qty       = trade.quantity or cfg.qty
+        exit_prem = float(trade.exit_prem or 0)
+        new_entry = round(float(real_entry), 2)
+
+        gross_pnl = round((exit_prem - new_entry) * qty, 2)
+        buy_val   = new_entry * qty
+        sell_val  = exit_prem * qty
+        turnover  = buy_val + sell_val
+        brokerage = cfg.brokerage_per_order * 2
+        stt       = sell_val * cfg.stt_pct
+        exch      = turnover * cfg.exchange_charges_pct
+        gst       = (brokerage + exch) * cfg.gst_pct
+        sebi      = turnover * cfg.sebi_charges_pct
+        stamp     = buy_val  * cfg.stamp_duty_pct
+        charges   = round(brokerage + stt + exch + gst + sebi + stamp, 2)
+        net_pnl   = round(gross_pnl - charges, 2)
+
+        old_entry = trade.entry_prem
+        old_net   = trade.net_pnl
+
+        # ── Persist to DB ─────────────────────────────────────────────────────
+        trade.entry_prem = new_entry
+        trade.gross_pnl  = gross_pnl
+        trade.charges    = charges
+        trade.net_pnl    = net_pnl
+        db.commit()
+
+        # ── Patch live in-memory state so dashboard updates without restart ───
+        st = ue.state
+        if st.position_type == trade.position_type:
+            st.entry_prem    = new_entry
+            st.gross_pnl     = gross_pnl
+            st.total_charges = charges
+            st.net_pnl       = net_pnl
+            st.pnl           = net_pnl
+            st.target_prem   = round(new_entry + cfg.target_pts, 2)
+            # Fix the option chart BUY marker label
+            for m in st.option_markers:
+                if "BUY" in m.get("text", ""):
+                    m["text"] = f"BUY {trade.position_type} @ ₹{new_entry:.0f}"
+            pnl_sign = "+" if net_pnl >= 0 else ""
+            st.status = (f"Trade done for today | "
+                         f"{trade.position_type} {trade.strike} | "
+                         f"P&L {pnl_sign}₹{net_pnl:.0f}")
+            st.logs.append(
+                f"[--:--:--] ✏ Entry recalculated: BS ₹{old_entry:.0f} → "
+                f"real ₹{new_entry:.0f} | Net P&L ₹{old_net:.0f} → {pnl_sign}₹{net_pnl:.0f}"
+            )
+
+        logger.info(
+            f"Trade {trade_id}: entry ₹{old_entry} → ₹{new_entry} | "
+            f"net_pnl ₹{old_net:.2f} → ₹{net_pnl:.2f} "
+            f"({contract_info['tradingsymbol'] if contract_info else 'n/a'})"
+        )
+        return jsonify({
+            "ok":              True,
+            "trade_id":        trade_id,
+            "tradingsymbol":   contract_info["tradingsymbol"] if contract_info else None,
+            "old_entry_prem":  old_entry,
+            "new_entry_prem":  new_entry,
+            "exit_prem":       exit_prem,
+            "gross_pnl":       gross_pnl,
+            "charges":         charges,
+            "old_net_pnl":     old_net,
+            "new_net_pnl":     net_pnl,
+        })
+
+    except Exception as e:
+        db.rollback()
+        from execution.broker import is_kite_auth_error
+        if is_kite_auth_error(e):
+            ue.state.kite_auth_error = True
+        return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        db.close()
 
 
 # ── NIFTY history chart ───────────────────────────────────────────────────────

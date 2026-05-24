@@ -205,14 +205,13 @@ class EnginePool:
                     f"for user {user_id}."
                 )
                 ue.state.kite_auth_error = False
-                if not ue.is_running:
+                if not ue.is_running or ue.state.app_mode != "PAPER":
                     if already_traded_today:
                         logger.info(
                             f"EnginePool: trade already completed today for user "
-                            f"{user_id} — skipping auto-start to prevent re-entry."
+                            f"{user_id} — starting PAPER engine to restore chart & summary."
                         )
-                    else:
-                        ue.start("PAPER")
+                    ue.start("PAPER")
             else:
                 logger.info(
                     f"EnginePool: No valid token in DB for user {user_id} "
