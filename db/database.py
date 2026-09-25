@@ -7,9 +7,16 @@ from db.models import Base
 
 _DB_URL = os.getenv("DATABASE_URL", "").strip() or "sqlite:///trading.db"
 
-# Render / Heroku export postgres:// but SQLAlchemy needs postgresql://
+# Render / Heroku may export postgres://. SQLAlchemy 2.1 defaults a bare
+# postgresql:// URL to the psycopg (v3) dialect, while this application ships
+# psycopg2-binary for broad Python/Render compatibility. Select that driver
+# explicitly so the URL works on both the Docker and native Python services.
 if _DB_URL.startswith("postgres://"):
     _DB_URL = _DB_URL.replace("postgres://", "postgresql://", 1)
+if _DB_URL.startswith("postgresql://"):
+    _DB_URL = _DB_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+elif _DB_URL.startswith("postgresql+psycopg://"):
+    _DB_URL = _DB_URL.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
 
 _is_sqlite = _DB_URL.startswith("sqlite")
 
