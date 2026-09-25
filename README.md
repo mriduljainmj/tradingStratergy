@@ -69,7 +69,7 @@ See [verification and migration notes](docs/REVAMP.md) for the tested scope and 
 
 ## Deployment
 
-The multi-stage `Dockerfile` builds Angular and packages it with Python. `render.yaml` uses this image. Configure a persistent PostgreSQL `DATABASE_URL`, `APP_ENV=production`, a stable random `JWT_SECRET_KEY` of at least 32 characters and broker keys. Keep `ENCRYPT_KEY` stable if already used to encrypt stored broker credentials. Without an explicit encryption key, the signing secret derives the encryption key; changing it requires reconnecting broker sessions.
+`render.yaml` installs Python dependencies, runs `npm ci && npm run build` inside `frontend/`, and starts one Gunicorn worker with threads. The multi-stage `Dockerfile` remains available for container deployments. Configure a persistent PostgreSQL `DATABASE_URL`, `APP_ENV=production`, a stable random `JWT_SECRET_KEY` of at least 32 characters and broker keys. Keep `ENCRYPT_KEY` stable if already used to encrypt stored broker credentials. Without an explicit encryption key, the signing secret derives the encryption key; changing it requires reconnecting broker sessions.
 
 Run **one Python worker** with threads: engine state and coordination locks live in that process. Horizontal replicas or multiple Gunicorn workers require a separate shared execution service and distributed locking. The image runs one worker with eight threads on port 8080. Use an always-on host for any unattended engine; a sleeping/free web service cannot reliably manage positions.
 
