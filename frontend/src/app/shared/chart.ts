@@ -285,13 +285,36 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     if (this.loading()) this.select(false);
     this.paint();
   }
+  private renderedData: any[] | null = null;
   private paint() {
     if (!this.series) return;
     if (this.loading()) {
-      this.series.setData([]);
+      if (this.renderedData !== null) this.series.setData([]);
+      this.renderedData = null;
       this.readout.set('');
       this.fitted = false;
       return;
+    }
+    const data = this.data();
+    if (data === this.renderedData) return;
+    const previous = this.renderedData;
+    if (previous?.length && data.length >= previous.length) {
+      let prefix = 0;
+      while (prefix < previous.length - 1 && data[prefix] === previous[prefix]) prefix++;
+      const tail = data.slice(previous.length - 1);
+      let last = chartDate(previous[previous.length - 1].time).getTime();
+      const valid = tail.every((row, i) => {
+        const stamp = chartDate(row.time).getTime();
+        const ordered = Number.isFinite(stamp) && (i === 0 ? stamp === last : stamp > last);
+        last = stamp;
+        return ordered;
+      });
+      if (prefix === previous.length - 1 && valid && !this.fitUpdates()) {
+        for (const row of tail) this.series.update(row);
+        this.readout.set(this.describe(data.at(-1)));
+        this.renderedData = data;
+        return;
+      }
     }
     const unique = new Map<number, any>();
     for (const row of this.data()) {
@@ -303,6 +326,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.readout.set(this.describe(rows.at(-1)));
     this.chart?.applyOptions({ timeScale: { timeVisible: typeof rows[0]?.time === 'number' } });
     this.series.setData(rows);
+    this.renderedData = data;
     if (rows.length && (!this.fitted || this.fitUpdates())) {
       this.chart?.timeScale().fitContent();
       this.fitted = true;

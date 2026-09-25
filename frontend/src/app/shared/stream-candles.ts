@@ -24,7 +24,6 @@ export function mergeChartStream(
     const open = Math.floor((ts + 19800) / 86400) * 86400 - 19800 + 9 * 3600 + 15 * 60;
     return open + Math.floor((ts - open) / seconds) * seconds;
   }
-  const bars = new Map<number, Candle>(history.map((r) => [key(r.time), { ...r }]));
   const updates = new Map<number, any>();
   for (const row of [...minutes].sort((a, b) => a.time - b.time)) {
     const time = bucket(row.time),
@@ -43,18 +42,32 @@ export function mergeChartStream(
         : { ...row, time },
     );
   }
-  let latest = -Infinity;
-  for (const id of bars.keys()) latest = Math.max(latest, id);
+  let result = history;
+  const latest = history.length ? key(history[history.length - 1].time) : -Infinity;
   for (const [id, row] of updates) {
-    const old = bars.get(id);
-    if (old)
-      bars.set(id, {
+    let left = 0,
+      right = history.length;
+    while (left < right) {
+      const middle = (left + right) >>> 1;
+      if (key(history[middle].time) < id) left = middle + 1;
+      else right = middle;
+    }
+    const old = history[left];
+    if (old && key(old.time) === id) {
+      const updated = {
         ...old,
         high: Math.max(old.high, row.high),
         low: Math.min(old.low, row.low),
         close: row.last_tick >= fetchedAt ? row.close : old.close,
-      });
-    else if (id >= latest) bars.set(id, row);
+      };
+      if (updated.high !== old.high || updated.low !== old.low || updated.close !== old.close) {
+        if (result === history) result = history.slice();
+        result[left] = updated;
+      }
+    } else if (id > latest) {
+      if (result === history) result = history.slice();
+      result.push(row);
+    }
   }
-  return [...bars.entries()].sort(([a], [b]) => a - b).map(([, row]) => row);
+  return result;
 }

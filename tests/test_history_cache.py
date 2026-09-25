@@ -44,6 +44,10 @@ class HistoryCacheTests(unittest.TestCase):
         end=datetime.date(2020,1,1)
         self.cache.load(['empty'],end,fetch)
         self.assertTrue(self.cache.load(['empty'],end,fetch)[1])
+        with patch('execution.history_cache.time.time',return_value=100):
+            self.cache.load(['old-empty'],end,fetch)
+        with patch('execution.history_cache.time.time',return_value=3600):
+            self.assertTrue(self.cache.load(['old-empty'],end,fetch)[1])
         tiny=HistoryCache(self.path,max_bytes=350)
         for n in range(10): tiny.load([n],end,lambda:self.rows)
         with tiny.connect() as db:

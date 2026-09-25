@@ -70,10 +70,23 @@ export class MarketFeed {
             const previous = this.snapshot();
             for (const field of ['candles', 'minute_candles']) {
               for (const [token, rows] of Object.entries(snapshot[field] || {})) {
-                const merged = new Map<number, any>(
-                  (previous?.[field]?.[token] || []).map((row: any) => [row.time, row]),
-                );
-                for (const row of rows as any[]) merged.set(row.time, row);
+                const oldRows = previous?.[field]?.[token] || [];
+                const merged = new Map<number, any>(oldRows.map((row: any) => [row.time, row]));
+                let changed = false;
+                for (const row of rows as any[]) {
+                  const old = merged.get(row.time);
+                  if (
+                    !old ||
+                    ['open', 'high', 'low', 'close', 'last_tick'].some((k) => old[k] !== row[k])
+                  ) {
+                    merged.set(row.time, row);
+                    changed = true;
+                  }
+                }
+                if (!changed) {
+                  snapshot[field][token] = oldRows;
+                  continue;
+                }
                 snapshot[field][token] = [...merged.values()]
                   .sort((a, b) => a.time - b.time)
                   .slice(field === 'candles' ? -90 : -390);

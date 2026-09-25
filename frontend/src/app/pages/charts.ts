@@ -135,8 +135,10 @@ import { Chart } from '../shared/chart';
           </div>
           <div class="pane-footer">
             <span
-              >{{ pane.cacheHit ? 'History from cache' : 'History from Kite' }} ·
-              {{ quoteStatus(pane) }}</span
+              >{{
+                pane.historySource || (pane.cacheHit ? 'History from cache' : 'History from Kite')
+              }}
+              · {{ quoteStatus(pane) }}</span
             >
             <span>{{ pane.loadedSymbol || pane.symbol }} · NSE</span
             ><span
@@ -187,6 +189,7 @@ import { Chart } from '../shared/chart';
     </div>`,
 })
 export class Charts implements OnInit, OnDestroy {
+  private mergedHistory = new WeakMap<any[], any>();
   feed = inject(MarketFeed);
   private refreshTimer = setInterval(() => {
     if (!document.hidden)
@@ -203,12 +206,24 @@ export class Charts implements OnInit, OnDestroy {
     });
   }
   chartData(pane: any) {
-    return mergeChartStream(
-      pane.data,
-      this.feed.snapshot()?.minute_candles?.[pane.token] || [],
-      pane.interval,
-      pane.fetchedAt || 0,
-    );
+    const minutes = this.feed.snapshot()?.minute_candles?.[pane.token];
+    if (!minutes?.length) return pane.data;
+    const previous = this.mergedHistory.get(pane.data);
+    if (
+      previous &&
+      previous.minutes === minutes &&
+      previous.interval === pane.interval &&
+      previous.fetchedAt === pane.fetchedAt
+    )
+      return previous.data;
+    const data = mergeChartStream(pane.data, minutes, pane.interval, pane.fetchedAt || 0);
+    this.mergedHistory.set(pane.data, {
+      minutes,
+      interval: pane.interval,
+      fetchedAt: pane.fetchedAt,
+      data,
+    });
+    return data;
   }
   quoteStatus(pane: any) {
     const snapshot = this.feed.snapshot(),
@@ -338,6 +353,9 @@ export class Charts implements OnInit, OnDestroy {
     const days = Number(this.days);
     let cursor: string | null = resume ? pane.nextTo : null;
     let candles: any[] = resume ? pane.data : [];
+    let loadedPages = resume ? pane.loadedPages || 0 : 0;
+    let cachedPages = resume ? pane.cachedPages || 0 : 0;
+    let historyAsOf = resume ? pane.fetchedAt : 0;
     this.patch(i, {
       loading: true,
       error: '',
@@ -349,7 +367,7 @@ export class Charts implements OnInit, OnDestroy {
     try {
       do {
         const params = all
-          ? { range: 'all', ...(cursor ? { to: cursor } : {}) }
+          ? { range: 'all', batch: 128, ...(cursor ? { to: cursor } : {}) }
           : {
               ...(days === 3 && interval !== 'week' ? { sessions: 3 } : {}),
               from: new Date(
@@ -365,13 +383,24 @@ export class Charts implements OnInit, OnDestroy {
             query({ symbol, interval, ...params, ...(bypass && !cursor ? { refresh: 1 } : {}) }),
         );
         if (this.destroyed) return;
+        if (!cursor) historyAsOf = d.history_as_of || fetchedAt;
+        loadedPages += d.pages_loaded || 1;
+        cachedPages += d.cached_pages ?? (d.cache_hit ? 1 : 0);
         candles = [...d.data, ...candles];
         cursor = d.next_to || null;
         this.patch(i, {
           data: candles,
           token: d.token,
-          cacheHit: d.cache_hit,
-          fetchedAt: cursor ? fetchedAt : d.history_as_of || fetchedAt,
+          cacheHit: cachedPages === loadedPages,
+          loadedPages,
+          cachedPages,
+          historySource:
+            cachedPages === loadedPages
+              ? 'History from cache'
+              : cachedPages
+                ? 'History from Kite + cache'
+                : 'History from Kite',
+          fetchedAt: historyAsOf,
           loadedSymbol: symbol,
           sessions: d.session_dates?.length,
           nextTo: cursor,

@@ -12,6 +12,10 @@ from contextlib import closing
 _locks = [threading.Lock() for _ in range(32)]
 
 
+class CacheMiss(Exception):
+    """A cache-only lookup must not make a broker request."""
+
+
 class HistoryCache:
     def __init__(self, path=None, max_bytes=64 * 1024 * 1024):
         self.path = Path(path or os.getenv('HISTORY_CACHE_PATH') or Path(__file__).resolve().parents[1] / '.market-cache/history.sqlite')
@@ -54,7 +58,7 @@ class HistoryCache:
                 db.execute('DELETE FROM history WHERE key=?', (old_key,))
                 total -= old_size
 
-    def load(self, identity, end_date, fetch, bypass=False):
+    def load(self, identity, end_date, fetch, bypass=False, cached_only=False):
         key = hashlib.sha256(json.dumps(identity, default=str).encode()).hexdigest()
         with _locks[int(key[:2], 16) % len(_locks)]:
             now = time.time()
@@ -65,12 +69,12 @@ class HistoryCache:
                         return cached, True
                 except (sqlite3.Error, OSError, ValueError, KeyError):
                     pass  # A cache outage must not hide available broker data.
+            if cached_only:
+                raise CacheMiss()
             self.fetched_at = time.time()
             records = fetch()  # Never cache failed broker requests.
             today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date()
             ttl = 10 if end_date >= today else 86400
-            if not records:
-                ttl = min(ttl, 300)
             try:
                 self.put(key, records, ttl, time.time())
             except (sqlite3.Error, OSError, ValueError, TypeError, AttributeError):

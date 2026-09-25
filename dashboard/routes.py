@@ -19,6 +19,20 @@ dashboard_bp = Blueprint("dashboard", __name__)
 VALID_MODES = {"BACKTEST", "PAPER", "LIVE"}
 
 
+@dashboard_bp.after_request
+def compress_chart_history(response):
+    if request.endpoint != 'dashboard.chart_history' or response.status_code != 200:
+        return response
+    response.vary.add('Accept-Encoding')
+    if request.accept_encodings['gzip'] > 0 and not response.headers.get('Content-Encoding'):
+        import gzip
+        body = response.get_data()
+        if len(body) > 2048:
+            response.set_data(gzip.compress(body, compresslevel=3))
+            response.headers['Content-Encoding'] = 'gzip'
+    return response
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _uid() -> int:
@@ -30,12 +44,13 @@ def _ue():
     return engine_pool.get_or_create(_uid())
 
 
-def _chart_records(token, symbol, start, end, interval, fetch):
+def _chart_records(token, symbol, start, end, interval, fetch, *, bypass=None, cached_only=False):
     from execution.history_cache import HistoryCache
     cache = HistoryCache()
     records, hit = cache.load((_uid(), symbol, token, interval, str(start), str(end)),
                                end if isinstance(end, datetime.date) else datetime.date.fromisoformat(str(end)[:10]),
-                               fetch, bypass=request.args.get('refresh') == '1')
+                               fetch, bypass=request.args.get('refresh') == '1' if bypass is None else bypass,
+                               cached_only=cached_only)
     return records, hit, cache.fetched_at
 
 
@@ -961,15 +976,53 @@ def symbols_search():
 @dashboard_bp.route("/api/chart/history")
 @jwt_required()
 def chart_history():
+    """Batch adjacent cached pages without multiplying cold broker requests."""
+    args = request.args.copy()
+    try:
+        batch = int(args.get('batch', '1'))
+    except ValueError:
+        return jsonify(ok=False, error='Invalid history batch size.'), 400
+    if not 1 <= batch <= 128:
+        return jsonify(ok=False, error='History batch must be between 1 and 128.'), 400
+    response = _chart_history_page(args)
+    if batch == 1 or args.get('range') != 'all':
+        return response
+    if not hasattr(response, 'get_json') or response.status_code != 200:
+        return response
+    payload = response.get_json()
+    pages = [payload['data']]
+    page_count = 1
+    rows = len(payload['data'])
+    deadline = time.monotonic() + 1
+    while (args.get('range') == 'all' and payload.get('next_to') and
+           page_count < batch and rows < 50000 and time.monotonic() < deadline):
+        args['to'] = payload['next_to']
+        args.pop('refresh', None)
+        older = _chart_history_page(args, cached_only=True)
+        if older is None or not hasattr(older, 'get_json') or older.status_code != 200:
+            break
+        data = older.get_json()
+        pages.append(data['data'])
+        rows += len(data['data'])
+        page_count += 1
+        payload['next_to'] = data['next_to']
+        payload['complete'] = data['complete']
+    payload['data'] = [row for page in reversed(pages) for row in page]
+    payload['pages_loaded'] = page_count
+    payload['cached_pages'] = page_count - (0 if payload['cache_hit'] else 1)
+    return jsonify(payload)
+
+
+def _chart_history_page(args, cached_only=False):
     """Generic historical OHLCV endpoint for any NSE/index symbol."""
     ue     = _ue()
-    symbol = request.args.get("symbol", "").upper().strip()
-    interval = (request.args.get("interval", "day") or "day").lower()
+    symbol = args.get("symbol", "").upper().strip()
+    interval = (args.get("interval", "day") or "day").lower()
     if interval not in {"minute","3minute","5minute","10minute","15minute","30minute","60minute","day","week","month"}:
         interval = "day"
 
-    all_history = request.args.get("range") == "all"
-    sessions = request.args.get("sessions")
+    all_history = args.get("range") == "all"
+    sessions = args.get("sessions")
     if all_history and sessions:
         return jsonify(ok=False, error='Choose all history or a session limit, not both.'), 400
     if sessions is not None and (sessions != "3" or interval in ("week", "month")):
@@ -980,8 +1033,8 @@ def chart_history():
     default_days = {"minute": 30, "day": 365, "5minute": 30, "15minute": 60, "30minute": 90, "60minute": 180}
     default_from = today - datetime.timedelta(days=default_days.get(interval, 365))
     try:
-        from_dt = datetime.date.fromisoformat(request.args.get("from", str(default_from)))
-        to_dt   = datetime.date.fromisoformat(request.args.get("to",   str(today)))
+        from_dt = datetime.date.fromisoformat(args.get("from", str(default_from)))
+        to_dt   = datetime.date.fromisoformat(args.get("to",   str(today)))
     except ValueError:
         return jsonify({"ok": False, "error": "Invalid date"}), 400
 
@@ -1036,7 +1089,13 @@ def chart_history():
             if all_history:
                 return _history_page(ue.broker, token, from_dt, to_dt, fetch_interval, ue.state)
             return ue.broker.get_historical_data(token, f"{from_dt} 09:15:00", f"{to_dt} 15:30:00", fetch_interval, state=ue.state)
-        records, cache_hit, history_as_of = _chart_records(token, symbol, from_dt, to_dt, fetch_interval, fetch)
+        from execution.history_cache import CacheMiss
+        try:
+            records, cache_hit, history_as_of = _chart_records(
+                token, symbol, from_dt, to_dt, fetch_interval, fetch,
+                bypass=args.get('refresh') == '1', cached_only=cached_only)
+        except CacheMiss:
+            return None
         # Only server-resolved chart instruments can later be subscribed by token.
         from dashboard.stream_routes import register_chart_token
         register_chart_token(ue, token)

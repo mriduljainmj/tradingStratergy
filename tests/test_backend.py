@@ -8,6 +8,56 @@ import test_dashboard as fixtures
 
 
 class BackendRegressionTests(unittest.TestCase):
+    def test_chart_history_batches_warm_pages_without_extra_broker_calls(self):
+        broker = Mock()
+        def records(token, start, end, interval, **kwargs):
+            stamp = datetime.datetime.fromisoformat(str(start)[:10] + 'T09:15:00+05:30')
+            return [dict(date=stamp, open=10, high=12, low=9, close=11)]
+        broker.get_historical_data.side_effect = records
+        ue = SimpleNamespace(broker=broker, state=SimpleNamespace(kite_auth_error=False))
+        url = '/api/chart/history?symbol=BANKNIFTY&interval=day&range=all&to=1985-01-01'
+        with patch('dashboard.routes._ue', return_value=ue), patch('dashboard.routes.time.sleep'):
+            first = self.client.get(url + '&batch=128', headers=self.h).json
+            self.assertEqual(first['pages_loaded'], 1)
+            self.assertEqual(broker.get_historical_data.call_count, 1)
+            cursor = first['next_to']
+            expected = first['data']
+            while cursor:
+                older = self.client.get(url.replace('1985-01-01', cursor), headers=self.h).json
+                expected = older['data'] + expected
+                cursor = older['next_to']
+            before = broker.get_historical_data.call_count
+            warm = self.client.get(url + '&batch=128', headers=self.h).json
+            self.assertTrue(warm['complete'])
+            self.assertEqual(warm['data'], expected)
+            self.assertEqual(warm['pages_loaded'], before)
+            self.assertEqual(warm['cached_pages'], before)
+            self.assertEqual(warm['history_as_of'], first['history_as_of'])
+            self.assertEqual(broker.get_historical_data.call_count, before)
+            refreshed = self.client.get(url + '&batch=128&refresh=1', headers=self.h).json
+            self.assertTrue(refreshed['complete'])
+            self.assertEqual(refreshed['cached_pages'], before - 1)
+            self.assertEqual(broker.get_historical_data.call_count, before + 1)
+            other_user = self.client.get(url + '&batch=128', headers=fixtures.DashboardSmokeTests.headers[1]).json
+            self.assertEqual(other_user['cached_pages'], 0)
+            self.assertEqual(other_user['pages_loaded'], 1)
+            self.assertEqual(self.client.get(url + '&batch=129', headers=self.h).status_code, 400)
+
+    def test_chart_history_gzip_preserves_payload(self):
+        import gzip
+        broker = Mock()
+        broker.get_historical_data.return_value = [dict(
+            date=datetime.datetime(2018, 1, 1, 9, 15) + datetime.timedelta(minutes=i),
+            open=10, high=12, low=9, close=11) for i in range(100)]
+        ue = SimpleNamespace(broker=broker, state=SimpleNamespace(kite_auth_error=False))
+        url = '/api/chart/history?symbol=NIFTY&interval=minute&from=2018-01-01&to=2018-01-02'
+        with patch('dashboard.routes._ue', return_value=ue):
+            plain = self.client.get(url, headers=self.h)
+            packed = self.client.get(url, headers={**self.h, 'Accept-Encoding': 'gzip'})
+            self.assertEqual(packed.headers['Content-Encoding'], 'gzip')
+            self.assertEqual(json.loads(gzip.decompress(packed.data))['data'], plain.json['data'])
+            self.assertLess(len(packed.data), len(plain.data) / 2)
+
     def test_chart_history_cache_reuse_and_manual_refresh(self):
         broker=Mock()
         broker.get_historical_data.return_value=[dict(date=datetime.datetime(2019,1,1,9,15),open=10,high=12,low=9,close=11)]

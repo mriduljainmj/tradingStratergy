@@ -83,6 +83,8 @@ Keep SSE proxy buffering disabled (`X-Accel-Buffering: no` is sent), and allow l
 
 Chart history and selected option history are cached per account, symbol, interval and date range in `.market-cache/history.sqlite` (override with `HISTORY_CACHE_PATH`). Completed historical ranges expire after 24 hours; ranges including today expire after 10 seconds. Refresh bypasses the latest range's cache. Least-recently-used entries are evicted above 64 MB of stored payload. This caches historical OHLC candles, not downloadable tick-by-tick history; incoming ticks maintain in-memory candles. Trading and backtest broker reads do not use this chart cache.
 
+Multi-chart history combines up to 128 adjacent cached pages per request, with row-count and processing-time limits. Only the first page may fetch from Kite; subsequent pages are cache-only so cold requests remain bounded. Empty past ranges also remain cached for 24 hours. Large history responses use gzip when accepted by the browser. Cache labels reflect the full load, including mixed broker/cache results. Streaming preserves unchanged candle objects and updates the newest bar incrementally; corrections to older bars still redraw the history. Initial uncached loads retain broker pacing and the full requested history, and candles stay hidden until loading completes.
+
 - `frontend/src/app/`: standalone Angular routes, services, forms and shared charts.
 - `dashboard/`: Flask routes, authentication, validation, Angular serving and order reconciliation.
 - `core/`: per-user engine lifecycle, strategy state and rules.
