@@ -27,6 +27,8 @@ def save_completed_trade(
     entry_time: datetime.datetime = None,
     exit_time: datetime.datetime = None,
     symbol: str = "NIFTY",
+    strategy_id: int = None,
+    strategy_name: str = "",
 ) -> bool:
     """
     Persist one completed trade to the `trades` table.
@@ -59,6 +61,8 @@ def save_completed_trade(
             exit_reason   = exit_reason,
             or_high       = or_high,
             or_low        = or_low,
+            strategy_id   = strategy_id,
+            strategy_name = strategy_name,
         )
         db.add(trade)
         db.commit()

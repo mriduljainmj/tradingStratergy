@@ -7,6 +7,7 @@ from config.settings import TradingConfig
 from core.state import BotState
 from core.strategy import ORBStrategy
 from execution.broker import KiteBroker
+from execution.notify import send_trade_alert
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +28,18 @@ class TradingEngine:
         self.state   = state
         self.broker  = broker
         self.user_id = user_id   # set for analytics DB saves
+        self.execution_blocked = False
         self.strategy = ORBStrategy(config, state)
         self._stop_event = threading.Event()
+        self._live_symbol = None
+        self._live_quantity = None
 
-        # Previous trading day candles — fetched once and prepended to today's
-        # data so the chart shows the prior session for context (like TradingView).
+        # Previous N trading day candles — fetched once and prepended to today's
+        # data so the chart shows multi-day history (like TradingView).
         self._prev_nifty_5m: list = []
         self._prev_nifty_1m: list = []
-        self._prev_nifty_day: datetime.date | None = None
+        self._prev_nifty_day: datetime.date | None = None   # sentinel: None = not yet fetched
+        self._PREV_DAYS = 6   # how many prior trading days to load
 
     def stop(self):
         self._stop_event.set()
@@ -42,11 +47,8 @@ class TradingEngine:
     def _trade_already_completed_today(self, real_money: bool) -> bool:
         """Return True if a completed trade for today is already saved in the DB.
 
-        Used as a pre-flight guard in run_live() to prevent:
-        1. Double-entry when the engine auto-restarts after a trade finishes.
-        2. False "Target Hit" exits during _backfill_session() which uses
-           Black-Scholes pricing (no real option LTPs) and can over-estimate
-           the option premium, triggering targets that never actually traded.
+        Used as a pre-flight guard in run_live() to prevent double-entry
+        when the engine restarts after a trade finishes.
         """
         if not self.user_id:
             return False
@@ -80,6 +82,27 @@ class TradingEngine:
         from db.helpers import save_completed_trade
         st  = self.state
         cfg = self.config
+        # Tag the trade with the user's active strategy (Phase-2 multi-strategy)
+        strat_id, strat_name = None, ""
+        try:
+            from db.database import SessionLocal as _SL
+            from db.models import Strategy as _St
+            _db = _SL()
+            try:
+                _s = (_db.query(_St)
+                      .filter_by(user_id=self.user_id, is_active=True).first())
+                # The ORB engine trades options — never tag its trades with a
+                # selected EQUITY strategy; fall back to the options strategy.
+                if _s and (_s.instrument_type or "OPTIONS") != "OPTIONS":
+                    _s = (_db.query(_St)
+                          .filter_by(user_id=self.user_id, instrument_type="OPTIONS")
+                          .first())
+                if _s:
+                    strat_id, strat_name = _s.id, _s.name
+            finally:
+                _db.close()
+        except Exception:
+            pass
         # Derive entry/exit datetimes from marker unix timestamps
         entry_ts = st.markers[0]["time"]  if len(st.markers) > 0 else None
         exit_ts  = st.markers[-1]["time"] if len(st.markers) > 1 else None
@@ -105,6 +128,8 @@ class TradingEngine:
             or_low        = st.or_low,
             entry_time    = to_dt(entry_ts),
             exit_time     = to_dt(exit_ts),
+            strategy_id   = strat_id,
+            strategy_name = strat_name,
         )
 
     def _stopped(self) -> bool:
@@ -171,34 +196,56 @@ class TradingEngine:
             logger.error("Could not fetch NIFTY chart data for any of the last 7 days.")
             return
 
-        # ── Step 2: Load previous trading day (once, cached) ─────────────────
-        # Previous day data is stable (market is closed), so we only fetch it
-        # on the first call.  Subsequent 15-second poll cycles skip this block.
+        # ── Step 2: Load previous N trading days (once, cached) ──────────────
+        # Previous-day data is stable (market is closed), so we fetch once on
+        # the first call and reuse on every subsequent 15-second poll cycle.
+        # We issue ONE range request (context_from → yesterday) instead of N
+        # individual requests — much faster and kinder to the Kite rate limit.
         if self._prev_nifty_day is None:
-            for delta in range(1, 10):
-                candidate = current_day - datetime.timedelta(days=delta)
-                start = f"{candidate} 09:15:00"
-                end   = f"{candidate} 15:30:00"
+            # Walk back from current_day to find the oldest of the N prev days
+            context_from = current_day
+            prev_count   = 0
+            _d           = current_day - datetime.timedelta(days=1)
+            while prev_count < self._PREV_DAYS and _d >= current_day - datetime.timedelta(days=30):
+                if _d.weekday() < 5:          # Mon–Fri only (rough trading-day check)
+                    context_from = _d
+                    prev_count  += 1
+                _d -= datetime.timedelta(days=1)
+
+            prev_end = current_day - datetime.timedelta(days=1)
+            if context_from < current_day:
                 try:
                     records_5m = self.broker.get_historical_data(
-                        self.config.index_token, start, end, "5minute"
+                        self.config.index_token,
+                        f"{context_from} 09:15:00",
+                        f"{prev_end} 15:30:00",
+                        "5minute",
                     )
                     if records_5m:
-                        self._prev_nifty_day = candidate
+                        self._prev_nifty_day = context_from
                         self._prev_nifty_5m  = to_candles(records_5m)
-                        try:
-                            records_1m = self.broker.get_historical_data(
-                                self.config.index_token, start, end, "minute"
-                            )
-                            self._prev_nifty_1m = to_candles(records_1m)
-                        except Exception as e:
-                            logger.warning(f"1m prev-day fetch failed for {candidate}: {e}")
                         logger.info(
-                            f"Loaded previous trading day for NIFTY chart: {candidate}"
+                            f"Loaded {self._PREV_DAYS} prev trading days for NIFTY 5M chart "
+                            f"({context_from} → {prev_end}): {len(records_5m)} candles"
                         )
-                        break
                 except Exception as e:
-                    logger.warning(f"5m prev-day fetch failed for {candidate}: {e}")
+                    logger.warning(f"5M prev-days fetch failed: {e}")
+
+                try:
+                    records_1m = self.broker.get_historical_data(
+                        self.config.index_token,
+                        f"{context_from} 09:15:00",
+                        f"{prev_end} 15:30:00",
+                        "minute",
+                    )
+                    if records_1m:
+                        self._prev_nifty_1m = to_candles(records_1m)
+                        logger.info(
+                            f"Loaded {self._PREV_DAYS} prev trading days for NIFTY 1M chart: "
+                            f"{len(records_1m)} candles"
+                        )
+                except Exception as e:
+                    logger.warning(f"1M prev-days fetch failed: {e}")
 
         # ── Step 3: Combine previous + current ───────────────────────────────
         self.state.candles    = self._prev_nifty_5m + current_5m
@@ -221,179 +268,34 @@ class TradingEngine:
         logger.info("BACKTEST mode active — waiting for historical date selection.")
         self.state.status = "Select a date to run backtest"
 
-    def _backfill_session(self):
-        """Replay today's 1-min historical ticks so the strategy has correct OR and
-        position state when paper/live mode is started mid-session.
-
-        After entry is detected we immediately fetch today's real 1-min option
-        OHLC from Kite and feed those prices back into the strategy for all
-        remaining ticks.  This prevents the Black-Scholes fallback from firing
-        false "Target Hit" exits during the replay (BS can over-estimate the
-        option premium at intraday extremes).
-        """
+    def _backfill_session(self, real_money=False):
+        """Warm the opening range only; Paper and Live never replay entries."""
         now = _now()
-        if now.time() <= datetime.time(9, 20):
-            return  # OR window hasn't closed yet — nothing to backfill
-
-        today = now.date()
-        end_str = now.strftime("%Y-%m-%d %H:%M:%S")
+        start = now.replace(hour=9, minute=15, second=0, microsecond=0)
+        end = min(now.replace(second=0, microsecond=0),
+                  now.replace(hour=self.config.or_end_time.hour,
+                              minute=self.config.or_end_time.minute, second=0, microsecond=0))
+        if end <= start:
+            return
+        mode = 'Live' if real_money else 'Paper'
         try:
             records = self.broker.get_historical_data(
-                self.config.index_token,
-                f"{today} 09:15:00",
-                end_str,
-                "minute",
-            )
-        except Exception as e:
-            logger.warning(f"Session backfill failed — strategy starts without OR: {e}")
-            return
-
-        if not records:
-            return
-
-        logger.info(f"Backfilling {len(records)} ticks to establish OR and position state…")
-
-        # minute-timestamp → real option close price.
-        # Populated synchronously once entry is detected; subsequent ticks use
-        # real prices.  _has_real_data gates the neighbour-lookup fallback so we
-        # only use it after the map is loaded (avoids spurious None→fallback when
-        # no position is open yet).
-        opt_price_map:  dict  = {}
-        _has_real_data: bool  = False   # True once opt_price_map is populated
-        _last_real_opt: float = None    # rolling last-seen real price (neighbour fallback)
-
-        for r in records:
-            if self._stopped():
-                break
-            dt  = r["date"]
-            ts  = int(dt.timestamp())
-
-            # ── real_opt resolution (three levels) ───────────────────────────
-            # 1. Exact timestamp match in the option price map.
-            real_opt = opt_price_map.get(ts)
-
-            # 2. If real data is loaded but the exact ts is missing (minute-
-            #    boundary rounding or server tz drift), try ±60 s neighbours
-            #    first, then fall back to the running last-known price.
-            #    This prevents Black-Scholes from firing false exits when only
-            #    one or two candles are missing from Kite's API response.
-            if real_opt is None and _has_real_data:
-                real_opt = (opt_price_map.get(ts - 60)
-                            or opt_price_map.get(ts + 60)
-                            or _last_real_opt)
-                if real_opt is not None:
-                    logger.debug(
-                        f"Backfill ts {ts}: exact opt price missing — "
-                        f"using fallback ₹{real_opt:.2f}"
-                    )
-
-            # 3. Track rolling last-known price for the next iteration's fallback.
-            if real_opt is not None:
-                _last_real_opt = real_opt
-
-            signal = self.strategy.process_tick(
-                ts, dt.time(),
-                r["open"], r["high"], r["low"], r["close"],
-                real_opt,
-            )
-            if signal:
-                self._handle_signal(signal)
-
-                if signal["action"] == "BUY":
-                    # Entry detected — load today's real 1m option data so all
-                    # remaining backfill ticks use actual market prices instead
-                    # of Black-Scholes.
-                    # Use get_expiry_date() so we fetch the SAME contract as the
-                    # live order (e.g. June 2 weekly), not the nearest calendar
-                    # expiry (e.g. May 26 monthly) which has different prices.
-                    strike   = self.strategy.strike
-                    opt_type = "CE" if self.state.position_type == "CALL" else "PE"
-                    try:
-                        from core.options_math import OptionsMath
-                        min_expiry = OptionsMath.get_expiry_date(today)
-                        opt_records, _contract = self.broker.get_option_history(
-                            strike, opt_type, today, min_expiry=min_expiry
-                        )
-                        for opt_r in opt_records:
-                            opt_ts = int(opt_r["date"].timestamp())
-                            opt_price_map[opt_ts] = opt_r["close"]
-                        _has_real_data = len(opt_price_map) > 0
-
-                        # Override the BS-estimated entry premium with the real
-                        # option price at the entry tick.
-                        # Try exact ts first, then ±60 s neighbours (same logic
-                        # as the per-tick fallback above).
-                        entry_real = (opt_price_map.get(ts)
-                                      or opt_price_map.get(ts - 60)
-                                      or opt_price_map.get(ts + 60))
-                        if entry_real:
-                            _last_real_opt = entry_real
-                            ep = round(entry_real, 2)
-                            self.state.entry_prem          = ep
-                            self.strategy.target_prem      = round(entry_real + self.config.target_pts, 2)
-                            self.state.target_prem         = self.strategy.target_prem
-                            # Fix the opening candle on the option chart
-                            if self.state.option_prices:
-                                self.state.option_prices[0] = {
-                                    **self.state.option_prices[0],
-                                    "open": ep, "high": ep, "low": ep, "close": ep,
-                                }
-                            # Fix the BUY marker label on the option chart
-                            pt = self.state.position_type
-                            for m in reversed(self.state.option_markers):
-                                if "BUY" in m.get("text", ""):
-                                    m["text"] = f"BUY {pt} @ ₹{ep:.0f}"
-                                    break
-                            logger.info(
-                                f"Backfill: real entry ₹{entry_real:.2f} "
-                                f"(BS was ₹{signal['price']:.2f}) | "
-                                f"target ₹{self.strategy.target_prem:.2f}"
-                            )
-
-                            # ── Back-solve implied IV to calibrate BS fallback ──
-                            # When future ticks have no real option price we use
-                            # Black-Scholes.  Back-solving IV from the real entry
-                            # price makes BS match actual market conditions and
-                            # avoids over-estimated prices from the static default.
-                            try:
-                                is_call = self.state.position_type == "CALL"
-                                implied_iv = OptionsMath.implied_vol(
-                                    entry_real,
-                                    float(self.state.entry_nifty_px),
-                                    float(self.strategy.strike),
-                                    4 / 365.25,
-                                    self.config.risk_free_rate,
-                                    is_call=is_call,
-                                )
-                                if 0.02 <= implied_iv <= 2.0:
-                                    old_iv = self.config.assumed_iv
-                                    self.config.assumed_iv = round(implied_iv, 4)
-                                    logger.info(
-                                        f"Backfill: IV back-solved = {implied_iv:.1%} "
-                                        f"(was {old_iv:.1%}) — BS fallback calibrated"
-                                    )
-                            except Exception as _iv_err:
-                                logger.debug(f"Backfill: IV back-solve skipped: {_iv_err}")
-
-                        logger.info(
-                            f"Backfill: loaded {len(opt_price_map)} real option ticks "
-                            f"for NIFTY{strike}{opt_type} — Black-Scholes disabled"
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Backfill: could not load real option data "
-                            f"(falling back to Black-Scholes): {e}"
-                        )
-                    # Do NOT break — continue replaying remaining ticks with real prices
-
-                elif signal["action"] == "SELL":
-                    logger.info("Trade already completed in backfill — entering monitoring state.")
-                    break
-
-        logger.info(
-            f"Backfill done. OR={self.state.or_high:.2f}/{self.state.or_low:.2f} "
-            f"Position={self.state.position_type}"
-        )
+                self.config.index_token, start.strftime('%Y-%m-%d %H:%M:%S'),
+                end.strftime('%Y-%m-%d %H:%M:%S'), 'minute')
+        except Exception as exc:
+            raise RuntimeError(f'Opening range history unavailable. {mode} engine remains paused.') from exc
+        expected = {int((start + datetime.timedelta(minutes=i)).timestamp())
+                    for i in range(int((end-start).total_seconds() // 60))}
+        opening = [r for r in records if int(r['date'].timestamp()) in expected]
+        if not expected.issubset({int(r['date'].timestamp()) for r in opening}):
+            raise RuntimeError(f'Opening range history is incomplete. {mode} engine remains paused.')
+        for row in opening:
+            self.strategy._update_extremes(row['high'], row['low'])
+            self.strategy._update_or(row['high'], row['low'])
+        self.state.logs.append(
+            f'[{now:%H:%M:%S}] Opening range restored: '
+            f'{self.state.or_low:.2f}–{self.state.or_high:.2f}. '
+            'Earlier signals were not traded; watching new prices.')
 
     def _fetch_balance(self, real_money: bool):
         """Fetch real funds (LIVE) or keep a paper-mode simulated balance."""
@@ -403,7 +305,7 @@ class TradingEngine:
         else:
             # Paper mode: start with a simulated ₹1,00,000 if not already set
             if self.state.balance == 0.0:
-                self.state.balance = 100_000.0
+                self.state.balance = self.config.paper_starting_balance
 
     def _check_balance(self, required: float, real_money: bool) -> bool:
         """
@@ -542,17 +444,11 @@ class TradingEngine:
         logger.info(f"Mode: {mode} LIVE — connecting to market.")
 
         # ── Guard: skip if today's trade is already saved in the DB ─────────
-        # The backfill replays today's NIFTY ticks using Black-Scholes option
-        # pricing (no real LTPs available at that stage).  Black-Scholes can
-        # over-estimate the option premium at extreme intraday swings and fire
-        # a false "Target Hit" that never happened in the real market.  If a
-        # completed trade record already exists in the DB for today, we skip
-        # the entire run so the engine never enters or exits on fake BS prices
-        # and never double-counts a trade.
+        # Preserve the one-trade-per-day limit across engine restarts.
         if self._trade_already_completed_today(real_money):
             logger.info(
                 "Today's trade already in DB — skipping run to prevent "
-                "double-entry or false Black-Scholes exit."
+                "double-entry."
             )
             self.state.status = "Trade done for today"
             self.strategy.has_traded = True
@@ -608,12 +504,11 @@ class TradingEngine:
         except Exception as _e:
             logger.warning(f"NFO pre-warm failed (will retry at breakout): {_e}")
 
-        self._backfill_session()  # establish OR + position before live loop
-
-        # If the day's trade already completed during backfill, stop cleanly.
-        if self.strategy.has_traded and not self.strategy.in_position:
-            logger.info("Today's trade already completed in backfill replay — engine stopped.")
-            self.state.status = "Trade done for today"
+        try:
+            self._backfill_session(real_money=real_money)
+        except RuntimeError as exc:
+            self.state.trades_enabled = False
+            self.state.status = str(exc)
             return
 
         balance_tick = 0   # refresh balance every 60s
@@ -628,6 +523,9 @@ class TradingEngine:
                 continue
 
             try:
+                if getattr(self, 'execution_blocked', False):
+                    self._stop_event.wait(2)
+                    continue
                 ltp = self.broker.get_ltp(self.config.index_symbol)
                 unix_time = int(now_dt.timestamp())
 
@@ -658,9 +556,13 @@ class TradingEngine:
                 real_opt_price = None
                 if self.strategy.in_position and self.strategy.strike:
                     suffix = "CE" if self.state.position_type == "CALL" else "PE"
-                    real_opt_price = self.broker.get_option_ltp(
-                        self.strategy.strike, suffix
-                    )
+                    if real_money:
+                        try:
+                            real_opt_price = self.broker.get_ltp('NFO:' + self._live_symbol) if self._live_symbol else None
+                        except Exception:
+                            logger.warning('Live option quote unavailable; target checks suspended, underlying stops remain active.')
+                    else:
+                        real_opt_price = self.broker.get_option_ltp(self.strategy.strike, suffix)
                     if real_opt_price:
                         self.state.live_option_price = real_opt_price
                         # Unrealised P&L = (current_ltp - entry) × qty − estimated charges
@@ -682,9 +584,26 @@ class TradingEngine:
                     self.state.live_option_price  = 0.0
                     self.state.status = f"Watching | LTP: {ltp}"
 
-                signal = self.strategy.process_tick(
-                    unix_time, t, ltp, ltp, ltp, ltp, real_opt_price
-                )
+                # ── Manual override (one-shot from the dashboard) ────────────
+                manual = getattr(self.state, "manual_action", "")
+                signal = None
+                if manual:
+                    self.state.manual_action = ""
+                    if manual == "EXIT" and self.strategy.in_position:
+                        exit_prem = real_opt_price or self.state.live_option_price or self.state.entry_prem
+                        signal = self._manual_exit_signal(unix_time, ltp, exit_prem)
+                    elif manual in ("ENTER_CALL", "ENTER_PUT"):
+                        signal = self.strategy.manual_enter(
+                            unix_time, t, ltp, "CALL" if manual == "ENTER_CALL" else "PUT")
+                        if signal:
+                            self.state.logs.append(
+                                f"[{now_dt.strftime('%H:%M:%S')}] ✋ Manual {signal['type']} "
+                                f"entry @ NIFTY {ltp:.0f}")
+
+                if signal is None:
+                    signal = self.strategy.process_tick(
+                        unix_time, t, ltp, ltp, ltp, ltp, real_opt_price
+                    )
 
                 # ── Trades-enabled gate ──────────────────────────────────────
                 # When the user turns "Take Trades" OFF the engine still watches
@@ -696,27 +615,25 @@ class TradingEngine:
                         f"[{t_str}] ⏸ {signal['type']} breakout ₹{signal['price']:.0f} "
                         f"— Take Trades is OFF, signal skipped"
                     )
-                    # Undo all state mutations made by strategy._look_for_entry
-                    self.strategy.in_position = False
-                    self.strategy.has_traded  = False
-                    self.strategy.strike      = None
-                    self.strategy.target_prem = None
-                    self.state.position_type  = "NONE"
-                    self.state.entry_prem     = 0.0
-                    self.state.target_prem    = 0.0
-                    self.state.option_prices  = []
-                    self.state.option_label   = ""
-                    self.state.option_expiry  = ""
-                    if self.state.markers:        self.state.markers.pop()
-                    if self.state.option_markers: self.state.option_markers.pop()
+                    self._undo_entry()
                     signal = None
 
                 if signal:
-                    self._handle_signal(signal, real_money)
-                    if signal["action"] == "SELL":
+                    executed = self._handle_signal(signal, real_money)
+                    if signal["action"] == "SELL" and executed is not False:
                         self.state.live_pnl         = 0.0
                         self.state.live_option_price = 0.0
                         self._save_trade("LIVE" if real_money else "PAPER")
+                        # ── Phone alert: position closed ──────────────────
+                        _pnl  = self.state.net_pnl
+                        _icon = "✅" if _pnl >= 0 else "🔻"
+                        send_trade_alert(
+                            f"{_icon} <b>EXIT {self.state.position_type}</b> "
+                            f"{self.strategy.strike or ''} "
+                            f"({'🔴 LIVE' if real_money else '📋 Paper'})\n"
+                            f"{self.state.exit_reason} @ ₹{self.state.exit_prem:,.2f}\n"
+                            f"Net P&L: <b>{'+' if _pnl >= 0 else ''}₹{_pnl:,.2f}</b>"
+                        )
                         # Paper mode: reflect the closed trade's net P&L in the
                         # simulated balance so the header balance is meaningful.
                         if not real_money:
@@ -750,10 +667,9 @@ class TradingEngine:
     def _backfill_option_chart(self, strike: int, opt_type: str,
                                trade_date: datetime.date):
         """
-        Fetch today's full-day 1m option OHLC (09:15–15:30) from Kite and
-        prepend those historical candles to state.option_prices so the chart
-        shows the entire session, not just from the entry tick onwards.
-        Runs in a background thread — safe to call fire-and-forget.
+        Fetch today's full-day 1m option OHLC (09:15–15:30) PLUS the previous
+        N trading days for the same contract from Kite, and prepend them to
+        state.option_prices so the chart shows multi-session context like TradingView.
 
         Uses get_expiry_date() to find the same contract as the live order
         (e.g. June 2 weekly) instead of letting find_option_contract pick the
@@ -762,6 +678,30 @@ class TradingEngine:
         try:
             from core.options_math import OptionsMath
             min_expiry = OptionsMath.get_expiry_date(trade_date)
+
+            # ── Previous N trading days for the same contract ─────────────────
+            prev_candles: list = []
+            prev_count = 0
+            _pd = trade_date - datetime.timedelta(days=1)
+            while prev_count < self._PREV_DAYS:
+                if _pd.weekday() < 5:   # Mon-Fri rough check
+                    try:
+                        prev_recs, _ = self.broker.get_option_history(
+                            strike, opt_type, _pd, min_expiry=min_expiry
+                        )
+                        for r in (prev_recs or []):
+                            ts = (int(r["date"].timestamp()) // 60) * 60
+                            prev_candles.append({
+                                "time": ts,
+                                "open": r["open"], "high": r["high"],
+                                "low":  r["low"],  "close": r["close"],
+                            })
+                    except Exception as _e:
+                        logger.debug(f"Option prev-day fetch skipped for {_pd}: {_e}")
+                    prev_count += 1
+                _pd -= datetime.timedelta(days=1)
+
+            # ── Today's full-day data ─────────────────────────────────────────
             records, _contract = self.broker.get_option_history(
                 strike, opt_type, trade_date, min_expiry=min_expiry
             )
@@ -770,8 +710,11 @@ class TradingEngine:
                     f"No option history for NIFTY{strike}{opt_type} on {trade_date} "
                     f"— option chart not backfilled"
                 )
+                if prev_candles:
+                    self.state.option_prices = sorted(prev_candles, key=lambda c: c["time"])
                 return
-            hist = sorted(
+
+            today_hist = sorted(
                 [
                     {
                         "time":  int(r["date"].timestamp()),
@@ -782,13 +725,13 @@ class TradingEngine:
                 ],
                 key=lambda c: c["time"],
             )
+
+            hist = sorted(prev_candles + today_hist, key=lambda c: c["time"])
+
             # Historical OHLC from Kite is authoritative for all completed past
             # minutes.  Preserve live-generated candles that are NEWER than the
             # last historical candle so the live loop's in-flight candles aren't
             # dropped when this background HTTP fetch completes late.
-            # Using only the "current open minute" (old logic) dropped any
-            # complete-minute candles the live loop generated while we were
-            # fetching — those are now preserved.
             last_hist_ts = hist[-1]["time"] if hist else 0
             live_extra = [
                 c for c in self.state.option_prices
@@ -799,24 +742,170 @@ class TradingEngine:
                 key=lambda c: c["time"],
             )
             logger.info(
-                f"Option chart backfilled: {len(hist)} historical candles "
-                f"(authoritative) + {len(live_extra)} live candle(s) "
-                f"newer than last hist for NIFTY{strike}{opt_type}"
+                f"Option chart backfilled: {len(prev_candles)} prev-day + "
+                f"{len(today_hist)} today + {len(live_extra)} live candle(s) "
+                f"for NIFTY{strike}{opt_type}"
             )
         except Exception as e:
             logger.warning(f"Option chart backfill failed for NIFTY{strike}{opt_type}: {e}")
 
+    def _todays_realized_pnl(self, real_money: bool) -> float:
+        """Sum of today's saved net P&L for this user+mode (₹). 0 if unknown."""
+        if not self.user_id:
+            return 0.0
+        try:
+            from db.database import SessionLocal
+            from db.models import Trade
+            from sqlalchemy import func
+            db = SessionLocal()
+            try:
+                total = (
+                    db.query(func.coalesce(func.sum(Trade.net_pnl), 0.0))
+                    .filter(
+                        Trade.user_id    == self.user_id,
+                        Trade.date       == _now().date(),
+                        Trade.trade_mode == ("LIVE" if real_money else "PAPER"),
+                    )
+                    .scalar()
+                )
+                return float(total or 0.0)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning(f"_todays_realized_pnl failed: {e}")
+            return 0.0
+
+    def _manual_exit_signal(self, unix_time: int, nifty_px: float, exit_prem: float) -> dict:
+        """Build a SELL signal for a user-requested exit at the current option
+        price, matching the P&L/charges/marker logic of an automatic exit."""
+        from core.options_math import OptionsMath
+        cfg = self.config
+        st  = self.state
+        st.exit_reason = "Manual Exit"
+        gross = (exit_prem - st.entry_prem) * cfg.qty
+        total_charges, breakdown = OptionsMath.charges_breakdown(
+            st.entry_prem, exit_prem, cfg.qty, cfg)
+        net = round(gross - total_charges, 2)
+        st.gross_pnl = round(gross, 2)
+        st.total_charges = total_charges
+        st.net_pnl = net
+        st.pnl = net
+        st.exit_prem = exit_prem
+        st.brokerage_breakdown = breakdown
+        st.exit_nifty_px = nifty_px
+        color = "#089981" if net > 0 else "#F23645"
+        shape = "arrowUp" if net > 0 else "arrowDown"
+        posn  = "belowBar" if net > 0 else "aboveBar"
+        st.markers.append({"time": unix_time, "position": posn, "color": color,
+                           "shape": shape, "text": f"EXIT @ ₹{nifty_px:.0f}"})
+        st.option_markers.append({"time": unix_time, "position": posn, "color": color,
+                                  "shape": shape, "text": f"EXIT @ ₹{exit_prem:.0f}"})
+        self.strategy.in_position = False
+        return {"action": "SELL", "reason": "Manual Exit", "price": exit_prem, "pnl": net}
+
+    def _undo_entry(self):
+        """Roll back every state mutation made by strategy._look_for_entry
+        when an entry signal is rejected before an order is placed."""
+        self.strategy.in_position   = False
+        self.strategy.has_traded    = False
+        self.strategy.strike        = None
+        self.strategy.target_prem   = None
+        self.strategy.initial_sl_px = None
+        self.state.position_type    = "NONE"
+        self.state.entry_prem       = 0.0
+        self.state.target_prem      = 0.0
+        self.state.option_prices    = []
+        self.state.option_label     = ""
+        self.state.option_expiry    = ""
+        if self.state.markers:        self.state.markers.pop()
+        if self.state.option_markers: self.state.option_markers.pop()
+
     def _handle_signal(self, signal: dict, real_money: bool = False):
+        if getattr(self, 'execution_blocked', False):
+            return False
+        try:
+            executed = self._execute_signal(signal, real_money)
+        except Exception:
+            if not real_money:
+                raise
+            self.execution_blocked = True
+            self.state.trades_enabled = False
+            self.state.status = 'Order needs review in Kite — execution paused'
+            self.state.logs.append('[--:--:--] ' + self.state.status)
+            if signal['action'] == 'SELL':
+                self.strategy.in_position = True
+                self.state.exit_prem = 0.0
+                self.state.net_pnl = self.state.pnl = self.state.gross_pnl = 0.0
+                self.state.total_charges = 0.0
+                self.state.exit_reason = ''
+            logger.exception('Live order could not be confirmed')
+            return False
+        if executed is not False:
+            import uuid
+            event = {
+                'id': str(uuid.uuid4()), 'mode': 'LIVE' if real_money else 'PAPER',
+                'action': signal['action'], 'symbol': self._live_symbol if real_money else self.state.option_label,
+                'quantity': self._live_quantity if real_money else self.config.qty,
+                'price': self.state.entry_prem if signal['action'] == 'BUY' else self.state.exit_prem,
+                'reason': signal.get('reason') or 'Entry executed',
+                'time': _now().isoformat(),
+            }
+            with self.state._lock:
+                self.state.execution_events = (self.state.execution_events + [event])[-50:]
+        return executed
+
+    def _execute_signal(self, signal: dict, real_money: bool = False):
         cfg = self.config
         if signal["action"] == "BUY":
             logger.info(
                 f"BREAKOUT — BUY {signal['type']} | Entry: ₹{signal['price']:.2f} "
                 f"Risk: ₹{signal['risk']:.2f} Target: ₹{signal['target']:.2f}"
             )
+            # ── Daily loss guard ────────────────────────────────────────────────
+            # If today's realized losses already exceed the configured cap,
+            # refuse the entry and stand down — protects against repeated
+            # engine restarts compounding a bad day.
+            max_loss = float(getattr(cfg, "max_daily_loss", 0) or 0)
+            if max_loss > 0:
+                realized = self._todays_realized_pnl(real_money)
+                if realized <= -max_loss:
+                    self._undo_entry()
+                    self.strategy.has_traded = True
+                    t_str = _now().strftime("%H:%M:%S")
+                    self.state.logs.append(
+                        f"[{t_str}] ⛔ Risk guard: today's loss ₹{-realized:,.0f} "
+                        f"≥ cap ₹{max_loss:,.0f} — no more trades today."
+                    )
+                    logger.warning(
+                        f"Risk guard blocked entry: realized ₹{realized:,.2f}, "
+                        f"cap ₹{max_loss:,.2f}"
+                    )
+                    send_trade_alert(
+                        f"⛔ <b>Risk guard triggered</b>\n"
+                        f"Today's loss ₹{-realized:,.0f} hit your ₹{max_loss:,.0f} cap.\n"
+                        f"Trading stopped for the day."
+                    )
+                    return False
+
             # ── Balance / margin check before placing order ────────────────────
             # Rough required margin = entry premium × qty (options are fully cash-settled)
             required_margin = round(signal["price"] * cfg.qty, 2)
-            self._check_balance(required_margin, real_money)
+            if not self._check_balance(required_margin, real_money) and real_money:
+                # REAL MONEY: never send an order the broker will reject.
+                # Block the entry and stand down for the day — retrying every
+                # tick would spam orders/margin calls.
+                self._undo_entry()
+                self.strategy.has_traded = True
+                t_str = _now().strftime("%H:%M:%S")
+                self.state.logs.append(
+                    f"[{t_str}] 🛑 LIVE entry blocked — insufficient margin "
+                    f"(need ₹{required_margin:,.0f}). No further entries today."
+                )
+                logger.error(
+                    f"LIVE entry blocked: required ₹{required_margin:,.0f} "
+                    f"exceeds available balance — order NOT placed."
+                )
+                return False
 
             # ── Backfill option chart with full-day history (09:15 → now) ──────
             # Runs in background so it doesn't block the live feed.
@@ -838,9 +927,11 @@ class TradingEngine:
                 real_entry = self.broker.get_option_ltp(signal["strike"], opt_type)
                 if real_entry:
                     old_bs = self.state.entry_prem
-                    ep     = round(real_entry, 2)
+                    # A market buy crosses the spread — model it as slippage on
+                    # the LTP, same as the backtester's real-price path.
+                    ep     = round(real_entry * (1 + getattr(cfg, "slippage_pct", 0.0)), 2)
                     self.state.entry_prem          = ep
-                    self.strategy.target_prem      = round(real_entry + cfg.target_pts, 2)
+                    self.strategy.target_prem      = round(ep + cfg.target_pts, 2)
                     self.state.target_prem         = self.strategy.target_prem
                     # Fix the opening candle on the option chart
                     if self.state.option_prices:
@@ -891,13 +982,16 @@ class TradingEngine:
                         f"Could not resolve NFO tradingsymbol for "
                         f"NIFTY{signal['strike']}{opt_type} — order aborted"
                     )
-                    return
+                    self._undo_entry()
+                    raise RuntimeError('Option contract could not be resolved.')
                 # ── MARKET ORDER (not limit) ──────────────────────────────────
-                order_id = self.broker.place_market_order(
-                    sym, self.broker.kite.TRANSACTION_TYPE_BUY, cfg.qty
-                )
+                from execution.order_safety import confirmed_order
+                fill = confirmed_order(self.broker, self.user_id, sym,
+                                       self.broker.kite.TRANSACTION_TYPE_BUY, cfg.qty,
+                                       strategy_id=self.state.active_strategy_id)
+                self._live_symbol = sym
+                self._live_quantity = cfg.qty
                 # Overwrite the BS-estimated entry with the actual exchange fill price
-                fill = self.broker.get_fill_price(order_id)
                 if fill:
                     self.state.entry_prem = round(fill, 2)
                     self.strategy.state.entry_prem = round(fill, 2)
@@ -908,43 +1002,38 @@ class TradingEngine:
                 # Refresh balance immediately after BUY so used margin shows up
                 self._fetch_balance(real_money=True)
 
+            # ── Phone alert: position opened ─────────────────────────────────
+            mode_tag = "🔴 LIVE" if real_money else "📋 Paper"
+            send_trade_alert(
+                f"🟢 <b>BUY {signal['type']}</b> {self.strategy.strike or ''} ({mode_tag})\n"
+                f"Entry ₹{self.state.entry_prem:,.2f} · Target ₹{self.state.target_prem:,.2f}\n"
+                f"Qty {cfg.qty}"
+            )
+
         elif signal["action"] == "SELL":
             logger.info(f"{signal['reason']} — Exit: ₹{signal['price']:.2f} | P&L: ₹{signal['pnl']:.2f}")
             if real_money:
-                from core.options_math import OptionsMath
-                pos_type   = self.state.position_type
-                opt_type   = "CE" if pos_type == "CALL" else "PE"
-                trade_date = _now().date()
-                # Same holiday-adjusted minimum as the BUY — ensures SELL resolves
-                # to the exact same contract that was purchased earlier.
-                min_expiry = OptionsMath.get_expiry_date(trade_date)
-                sym = self.broker.find_option_tradingsymbol(
-                    self.strategy.strike, opt_type, min_expiry
-                )
+                sym = self._live_symbol
+                if not self._live_quantity:
+                    raise RuntimeError('Live entry quantity is unknown; reconcile in Kite.')
                 if not sym:
                     logger.error(
                         f"Could not resolve NFO tradingsymbol for "
-                        f"NIFTY{self.strategy.strike}{opt_type} — SELL order aborted"
+                        f"strike {self.strategy.strike} — SELL order aborted"
                     )
-                    return
-                order_id = self.broker.place_market_order(
-                    sym, self.broker.kite.TRANSACTION_TYPE_SELL, cfg.qty
-                )
+                    raise RuntimeError('Exit contract could not be resolved.')
+                from execution.order_safety import confirmed_order
+                fill = confirmed_order(self.broker, self.user_id, sym,
+                                       self.broker.kite.TRANSACTION_TYPE_SELL, self._live_quantity,
+                                       strategy_id=self.state.active_strategy_id)
                 # Recalculate P&L from real fill prices
-                fill = self.broker.get_fill_price(order_id)
                 if fill:
+                    from core.options_math import OptionsMath as _OM
                     entry = self.state.entry_prem
-                    gross = (fill - entry) * cfg.qty
-                    buy_val  = entry * cfg.qty
-                    sell_val = fill  * cfg.qty
-                    turnover = buy_val + sell_val
-                    brokerage = cfg.brokerage_per_order * 2
-                    stt   = sell_val * cfg.stt_pct
-                    exch  = turnover * cfg.exchange_charges_pct
-                    gst   = (brokerage + exch) * cfg.gst_pct
-                    sebi  = turnover * cfg.sebi_charges_pct
-                    stamp = buy_val  * cfg.stamp_duty_pct
-                    total_charges = round(brokerage + stt + exch + gst + sebi + stamp, 2)
+                    gross = (fill - entry) * self._live_quantity
+                    total_charges, breakdown = _OM.charges_breakdown(
+                        entry, fill, self._live_quantity, cfg
+                    )
                     net_pnl = round(gross - total_charges, 2)
 
                     self.state.exit_prem     = round(fill, 2)
@@ -952,6 +1041,7 @@ class TradingEngine:
                     self.state.total_charges = total_charges
                     self.state.net_pnl       = net_pnl
                     self.state.pnl           = net_pnl
+                    self.state.brokerage_breakdown = breakdown
                     logger.info(
                         f"Real fill (SELL): ₹{fill:.2f} | "
                         f"Real Net P&L: ₹{net_pnl:.2f}"

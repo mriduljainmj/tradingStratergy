@@ -31,6 +31,11 @@ class User(Base):
 
     # Admin flag — admin users can manage app-level Kite credentials
     is_admin = Column(Boolean, default=False)
+    auth_version = Column(Integer, default=0, nullable=False)
+
+    # Background trading — when True the engine auto-starts on server restart
+    # and continues to execute trades even when no browser is open.
+    background_trading = Column(Boolean, default=False)
 
     # Kite session persistence (serverless-safe; secrets are Fernet-encrypted)
     kite_api_key_stored   = Column(String(100), nullable=True)  # user's api_key
@@ -42,7 +47,7 @@ class User(Base):
     strategies = relationship("Strategy", back_populates="user", lazy="dynamic")
 
     def to_dict(self):
-        today = datetime.date.today()
+        today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date()
         has_kite_token = bool(
             self.kite_access_token_enc
             and self.kite_token_date == today
@@ -61,7 +66,8 @@ class User(Base):
             "has_kite_secret":    bool(self.kite_api_secret_enc),
             "has_kite_token":     has_kite_token,
             "kite_token_date":    self.kite_token_date.isoformat() if self.kite_token_date else None,
-            "is_admin":           bool(self.is_admin),
+            "is_admin":            bool(self.is_admin),
+            "background_trading":  bool(self.background_trading) if self.background_trading is not None else True,
         }
 
 
@@ -73,7 +79,9 @@ class Trade(Base):
     date          = Column(Date,    nullable=False, index=True)
     trade_mode    = Column(String(10), default="PAPER", index=True)   # PAPER | LIVE
     symbol        = Column(String(50))
-    position_type = Column(String(10))   # CALL | PUT
+    strategy_id   = Column(Integer, index=True)          # producing strategy (nullable)
+    strategy_name = Column(String(200))                  # denormalized for display
+    position_type = Column(String(10))   # CALL | PUT | LONG
     entry_time    = Column(DateTime)
     exit_time     = Column(DateTime)
     entry_prem    = Column(Float)
@@ -96,6 +104,8 @@ class Trade(Base):
             "date":          self.date.isoformat() if self.date else None,
             "trade_mode":    self.trade_mode or "PAPER",
             "symbol":        self.symbol,
+            "strategy_id":   self.strategy_id,
+            "strategy_name": self.strategy_name or "",
             "position_type": self.position_type,
             "entry_time":    self.entry_time.isoformat() if self.entry_time else None,
             "exit_time":     self.exit_time.isoformat() if self.exit_time else None,
@@ -120,6 +130,12 @@ class Strategy(Base):
     name        = Column(String(200), nullable=False)
     description = Column(Text)
     rules       = Column(Text)          # JSON blob
+    # Phase-2 multi-strategy fields
+    instrument_type = Column(String(10), default="OPTIONS")   # OPTIONS | EQUITY
+    symbol          = Column(String(50), default="NIFTY 50")  # underlying / stock
+    engine_type     = Column(String(20), default="ORB")       # ORB | EQUITY_ORB | EMA_CROSS
+    is_running      = Column(Boolean, default=False)          # live/paper engine attached
+    run_mode        = Column(String(10))                       # PAPER | LIVE while running
     is_active   = Column(Boolean, default=False)
     created_at  = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at  = Column(DateTime, default=datetime.datetime.utcnow,
@@ -140,6 +156,10 @@ class Strategy(Base):
             "name":        self.name,
             "description": self.description,
             "rules":       self.get_rules(),
+            "instrument_type": self.instrument_type or "OPTIONS",
+            "symbol":          self.symbol or "NIFTY 50",
+            "engine_type":     self.engine_type or "ORB",
+            "is_running":      bool(self.is_running),
             "is_active":   self.is_active,
             "created_at":  self.created_at.isoformat() if self.created_at else None,
             "updated_at":  self.updated_at.isoformat() if self.updated_at else None,
@@ -154,6 +174,7 @@ class Watchlist(Base):
     id           = Column(Integer, primary_key=True)
     user_id      = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     symbol       = Column(String(30), nullable=False)
+    list_name    = Column(String(100), default="My Watchlist")
     company_name = Column(String(200))
     sector       = Column(String(100))
     added_at     = Column(DateTime, default=datetime.datetime.utcnow)
@@ -164,7 +185,43 @@ class Watchlist(Base):
         return {
             "id":           self.id,
             "symbol":       self.symbol,
+            "list_name":    self.list_name or "My Watchlist",
             "company_name": self.company_name or self.symbol,
             "sector":       self.sector or "",
             "added_at":     self.added_at.isoformat() if self.added_at else None,
         }
+
+
+class RevokedToken(Base):
+    __tablename__ = 'revoked_tokens'
+    jti = Column(String(64), primary_key=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+
+class ExecutionIncident(Base):
+    """Persist an order attempt before network I/O; unresolved attempts block restart."""
+    __tablename__ = 'execution_incidents'
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    strategy_id = Column(Integer, nullable=True)
+    symbol = Column(String(100), nullable=False)
+    side = Column(String(10), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    order_id = Column(String(100))
+    status = Column(String(30), default='pending', nullable=False)
+    message = Column(Text)
+    fill_price = Column(Float)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ChartWorkspace(Base):
+    __tablename__ = 'chart_workspaces'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    payload = Column(Text, nullable=False)
+
+
+class InstrumentCatalog(Base):
+    __tablename__ = 'instrument_catalogs'
+    exchange = Column(String(10), primary_key=True)
+    fetched_on = Column(Date, nullable=False)
+    payload = Column(Text, nullable=False)

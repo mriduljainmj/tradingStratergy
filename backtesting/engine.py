@@ -34,10 +34,6 @@ def next_tuesday(dt) -> object:
     return d + pd.Timedelta(days=days)
 
 
-# Keep old name as alias so any external callers don't break
-next_thursday = next_tuesday
-
-
 def tte_years(current_dt, expiry_date) -> float:
     exp = pd.Timestamp(expiry_date).tz_localize("Asia/Kolkata").replace(hour=15, minute=30)
     secs = (exp - current_dt).total_seconds()

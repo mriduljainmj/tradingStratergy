@@ -18,4 +18,18 @@ env/
 # Misc
 .DS_Store
 *.log
-*.db        # SQLite databases (trading.db is recreated automatically on startup)
+# SQLite databases (trading.db is recreated automatically on startup)
+*.db
+
+# Angular / local signing key
+node_modules/
+.angular/
+.axiom_dev_secret
+.tools/
+
+# Generated analysis/test caches
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.market-cache/

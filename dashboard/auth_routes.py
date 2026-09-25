@@ -4,7 +4,7 @@ import os
 import re
 
 import bcrypt
-from flask import Blueprint, jsonify, redirect, render_template, request, session
+from flask import Blueprint, jsonify, redirect, request, session
 from flask_jwt_extended import create_access_token, get_jwt_identity, jwt_required
 
 from db.database import SessionLocal
@@ -38,33 +38,7 @@ def _resolve_kite_api_secret(user: "User") -> str:
     return os.getenv("KITE_API_SECRET", "")
 
 # ── Default strategy seeded for every new user ─────────────────────────────────
-_DEFAULT_ORB_STRATEGY = {
-    "version": "1.0",
-    "entry": {
-        "conditions": [
-            {
-                "indicator": "PRICE",
-                "condition": "CROSSES_ABOVE",
-                "reference": "OR_HIGH",
-                "action":    "BUY_CALL",
-            },
-            {
-                "indicator": "PRICE",
-                "condition": "CROSSES_BELOW",
-                "reference": "OR_LOW",
-                "action":    "BUY_PUT",
-            },
-        ],
-        "operator":    "OR",
-        "time_filter": {"start": "09:20", "end": "10:30"},
-    },
-    "exit": {
-        "take_profit": {"type": "PREMIUM_POINTS", "value": 130},
-        "stop_loss":   {"type": "FIB_TRAIL",       "value": 0.7},
-        "time_exit":   {"time": "12:30"},
-    },
-    "position": {"lot_size": 25, "lots": 2},
-}
+from config.strategy_defaults import default_options_rules
 
 
 def _seed_default_strategy(db, user_id: int):
@@ -72,11 +46,10 @@ def _seed_default_strategy(db, user_id: int):
         user_id     = user_id,
         name        = "ORB Breakout (Default)",
         description = "Opening Range Breakout — buy CALL on OR High breakout, "
-                      "PUT on OR Low breakdown. 130-pt target, 0.7 Fib trail SL, "
-                      "EOD close at 12:30.",
+                      "PUT on OR Low breakdown. Configure targets, trailing stops and trading windows in Settings.",
         is_active   = True,
     )
-    s.set_rules(_DEFAULT_ORB_STRATEGY)
+    s.set_rules(default_options_rules())
     db.add(s)
 
 
@@ -88,7 +61,8 @@ def _bad(msg, code=400):
 
 @auth_bp.route("/login")
 def login_page():
-    return render_template("login.html")
+    from dashboard.frontend import page
+    return page()
 
 
 # ── API ────────────────────────────────────────────────────────────────────────
@@ -133,7 +107,7 @@ def register():
         db.commit()
         db.refresh(user)
 
-        token = create_access_token(identity=str(user.id))
+        token = create_access_token(identity=str(user.id), additional_claims={"auth_version": user.auth_version or 0})
         return jsonify({"ok": True, "token": token, "user": user.to_dict()}), 201
     except Exception as e:
         db.rollback()
@@ -157,12 +131,12 @@ def login():
         if not user or not bcrypt.checkpw(password.encode(), user.password_hash.encode()):
             return _bad("Invalid email or password.", 401)
 
-        token = create_access_token(identity=str(user.id))
+        token = create_access_token(identity=str(user.id), additional_claims={"auth_version": user.auth_version or 0})
 
         # ── Restore today's Kite session if the user already authenticated ─────
         # This means engine starts automatically on app login — no extra step needed
         # unless the daily token has expired (Kite tokens expire at midnight).
-        today = datetime.date.today()
+        today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date()
         if user.kite_access_token_enc and user.kite_token_date == today:
             try:
                 from execution.broker import decrypt_token
@@ -180,7 +154,14 @@ def login():
 
 
 @auth_bp.route("/api/auth/logout", methods=["POST"])
+@jwt_required()
 def logout():
+    from flask_jwt_extended import get_jwt
+    from db.models import RevokedToken
+    claims = get_jwt()
+    with SessionLocal() as db:
+        db.merge(RevokedToken(jti=claims['jti'], expires_at=datetime.datetime.fromtimestamp(claims.get('exp', 0), datetime.timezone.utc)))
+        db.commit()
     return jsonify({"ok": True})
 
 
@@ -200,7 +181,8 @@ def me():
 
 @auth_bp.route("/profile")
 def profile_page():
-    return render_template("profile.html")
+    from dashboard.frontend import page
+    return page()
 
 
 @auth_bp.route("/api/auth/profile", methods=["GET"])
@@ -256,6 +238,7 @@ def update_profile():
             if len(new_pw) < 8:
                 return _bad("New password must be at least 8 characters.")
             user.password_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
+            user.auth_version = (user.auth_version or 0) + 1
 
         db.commit()
         db.refresh(user)
@@ -289,7 +272,6 @@ def _apply_token_to_broker(user_id: int, api_key: str, access_token: str):
         profile = ue.broker.kite.profile()
         kite_client_id = profile.get("user_id", "")
         if kite_client_id:
-            from db.database import SessionLocal
             from db.models import User as _User
             _db = SessionLocal()
             try:
@@ -307,7 +289,16 @@ def _apply_token_to_broker(user_id: int, api_key: str, access_token: str):
         logger.warning(f"Could not fetch Kite profile for user {user_id}: {e}")
 
     # Start the engine in PAPER mode if it isn't already running
-    if not ue.is_running:
+    with SessionLocal() as session_db:
+        current_user = session_db.get(User, user_id)
+        may_trade = bool(current_user and current_user.is_admin and current_user.background_trading)
+    from execution.order_safety import unresolved_orders
+    if not may_trade or unresolved_orders(user_id):
+        ue.state.trades_enabled = False
+        if not ue.is_running:
+            ue.state.status = ('Broker order reconciliation required' if unresolved_orders(user_id)
+                               else 'Kite connected — trading paused')
+    elif not ue.is_running:
         ue.start("PAPER")
 
 
@@ -321,7 +312,7 @@ def get_kite_token_status():
         user = db.get(User, uid)
         if not user:
             return _bad("User not found.", 404)
-        today = datetime.date.today()
+        today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date()
         has_token = bool(user.kite_access_token_enc and user.kite_token_date == today)
         return jsonify({
             "ok":             True,
@@ -348,7 +339,7 @@ def kite_info():
     ue = engine_pool.get(uid)
 
     if not ue or ue.state.kite_auth_error:
-        return _bad("Kite not authenticated — please log in via the Kite button.", 401)
+        return _bad("Kite not authenticated — please log in via the Kite button.", 409)
 
     try:
         profile = ue.broker.kite.profile()
@@ -462,7 +453,7 @@ def kite_callback():
         http://127.0.0.1:8080/kite/callback        (local)
         https://your-app.onrender.com/kite/callback (production)
     """
-    from execution.broker import decrypt_token, encrypt_token
+    from execution.broker import encrypt_token
 
     request_token = request.args.get("request_token", "").strip()
     status        = request.args.get("status", "")
@@ -497,7 +488,7 @@ def kite_callback():
 
         # Encrypt & persist the access token + record which api_key was used
         user.kite_access_token_enc = encrypt_token(access_token)
-        user.kite_token_date       = datetime.date.today()
+        user.kite_token_date       = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date()
         # Store the resolved api_key so restore_from_db uses the right one
         if not user.kite_api_key_stored:
             user.kite_api_key_stored = api_key
@@ -561,7 +552,7 @@ def exchange_kite_token():
         access_token = kite_data["access_token"]
 
         user.kite_access_token_enc = encrypt_token(access_token)
-        user.kite_token_date       = datetime.date.today()
+        user.kite_token_date       = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date()
         if not user.kite_api_key_stored:
             user.kite_api_key_stored = api_key
         db.commit()
@@ -608,8 +599,15 @@ def save_kite_token():
                 "administrator to set the KITE_API_KEY environment variable."
             )
 
+        from kiteconnect import KiteConnect
+        candidate = KiteConnect(api_key=api_key)
+        candidate.set_access_token(access_token)
+        try:
+            candidate.profile()
+        except Exception:
+            return _bad('Kite rejected this token. No credentials were changed.', 409)
         user.kite_access_token_enc = encrypt_token(access_token)
-        user.kite_token_date       = datetime.date.today()
+        user.kite_token_date       = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).date()
         if not user.kite_api_key_stored:
             user.kite_api_key_stored = api_key
         db.commit()
@@ -640,6 +638,15 @@ def delete_account():
         from core.engine_pool import engine_pool
         engine_pool.remove(uid)
 
+        # Children have non-nullable user_id FKs — bulk-delete them first,
+        # otherwise SQLAlchemy tries to NULL them out and the delete fails.
+        from db.models import Trade, Strategy, Watchlist, ExecutionIncident, ChartWorkspace
+        db.query(ChartWorkspace).filter_by(user_id=uid).delete(synchronize_session=False)
+        db.query(ExecutionIncident).filter_by(user_id=uid).delete(synchronize_session=False)
+        db.query(Trade).filter_by(user_id=uid).delete(synchronize_session=False)
+        db.query(Strategy).filter_by(user_id=uid).delete(synchronize_session=False)
+        db.query(Watchlist).filter_by(user_id=uid).delete(synchronize_session=False)
+
         db.delete(user)
         db.commit()
         return jsonify({"ok": True})
@@ -654,7 +661,6 @@ def delete_account():
 @jwt_required()
 def clear_kite_token():
     """Remove the stored Kite access token from DB and file cache."""
-    import os
     uid = int(get_jwt_identity())
     db  = SessionLocal()
     try:

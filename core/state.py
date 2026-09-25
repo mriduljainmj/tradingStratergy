@@ -1,3 +1,4 @@
+from config.settings import TradingConfig
 import threading
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -29,13 +30,16 @@ class BotState:
     live_option_price: float = 0.0   # current option LTP
 
     # --- ACCOUNT ---
+    paper_starting_balance: float = field(default_factory=lambda: TradingConfig().paper_starting_balance)
     balance: float = 0.0             # available cash balance (fetched from Kite or paper)
 
     # --- KITE AUTH ---
     kite_auth_error: bool = False    # True when Kite returns "Incorrect api_key/access_token"
 
     # --- ENGINE CONTROLS (user-facing toggles, preserved across mode resets) ---
-    trades_enabled: bool = True            # False = monitor only, skip new entries
+    trades_enabled: bool = False            # False = monitor only, skip new entries
+    manual_action: str = ""                # ENTER_CALL | ENTER_PUT | EXIT (one-shot)
+    execution_events: List[dict] = field(default_factory=list)
     active_strategy_id: Optional[int] = None  # DB id of the selected strategy
     trade_direction: str = "BOTH"          # "CALL" | "PUT" | "BOTH"
 
@@ -54,7 +58,7 @@ class BotState:
     def __post_init__(self):
         # Give paper mode a default simulated balance on first creation
         if self.app_mode == "PAPER" and self.balance == 0.0:
-            self.balance = 100_000.0
+            self.balance = self.paper_starting_balance
 
     option_prices: List[dict] = field(default_factory=list)   # {"time": int, "value": float}
     option_label: str = ""                                     # e.g. "NIFTY 24000 CE"
@@ -99,7 +103,7 @@ class BotState:
         self.kite_auth_error = False
         # Keep existing balance when switching within live modes; seed paper default
         if new_mode == "PAPER" and self.balance == 0.0:
-            self.balance = 100_000.0
+            self.balance = self.paper_starting_balance
         elif new_mode == "BACKTEST":
             self.balance = 0.0   # not applicable in backtest
         self.live_nifty_candle = None
@@ -141,6 +145,7 @@ class BotState:
             "balance": self.balance,
             "kite_auth_error": self.kite_auth_error,
             "trades_enabled": self.trades_enabled,
+            "execution_events": list(self.execution_events),
             "active_strategy_id": self.active_strategy_id,
             "trade_direction": self.trade_direction,
             "live_nifty_candle": self.live_nifty_candle,

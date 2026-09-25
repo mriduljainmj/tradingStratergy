@@ -1,7 +1,6 @@
 import base64
 import datetime
 import hashlib
-import json
 import logging
 import os
 import time as _time
@@ -13,39 +12,38 @@ from config.settings import TradingConfig
 
 logger = logging.getLogger(__name__)
 
-_TOKEN_CACHE = ".kite_session.json"
 _IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
 # Module-level NFO instruments cache (refreshed once per trading day)
 _nfo_cache: dict = {"date": None, "data": []}
+
+# Resolved contract cache: (strike, type, on_or_after, day) → contract dict.
+# get_option_ltp() is called every second while in a position; without this
+# each call linearly scans the full ~100k-row NFO instruments list.
+_contract_cache: dict = {}
 
 
 # ── Fernet encryption helpers ────────────────────────────────────────────────
 
 def _fernet_key() -> bytes:
     """Derive a stable 32-byte Fernet key from env vars."""
-    secret = os.getenv("ENCRYPT_KEY") or os.getenv("JWT_SECRET_KEY") or "orb-default-secret-change-me"
+    from config.security import app_secret
+    secret = os.getenv("ENCRYPT_KEY") or app_secret()
     return base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest())
 
 
 def encrypt_token(plain: str) -> str:
-    try:
-        from cryptography.fernet import Fernet
-        return Fernet(_fernet_key()).encrypt(plain.encode()).decode()
-    except ImportError:
-        # Fallback: base64 (not secure — install cryptography package)
-        return base64.b64encode(plain.encode()).decode()
+    from cryptography.fernet import Fernet
+    return Fernet(_fernet_key()).encrypt(plain.encode()).decode()
 
 
 def decrypt_token(enc: str) -> str:
+    from cryptography.fernet import Fernet, InvalidToken
     try:
-        from cryptography.fernet import Fernet
         return Fernet(_fernet_key()).decrypt(enc.encode()).decode()
-    except ImportError:
-        return base64.b64decode(enc.encode()).decode()
-    except Exception as e:
-        logger.warning(f"Token decryption failed: {e}")
-        return ""
+    except (InvalidToken, ValueError):
+        logger.warning('Token could not be decrypted. Reconnect Kite to renew it.')
+        return ''
 
 
 def is_kite_auth_error(e: Exception) -> bool:
@@ -67,36 +65,6 @@ class KiteBroker:
 
     # ── Authentication ─────────────────────────────────────────────────────────
 
-    def restore_session(self) -> bool:
-        """Reuse today's cached access token — checks env var first, then local file."""
-        env_token = os.getenv("KITE_ACCESS_TOKEN", "").strip()
-        if env_token:
-            try:
-                self.kite.set_access_token(env_token)
-                self.kite.profile()
-                logger.info("Session restored from KITE_ACCESS_TOKEN env var.")
-                return True
-            except Exception as e:
-                logger.warning(f"KITE_ACCESS_TOKEN env var is invalid: {e}")
-
-        try:
-            if not os.path.exists(_TOKEN_CACHE):
-                return False
-            with open(_TOKEN_CACHE) as f:
-                cache = json.load(f)
-            if cache.get("date") != str(datetime.datetime.now(tz=_IST).date()):
-                return False
-            self.kite.set_access_token(cache["access_token"])
-            self.kite.profile()
-            logger.info("Restored session from today's cached token.")
-            return True
-        except Exception:
-            return False
-
-    def _save_token(self, access_token: str):
-        with open(_TOKEN_CACHE, "w") as f:
-            json.dump({"date": str(datetime.datetime.now(tz=_IST).date()),
-                       "access_token": access_token}, f)
 
     def restore_from_db(self, db_session, user_id: int) -> bool:
         """
@@ -132,19 +100,6 @@ class KiteBroker:
             logger.warning(f"restore_from_db failed: {e}")
             return False
 
-    def set_token_direct(self, access_token: str) -> bool:
-        """Apply an access token directly (e.g. pasted in the profile page)."""
-        try:
-            self.kite.set_access_token(access_token)
-            self.kite.profile()   # validate immediately
-            self._save_token(access_token)
-            return True
-        except Exception as e:
-            logger.warning(f"set_token_direct validation failed: {e}")
-            return False
-
-    def login_url(self) -> str:
-        return self.kite.login_url()
 
     # ── Market data ────────────────────────────────────────────────────────────
 
@@ -213,6 +168,12 @@ class KiteBroker:
         so the >= comparison never raises a TypeError.
         Returns None if no matching contract is found.
         """
+        today = str(datetime.datetime.now(tz=_IST).date())
+        cache_key = (int(strike), option_type, str(on_or_after), today)
+        cached = _contract_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         instruments = self.get_nfo_instruments()
 
         def _as_date(v):
@@ -255,6 +216,9 @@ class KiteBroker:
             f"Resolved NIFTY{strike}{option_type} → "
             f"{chosen['tradingsymbol']} (expiry {expiry})"
         )
+        if len(_contract_cache) > 256:   # bound the cache across long sessions
+            _contract_cache.clear()
+        _contract_cache[cache_key] = chosen
         return chosen
 
     def find_option_token(self, strike: int, option_type: str,
@@ -381,10 +345,30 @@ class KiteBroker:
 
     # ── Order placement ────────────────────────────────────────────────────────
 
+    def place_equity_market_order(self, symbol: str, transaction_type: str,
+                                  quantity: int) -> str:
+        """Place a MIS market order on NSE cash segment. Returns order_id."""
+        exchange_sym = symbol.split(":")[1] if ":" in symbol else symbol
+        order_id = self.kite.place_order(
+            tradingsymbol=exchange_sym,
+            exchange=self.kite.EXCHANGE_NSE,
+            transaction_type=transaction_type,
+            quantity=quantity,
+            order_type=self.kite.ORDER_TYPE_MARKET,
+            product=self.kite.PRODUCT_MIS,
+            variety=self.kite.VARIETY_REGULAR,
+        )
+        logger.info(f"Equity order — {transaction_type} {quantity}x {exchange_sym} | id={order_id}")
+        return order_id
+
     def place_market_order(self, symbol: str, transaction_type: str,
                            quantity: int) -> str:
         """Place a MIS market order on NFO. Returns order_id."""
         exchange_sym = symbol.split(":")[1] if ":" in symbol else symbol
+        instrument = next((i for i in self.get_nfo_instruments() if i.get('tradingsymbol') == exchange_sym), None)
+        lot_size = int((instrument or {}).get('lot_size') or 0)
+        if lot_size <= 0 or quantity <= 0 or quantity % lot_size:
+            raise ValueError(f'Invalid quantity for {exchange_sym}; current broker lot size is {lot_size}. Update lot size in Settings.')
         order_id = self.kite.place_order(
             tradingsymbol=exchange_sym,
             exchange=self.kite.EXCHANGE_NFO,

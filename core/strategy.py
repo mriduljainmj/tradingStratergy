@@ -20,6 +20,9 @@ class ORBStrategy:
         self.target_prem: Optional[float] = None
         self.strike: Optional[int] = None
         self._expiry_date: Optional[datetime.date] = None  # set at entry, used for DTE calc
+        # Hard initial stop on the NIFTY price (OR level / entry ± 40), set at
+        # entry.  Governs until the Fib trail becomes tighter.
+        self.initial_sl_px: Optional[float] = None
 
     def process_tick(
         self,
@@ -141,52 +144,59 @@ class ORBStrategy:
                 "close": round(close_p, 2),
             })
 
-        # Trailing stop is anchored to the Fibonacci level on NIFTY price
-        # (matches the orange "Trail SL" line drawn on the chart).
-        # CALL: SL price = swing_high - range * fib_trail   (exit if NIFTY low pierces it)
-        # PUT : SL price = swing_low  + range * fib_trail   (exit if NIFTY high pierces it)
+        # ── Stop logic ────────────────────────────────────────────────────────
+        # Two stops protect the position; the TIGHTER one governs at any moment:
+        #   1. Initial hard SL (set at entry: OR level / entry ± 40 on NIFTY)
+        #   2. Fib trailing SL anchored to the day's swing range
+        # CALL: stop = max(initial, trail); exit if NIFTY low pierces it.
+        # PUT : stop = min(initial, trail); exit if NIFTY high pierces it.
         h, l = self.state.current_high, self.state.current_low
         rng = h - l
         triggered, exit_prem = None, None
+        slip = getattr(cfg, "slippage_pct", 0.0)
 
-        if rng > 0:
-            if is_call:
-                trail_sl_price = h - rng * cfg.fib_trail
-                if tick_low <= trail_sl_price:
-                    triggered = "Trailing SL Hit"
-                    # Use the real option price (close_p) — it equals real_option_price
-                    # in paper/live mode, or bs(tick_close) in backtest.
-                    # Using bs(trail_sl_price) was incorrect: it ignores the actual
-                    # market price and produces wildly different P&L vs real trading.
-                    exit_prem = close_p
-            else:
-                trail_sl_price = l + rng * cfg.fib_trail
-                if tick_high >= trail_sl_price:
-                    triggered = "Trailing SL Hit"
-                    exit_prem = close_p
+        if is_call:
+            stop_px, stop_label = self.initial_sl_px, "Stop Loss Hit"
+            if rng > 0:
+                trail = h - rng * cfg.fib_trail
+                if stop_px is None or trail > stop_px:
+                    stop_px, stop_label = trail, "Trailing SL Hit"
+            if stop_px is not None and tick_low <= stop_px:
+                triggered = stop_label
+                # Fill price: real LTP when we have live data; otherwise the
+                # option value AT the stop level (a market order fires the
+                # moment the level breaks — not at the bar's close).
+                raw_exit = close_p if real_option_price is not None else bs(
+                    stop_px, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv
+                )
+                exit_prem = raw_exit * (1 - slip)
+        else:
+            stop_px, stop_label = self.initial_sl_px, "Stop Loss Hit"
+            if rng > 0:
+                trail = l + rng * cfg.fib_trail
+                if stop_px is None or trail < stop_px:
+                    stop_px, stop_label = trail, "Trailing SL Hit"
+            if stop_px is not None and tick_high >= stop_px:
+                triggered = stop_label
+                raw_exit = close_p if real_option_price is not None else bs(
+                    stop_px, self.strike, T_current, cfg.risk_free_rate, cfg.assumed_iv
+                )
+                exit_prem = raw_exit * (1 - slip)
 
-        if not triggered and high_p >= self.target_prem:
+        target_price_verified = self.state.app_mode != 'LIVE' or real_option_price is not None
+        if not triggered and target_price_verified and high_p >= self.target_prem:
+            # Limit-like exit at the target price — no slippage.
             triggered, exit_prem = "Target Hit", self.target_prem
         elif not triggered and t >= cfg.eod_exit_time:
-            triggered, exit_prem = "EOD Force Close", close_p
+            # Market exit at close — slippage applies.
+            triggered, exit_prem = "EOD Force Close", close_p * (1 - slip)
 
         if triggered:
             self.state.exit_reason = triggered   # persist for analytics save
-            # P&L and Charges Math
             gross_pnl = (exit_prem - self.state.entry_prem) * cfg.qty
-
-            buy_val = self.state.entry_prem * cfg.qty
-            sell_val = exit_prem * cfg.qty
-            turnover = buy_val + sell_val
-
-            brokerage = cfg.brokerage_per_order * 2
-            stt = sell_val * cfg.stt_pct
-            exch = turnover * cfg.exchange_charges_pct
-            gst = (brokerage + exch) * cfg.gst_pct
-            sebi = turnover * cfg.sebi_charges_pct
-            stamp = buy_val * cfg.stamp_duty_pct
-
-            total_charges = round(brokerage + stt + exch + gst + sebi + stamp, 2)
+            total_charges, breakdown = OptionsMath.charges_breakdown(
+                self.state.entry_prem, exit_prem, cfg.qty, cfg
+            )
             net_pnl = round(gross_pnl - total_charges, 2)
 
             self.state.gross_pnl = round(gross_pnl, 2)
@@ -194,22 +204,14 @@ class ORBStrategy:
             self.state.net_pnl = net_pnl
             self.state.pnl = net_pnl
             self.state.exit_prem = exit_prem
-
-            self.state.brokerage_breakdown = {
-                "Brokerage (₹20/order)": round(brokerage, 2),
-                "STT (0.0625% on sell)": round(stt, 2),
-                "Exchange (0.053%)": round(exch, 2),
-                "GST (18% on Brk+Exc)": round(gst, 2),
-                "SEBI (₹10/Cr)": round(sebi, 2),
-                "Stamp Duty (0.003% on buy)": round(stamp, 2)
-            }
+            self.state.brokerage_breakdown = breakdown
 
             self.state.option_prices[-1]["close"] = round(exit_prem, 2)
             _exit_color = "#089981" if net_pnl > 0 else "#F23645"
             _exit_shape = "arrowUp" if net_pnl > 0 else "arrowDown"
             _exit_pos   = "belowBar" if net_pnl > 0 else "aboveBar"
             # Determine the NIFTY price at exit and persist on state
-            nifty_exit_px = trail_sl_price if triggered == "Trailing SL Hit" else tick_close
+            nifty_exit_px = stop_px if triggered in ("Trailing SL Hit", "Stop Loss Hit") else tick_close
             self.state.exit_nifty_px = nifty_exit_px
             self.state.markers.append({        # NIFTY chart — show NIFTY exit price
                 "time": unix_time, "position": _exit_pos,
@@ -236,6 +238,12 @@ class ORBStrategy:
     ) -> Optional[dict]:
         cfg = self.config
 
+        # Never enter without a locked opening range.  Without this guard an
+        # engine started mid-session whose backfill failed sees or_high == 0
+        # and the first tick "breaks out" immediately.
+        if self.state.or_high <= 0 or self.state.or_low <= 0:
+            return None
+
         direction = getattr(self.state, "trade_direction", "BOTH").upper()
 
         # ── Compute actual DTE so Black-Scholes uses the real time-value ─────────
@@ -243,7 +251,8 @@ class ORBStrategy:
         # for a Monday/Tuesday trade).  With Tuesday expiry and holiday adjustments
         # the true DTE can be 1–14 days, making the hardcoded value badly wrong.
         # Example: May 22 trade with June 2 expiry → 11 DTE, not 4.
-        trade_date = datetime.datetime.fromtimestamp(unix_time).date()
+        _IST_tz    = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        trade_date = datetime.datetime.fromtimestamp(unix_time, tz=_IST_tz).date()
         expiry     = OptionsMath.get_expiry_date(trade_date)
         dte        = max((expiry - trade_date).days, 1)   # at least 1 day floor
         T_entry    = dte / 365.25
@@ -259,8 +268,10 @@ class ORBStrategy:
             entry_px = max(tick_open, self.state.or_high)
             self.strike = OptionsMath.get_atm_strike(entry_px, cfg.strike_spacing)
             entry_prem = OptionsMath.bs_call(entry_px, self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv)
+            # Initial hard SL on NIFTY — the wider of OR-low / entry − 40 pts.
+            self.initial_sl_px = min(self.state.or_low, entry_px - 40)
             sl_prem = OptionsMath.bs_call(
-                min(self.state.or_low, entry_px - 40), self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv
+                self.initial_sl_px, self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv
             )
             self.state.position_type = "CALL"
 
@@ -270,13 +281,16 @@ class ORBStrategy:
             entry_px = min(tick_open, self.state.or_low)
             self.strike = OptionsMath.get_atm_strike(entry_px, cfg.strike_spacing)
             entry_prem = OptionsMath.bs_put(entry_px, self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv)
+            self.initial_sl_px = max(self.state.or_high, entry_px + 40)
             sl_prem = OptionsMath.bs_put(
-                max(self.state.or_high, entry_px + 40), self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv
+                self.initial_sl_px, self.strike, T_entry, cfg.risk_free_rate, cfg.assumed_iv
             )
             self.state.position_type = "PUT"
         else:
             return None
 
+        # Market-order entry pays the spread — model it as slippage.
+        entry_prem = entry_prem * (1 + getattr(cfg, "slippage_pct", 0.0))
         prem_risk = entry_prem - sl_prem  # kept for the BUY signal payload only
         self.target_prem = entry_prem + cfg.target_pts
         self.state.entry_prem = entry_prem
@@ -310,9 +324,64 @@ class ORBStrategy:
         self.has_traded  = True   # block any further entry for this session
         return {
             "action": "BUY",
+            "reason": (f"ORB breakout: NIFTY {entry_px:.2f} "
+                       f"{'above range high ' + str(self.state.or_high) if self.state.position_type == 'CALL' else 'below range low ' + str(self.state.or_low)}"),
             "type": self.state.position_type,
             "price": entry_prem,
             "risk": prem_risk,
             "target": self.target_prem,
             "strike": self.strike,
         }
+
+    # ── Manual override ────────────────────────────────────────────────────────
+
+    def manual_enter(self, unix_time: int, t: datetime.time, price: float,
+                     direction: str) -> Optional[dict]:
+        """Force an immediate CALL/PUT entry at the current NIFTY price,
+        bypassing the opening-range breakout. Sets the same state the auto
+        entry does so exits, markers and P&L work identically."""
+        if self.in_position or self.has_traded:
+            return None
+        cfg = direction.upper()
+        if cfg not in ("CALL", "PUT"):
+            return None
+        c = self.config
+        _IST_tz    = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        trade_date = datetime.datetime.fromtimestamp(unix_time, tz=_IST_tz).date()
+        expiry     = OptionsMath.get_expiry_date(trade_date)
+        dte        = max((expiry - trade_date).days, 1)
+        T          = dte / 365.25
+        self._expiry_date = expiry
+        self.strike = OptionsMath.get_atm_strike(price, c.strike_spacing)
+        bs = OptionsMath.bs_call if cfg == "CALL" else OptionsMath.bs_put
+        entry_prem = bs(price, self.strike, T, c.risk_free_rate, c.assumed_iv)
+        entry_prem = entry_prem * (1 + getattr(c, "slippage_pct", 0.0))
+        # Initial stop: OR level if we have one, else ±40 pts from entry.
+        if cfg == "CALL":
+            base = self.state.or_low if self.state.or_low > 0 else price - 40
+            self.initial_sl_px = min(base, price - 40)
+        else:
+            base = self.state.or_high if self.state.or_high > 0 else price + 40
+            self.initial_sl_px = max(base, price + 40)
+        self.state.position_type = cfg
+        self.target_prem = entry_prem + c.target_pts
+        self.state.entry_prem = entry_prem
+        self.state.target_prem = self.target_prem
+        suffix = "CE" if cfg == "CALL" else "PE"
+        self.state.option_label  = f"NIFTY {self.strike} {suffix}"
+        self.state.option_expiry = f"Exp {expiry.day} {expiry.strftime('%b')}"
+        ep = round(entry_prem, 2)
+        mts = (unix_time // 60) * 60
+        self.state.option_prices = [{"time": mts, "open": ep, "high": ep, "low": ep, "close": ep}]
+        self.state.entry_nifty_px = price
+        color = "#2962FF" if cfg == "CALL" else "#F23645"
+        shape = "arrowUp" if cfg == "CALL" else "arrowDown"
+        posn  = "belowBar" if cfg == "CALL" else "aboveBar"
+        self.state.markers.append({"time": unix_time, "position": posn, "color": color,
+                                   "shape": shape, "text": f"MANUAL {cfg} @ ₹{price:.0f}"})
+        self.state.option_markers.append({"time": mts, "position": posn, "color": color,
+                                          "shape": shape, "text": f"MANUAL {cfg} @ ₹{entry_prem:.0f}"})
+        self.in_position = True
+        self.has_traded  = True
+        return {"action": "BUY", "reason": "Manual entry requested", "type": cfg, "price": entry_prem,
+                "risk": entry_prem, "target": self.target_prem, "strike": self.strike}

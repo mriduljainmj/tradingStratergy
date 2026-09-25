@@ -1,0 +1,36 @@
+{
+  "name": "frontend",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve --proxy-config proxy.conf.json",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "npm run test:chart-time && node tests/portfolio-totals.test.cjs && npm run build && ../.venv/bin/python ../tests/ui_smoke.py",
+    "typecheck": "ng build --configuration development",
+    "test:chart-time": "node tests/chart-time.test.cjs && node tests/live-candles.test.cjs && node tests/stream-candles.test.cjs"
+  },
+  "private": true,
+  "packageManager": "npm@10.7.0",
+  "dependencies": {
+    "@angular/common": "^22.1.0",
+    "@angular/compiler": "^22.1.0",
+    "@angular/core": "^22.1.0",
+    "@angular/forms": "^22.1.0",
+    "@angular/platform-browser": "^22.1.0",
+    "@angular/router": "^22.1.0",
+    "lightweight-charts": "^4.2.3",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.1.8",
+    "@angular/cli": "^22.1.8",
+    "@angular/compiler-cli": "^22.1.0",
+    "prettier": "^3.8.1",
+    "typescript": "~6.0.2"
+  },
+  "engines": {
+    "node": ">=22.22.3 <23 || >=24.15.0"
+  }
+}

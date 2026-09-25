@@ -20,10 +20,6 @@ class HistoricalBacktester:
     # ── Single-day backtest ────────────────────────────────────────────────────
 
     def run_day(self, date: datetime.date, direction: str = "BOTH") -> dict:
-        state    = BotState(app_mode="BACKTEST")
-        state.trade_direction = direction.upper()   # respect CALL / PUT / BOTH filter
-        strategy = ORBStrategy(self.config, state)
-
         # ── Fetch NIFTY 1m candles ────────────────────────────────────────────
         try:
             records = self.broker.get_historical_data(
@@ -100,55 +96,40 @@ class HistoricalBacktester:
         except Exception:
             candles = []
 
-        # ── Phase 1: NIFTY replay → find OR + entry (Black-Scholes prices) ────
-        # After exit we keep looping to append BS option prices for the rest of
-        # the day so the options chart shows the full session, not just the trade.
-        exited = False
-        for r in records:
-            dt = r["date"]
+        # ── Phase 1: Black-Scholes replay → find OR + entry + strike ──────────
+        state, strategy = self._simulate_day(records, direction, opt_map=None)
 
-            if not exited:
-                signal = strategy.process_tick(
-                    int(dt.timestamp()), dt.time(),
-                    r["open"], r["high"], r["low"], r["close"],
-                )
-                if signal and signal["action"] == "SELL":
-                    exited = True
-            else:
-                # Post-exit: compute BS price for this candle and extend chart
-                if strategy.strike is not None:
-                    # Use actual DTE stored by _look_for_entry (same fix as strategy.py)
-                    if strategy._expiry_date is not None:
-                        _IST_tz   = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
-                        tick_date = datetime.datetime.fromtimestamp(int(dt.timestamp()), tz=_IST_tz).date()
-                        dte       = max((strategy._expiry_date - tick_date).days, 0.5)
-                        T         = dte / 365.25
-                    else:
-                        T = 4 / 365.25
-                    cfg = self.config
-                    is_call = state.position_type == "CALL"
-                    bs  = OptionsMath.bs_call if is_call else OptionsMath.bs_put
-                    ts  = int(dt.timestamp())
-                    if is_call:
-                        op = bs(r["open"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                        hp = bs(r["high"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                        lp = bs(r["low"],   strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                        cp = bs(r["close"], strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                    else:
-                        # For puts: high NIFTY → low option price, so swap high/low
-                        op = bs(r["open"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                        hp = bs(r["low"],   strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                        lp = bs(r["high"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                        cp = bs(r["close"], strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv)
-                    state.option_prices.append({
-                        "time":  ts,
-                        "open":  round(op, 2), "high": round(hp, 2),
-                        "low":   round(lp, 2), "close": round(cp, 2),
-                    })
-
-        # ── Phase 2: Replace BS option data with real NFO candles if available ─
+        # ── Phase 2: re-simulate with REAL option prices when available ───────
+        # The BS replay only decides WHETHER a trade happens and at what strike
+        # (entry is driven purely by NIFTY, so the strike is identical).  If
+        # Kite has real 1-min data for that contract we re-run the ENTIRE
+        # session feeding real premiums through the same process_tick() path
+        # the paper/live engine uses — so target, stops and P&L are evaluated
+        # on actual market prices at their actual times, not model estimates
+        # sampled at model-chosen timestamps.
         if state.position_type != "NONE" and strategy.strike:
-            self._patch_real_option_data(state, strategy, date)
+            suffix     = "CE" if state.position_type == "CALL" else "PE"
+            min_expiry = OptionsMath.get_expiry_date(date)
+            opt_records, _contract = self.broker.get_option_history(
+                strategy.strike, suffix, date, min_expiry=min_expiry
+            )
+            if opt_records:
+                opt_map = {}
+                for r in opt_records:
+                    ts_min = (int(r["date"].timestamp()) // 60) * 60
+                    opt_map[ts_min] = r["close"]
+                r_state, r_strategy = self._simulate_day(records, direction, opt_map)
+                if r_state.position_type != "NONE":
+                    state, strategy = r_state, r_strategy
+                    state.used_real_options = True
+                    self._load_real_option_chart(
+                        state, strategy.strike, suffix, date, min_expiry, opt_records
+                    )
+            if not state.used_real_options:
+                logger.info(
+                    f"{date}: no real NFO data for NIFTY{strategy.strike}{suffix} "
+                    f"— keeping Black-Scholes estimates"
+                )
         else:
             logger.info(f"{date}: no trade triggered — skipping NFO fetch")
 
@@ -183,156 +164,115 @@ class HistoricalBacktester:
             "exit_reason":        state.exit_reason,
         }
 
-    # ── Patch option prices + P&L with real Kite NFO data ─────────────────────
+    # ── Session replay (shared by BS and real-price passes) ───────────────────
 
-    def _patch_real_option_data(self, state: BotState, strategy: ORBStrategy,
-                                date: datetime.date):
+    def _simulate_day(self, records: list, direction: str, opt_map: dict | None):
         """
-        Fetch real 1-min OHLC for the traded options contract from Kite and
-        replace the Black-Scholes estimates in `state`.  Falls back silently
-        if Kite has no data for that date/contract.
+        Replay one session through ORBStrategy.process_tick — the exact code
+        path the paper/live engine uses.
+
+        opt_map: optional {minute_ts: real option close}.  When provided, real
+        premiums are fed to the strategy (target/stop checks run on market
+        prices) and the BS entry estimate is replaced by the real fill, same
+        as the live engine's mid-session backfill.  When None, Black-Scholes
+        pricing is used and the option chart is extended past the exit so the
+        full session is visible.
+
+        Returns (state, strategy).
         """
-        suffix     = "CE" if state.position_type == "CALL" else "PE"
-        min_expiry = OptionsMath.get_expiry_date(date)
-        records, _contract = self.broker.get_option_history(
-            strategy.strike, suffix, date, min_expiry=min_expiry
-        )
+        import copy
+        cfg   = copy.copy(self.config)   # per-run copy: IV calibration stays local
+        state = BotState(app_mode="BACKTEST")
+        state.trade_direction = direction.upper()
+        strategy = ORBStrategy(cfg, state)
 
-        if not records:
-            logger.info(
-                f"{date}: No real NFO data for NIFTY{strategy.strike}{suffix} "
-                f"— keeping Black-Scholes estimates"
-            )
-            state.used_real_options = False
-            return
-
-        state.used_real_options = True
-
-        # Build a lookup: minute-boundary unix_ts → candle dict
-        nfo: dict[int, dict] = {}
+        exited    = False
+        last_real = None
         for r in records:
-            ts = int(r["date"].timestamp())
-            ts_min = (ts // 60) * 60          # floor to minute boundary
-            nfo[ts_min] = {
-                "time":  ts_min,
-                "open":  r["open"],  "high": r["high"],
-                "low":   r["low"],   "close": r["close"],
-            }
+            dt     = r["date"]
+            ts     = int(dt.timestamp())
+            ts_min = (ts // 60) * 60
 
-        def nearest_candle(unix_ts: int) -> dict | None:
-            """Find the NFO candle closest to unix_ts.
-            First tries exact minute and ±10 min offsets; falls back to
-            absolute-closest candle in the whole day's data."""
-            base = (unix_ts // 60) * 60
-            for offset in range(0, 601, 60):   # 0, 60, 120 … 600 s (10 min)
-                for sign in (1, -1) if offset else (1,):
-                    c = nfo.get(base + sign * offset)
-                    if c:
-                        return c
-            # Last-resort: pick the candle with the smallest time-distance
-            if not nfo:
-                return None
-            closest_ts = min(nfo, key=lambda k: abs(k - base))
-            logger.debug(
-                f"nearest_candle fallback: target {base} → closest {closest_ts} "
-                f"(delta {abs(closest_ts - base)}s)"
-            )
-            return nfo[closest_ts]
+            real_opt = None
+            if opt_map is not None:
+                real_opt = (opt_map.get(ts_min)
+                            or opt_map.get(ts_min - 60)
+                            or opt_map.get(ts_min + 60)
+                            or last_real)
+                if real_opt is not None:
+                    last_real = real_opt
 
-        # ── Markers tell us entry and exit unix timestamps ─────────────────────
-        markers = state.markers
-        entry_unix = markers[0]["time"] if markers else None
-        exit_unix  = markers[1]["time"] if len(markers) > 1 else None
+            if not exited:
+                signal = strategy.process_tick(
+                    ts, dt.time(),
+                    r["open"], r["high"], r["low"], r["close"],
+                    real_opt,
+                )
+                if signal and signal["action"] == "BUY" and real_opt is not None:
+                    # Same override the live engine applies at entry: the real
+                    # market price replaces the BS estimate and the target is
+                    # re-anchored to the real fill (plus entry slippage).
+                    ep = round(real_opt * (1 + getattr(cfg, "slippage_pct", 0.0)), 2)
+                    state.entry_prem     = ep
+                    strategy.target_prem = round(ep + cfg.target_pts, 2)
+                    state.target_prem    = strategy.target_prem
+                    if state.option_prices:
+                        state.option_prices[0] = {
+                            **state.option_prices[0],
+                            "open": ep, "high": ep, "low": ep, "close": ep,
+                        }
+                    pt = state.position_type
+                    if state.option_markers:
+                        state.option_markers[0]["text"] = f"BUY {pt} @ ₹{ep:.0f}"
+                    # Calibrate the BS fallback (used for candles Kite is missing)
+                    try:
+                        T_iv = max((strategy._expiry_date - dt.date()).days, 1) / 365.25
+                        iv = OptionsMath.implied_vol(
+                            real_opt, float(state.entry_nifty_px),
+                            float(strategy.strike), T_iv, cfg.risk_free_rate,
+                            is_call=(pt == "CALL"),
+                        )
+                        if 0.02 <= iv <= 2.0:
+                            cfg.assumed_iv = round(iv, 4)
+                    except Exception:
+                        pass
+                if signal and signal["action"] == "SELL":
+                    exited = True
 
-        # ── Update entry premium ───────────────────────────────────────────────
-        entry_candle = nearest_candle(entry_unix) if entry_unix else None
-        logger.info(
-            f"{date}: entry_unix={entry_unix}, "
-            f"nfo_keys_sample={sorted(nfo)[:3] if nfo else '[]'}, "
-            f"entry_candle={'found @' + str(entry_candle['time']) if entry_candle else 'NOT FOUND'}"
-        )
-        if entry_candle:
-            real_entry = entry_candle["close"]
-            bs_entry   = state.entry_prem          # keep for logging
-            state.entry_prem          = round(real_entry, 2)
-            strategy.state.entry_prem = round(real_entry, 2)
-            strategy.target_prem      = real_entry + self.config.target_pts
-            state.target_prem         = round(strategy.target_prem, 2)
-            # Patch BUY markers: NIFTY chart → NIFTY price, options chart → real fill price
-            pos_type = state.position_type
-            if markers and state.entry_nifty_px:
-                markers[0]["text"] = f"BUY {pos_type} @ ₹{state.entry_nifty_px:.0f}"
-            if state.option_markers:
-                state.option_markers[0]["text"] = f"BUY {pos_type} @ ₹{real_entry:.0f}"
-            logger.info(
-                f"{date}: Real entry premium ₹{real_entry:.2f} "
-                f"(was ₹{bs_entry:.2f} BS estimate)"
-            )
+            elif opt_map is None and strategy.strike is not None:
+                # BS path, post-exit: extend the option chart to session end
+                if strategy._expiry_date is not None:
+                    _IST_tz   = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+                    tick_date = datetime.datetime.fromtimestamp(ts, tz=_IST_tz).date()
+                    dte       = max((strategy._expiry_date - tick_date).days, 0.5)
+                    T         = dte / 365.25
+                else:
+                    T = 4 / 365.25
+                is_call = state.position_type == "CALL"
+                bs = OptionsMath.bs_call if is_call else OptionsMath.bs_put
+                hi_src, lo_src = (r["high"], r["low"]) if is_call else (r["low"], r["high"])
+                state.option_prices.append({
+                    "time":  ts,
+                    "open":  round(bs(r["open"],  strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv), 2),
+                    "high":  round(bs(hi_src,     strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv), 2),
+                    "low":   round(bs(lo_src,     strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv), 2),
+                    "close": round(bs(r["close"], strategy.strike, T, cfg.risk_free_rate, cfg.assumed_iv), 2),
+                })
 
-        # ── Update exit premium + recalculate P&L ─────────────────────────────
-        exit_candle = nearest_candle(exit_unix) if exit_unix else None
-        if exit_candle and entry_candle:
-            real_exit = exit_candle["close"]
-            cfg       = self.config
+        return state, strategy
 
-            gross_pnl = (real_exit - state.entry_prem) * cfg.qty
-            buy_val   = state.entry_prem * cfg.qty
-            sell_val  = real_exit        * cfg.qty
-            turnover  = buy_val + sell_val
-
-            brokerage = cfg.brokerage_per_order * 2
-            stt       = sell_val * cfg.stt_pct
-            exch      = turnover * cfg.exchange_charges_pct
-            gst       = (brokerage + exch) * cfg.gst_pct
-            sebi      = turnover * cfg.sebi_charges_pct
-            stamp     = buy_val  * cfg.stamp_duty_pct
-            total_ch  = round(brokerage + stt + exch + gst + sebi + stamp, 2)
-            net_pnl   = round(gross_pnl - total_ch, 2)
-
-            state.exit_prem        = round(real_exit, 2)
-            state.gross_pnl        = round(gross_pnl, 2)
-            state.total_charges    = total_ch
-            state.net_pnl          = net_pnl
-            state.pnl              = net_pnl
-
-            state.brokerage_breakdown = {
-                "Brokerage (₹20/order)":       round(brokerage, 2),
-                "STT (0.0625% on sell)":        round(stt,       2),
-                "Exchange (0.053%)":            round(exch,      2),
-                "GST (18% on Brk+Exc)":         round(gst,       2),
-                "SEBI (₹10/Cr)":                round(sebi,      2),
-                "Stamp Duty (0.003% on buy)":   round(stamp,     2),
-            }
-
-            # Patch EXIT markers: NIFTY chart → NIFTY price (from Phase 1), options → real premium
-            _epatch = {
-                "position": "belowBar" if net_pnl > 0 else "aboveBar",
-                "color":    "#089981"  if net_pnl > 0 else "#F23645",
-                "shape":    "arrowUp"  if net_pnl > 0 else "arrowDown",
-            }
-            if len(state.markers) > 1:
-                # Use NIFTY exit price stored during Phase 1 strategy replay
-                nifty_exit_px = state.exit_nifty_px or exit_candle["close"]
-                state.markers[-1].update({**_epatch, "text": f"EXIT @ ₹{nifty_exit_px:.0f}"})
-            if len(state.option_markers) > 1:
-                state.option_markers[-1].update({**_epatch, "text": f"EXIT @ ₹{real_exit:.0f}"})
-
-            logger.info(
-                f"{date}: Real exit premium ₹{real_exit:.2f} | "
-                f"Real Net P&L ₹{net_pnl:.2f}"
-            )
-
-        # ── Replace option_prices with real NFO OHLC candles ──────────────────
-        # Also prepend the previous 3 trading days so the option chart shows
-        # historical context just like the NIFTY chart does.
+    def _load_real_option_chart(self, state: BotState, strike: int, suffix: str,
+                                date: datetime.date, min_expiry: datetime.date,
+                                opt_records: list):
+        """Replace option_prices with real NFO OHLC (today + 3 prev days context)."""
         prev_candles: list = []
-        _prev_d      = date - datetime.timedelta(days=1)
+        _prev_d       = date - datetime.timedelta(days=1)
         _prev_fetched = 0
         while _prev_fetched < 3:
             if OptionsMath.is_trading_day(_prev_d):
                 try:
                     prev_recs, _ = self.broker.get_option_history(
-                        strategy.strike, suffix, _prev_d, min_expiry=min_expiry
+                        strike, suffix, _prev_d, min_expiry=min_expiry
                     )
                     for r in (prev_recs or []):
                         ts = (int(r["date"].timestamp()) // 60) * 60
@@ -346,8 +286,15 @@ class HistoricalBacktester:
                 _prev_fetched += 1
             _prev_d -= datetime.timedelta(days=1)
 
-        today_candles = sorted(nfo.values(), key=lambda c: c["time"])
-        all_candles   = sorted(prev_candles + today_candles, key=lambda c: c["time"])
+        today_candles = [
+            {
+                "time":  (int(r["date"].timestamp()) // 60) * 60,
+                "open":  r["open"],  "high": r["high"],
+                "low":   r["low"],   "close": r["close"],
+            }
+            for r in opt_records
+        ]
+        all_candles = sorted(prev_candles + today_candles, key=lambda c: c["time"])
         if all_candles:
             state.option_prices = all_candles
 
@@ -600,6 +547,39 @@ class HistoricalBacktester:
                 "avg_pnl":  round(pnl_in / len(days_in), 2) if days_in else 0,
             }
 
+        # ── Standardized performance metrics ─────────────────────────────────
+        trade_pnls = [d["pnl"] for d in traded]
+        win_pnls   = [p for p in trade_pnls if p > 0]
+        loss_pnls  = [p for p in trade_pnls if p <= 0]
+
+        gross_win  = sum(win_pnls)
+        gross_loss = abs(sum(loss_pnls))
+        profit_factor = (round(gross_win / gross_loss, 2) if gross_loss
+                         else (float("inf") if gross_win > 0 else 0.0))
+
+        avg_win    = round(gross_win / len(win_pnls), 2)   if win_pnls  else 0.0
+        avg_loss   = round(-gross_loss / len(loss_pnls), 2) if loss_pnls else 0.0
+        expectancy = round(sum(trade_pnls) / len(trade_pnls), 2) if trade_pnls else 0.0
+
+        # Sharpe on daily P&L (all days incl. flat), annualized over 252 sessions
+        day_pnls = [d["pnl"] for d in daily]
+        sharpe = 0.0
+        if len(day_pnls) > 1:
+            mean = sum(day_pnls) / len(day_pnls)
+            var  = sum((p - mean) ** 2 for p in day_pnls) / (len(day_pnls) - 1)
+            std  = var ** 0.5
+            if std > 0:
+                sharpe = round(mean / std * (252 ** 0.5), 2)
+
+        # Max drawdown on the cumulative equity curve (₹)
+        peak, max_dd = 0.0, 0.0
+        _run = 0.0
+        for p in day_pnls:
+            _run += p
+            peak = max(peak, _run)
+            max_dd = max(max_dd, peak - _run)
+        max_drawdown = round(max_dd, 2)
+
         running    = 0
         cumulative = []
         for d in daily:
@@ -627,6 +607,14 @@ class HistoricalBacktester:
             "losses":          len(traded) - len(wins),
             "win_rate":        round(len(wins) / len(traded) * 100, 1) if traded else 0,
             "total_pnl":       round(sum(d["pnl"] for d in daily), 2),
+            "sharpe_ratio":    sharpe,
+            "max_drawdown":    max_drawdown,
+            "profit_factor":   profit_factor if profit_factor != float("inf") else 999.0,
+            "avg_win":         avg_win,
+            "avg_loss":        avg_loss,
+            "expectancy":      expectancy,
+            "best_day":        round(max(trade_pnls), 2) if trade_pnls else 0.0,
+            "worst_day":       round(min(trade_pnls), 2) if trade_pnls else 0.0,
             "real_options_used": real_count,
             "bs_fallback":     len(traded) - real_count,
             "cumulative":      cumulative,

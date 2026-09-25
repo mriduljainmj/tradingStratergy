@@ -1,28 +1,17 @@
-from flask import Blueprint, jsonify, render_template, request
+from execution.order_safety import has_exposure
+from flask import Blueprint, jsonify, request
+from werkzeug.exceptions import HTTPException
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from db.database import SessionLocal
 from db.models import Strategy
+from dashboard.authz import admin_required
+from dashboard.api_support import validate_strategy
 
 strategy_bp = Blueprint("strategy", __name__)
 
 # ── Default ORB strategy seeded for every new user ────────────────────────────
-_ORB_DEFAULT_RULES = {
-    "entry": {
-        "conditions": [
-            {"indicator": "PRICE", "condition": "CROSSES_ABOVE", "reference": "OR_HIGH", "action": "BUY_CALL"},
-            {"indicator": "PRICE", "condition": "CROSSES_BELOW", "reference": "OR_LOW",  "action": "BUY_PUT"},
-        ],
-        "operator": "OR",
-        "time_filter": {"start": "09:20", "end": "10:30"},
-    },
-    "exit": {
-        "take_profit": {"type": "PREMIUM_POINTS", "value": 130},
-        "stop_loss":   {"type": "FIB_TRAIL",      "value": 0.7},
-        "time_exit":   {"time": "12:30"},
-    },
-    "position": {"lot_size": 25, "lots": 2},
-}
+from config.strategy_defaults import default_options_rules
 
 _VALID_INDICATORS = {"PRICE","RSI_14","EMA_9","EMA_21","VWAP","OR_HIGH","OR_LOW"}
 _VALID_CONDITIONS = {"CROSSES_ABOVE","CROSSES_BELOW","GREATER_THAN","LESS_THAN"}
@@ -55,13 +44,6 @@ def _validate_rules(rules: dict) -> str | None:
     return None
 
 
-# ── Pages ──────────────────────────────────────────────────────────────────────
-
-@strategy_bp.route("/strategy-builder")
-def builder_page():
-    return render_template("strategy_builder.html")
-
-
 # ── CRUD ───────────────────────────────────────────────────────────────────────
 
 @strategy_bp.route("/api/strategies")
@@ -80,7 +62,7 @@ def list_strategies():
                 description="Opening Range Breakout — buy CALL on OR High breakout, PUT on OR Low breakdown.",
                 is_active=True,
             )
-            seed.set_rules(_ORB_DEFAULT_RULES)
+            seed.set_rules(default_options_rules())
             db.add(seed)
             db.commit()
             db.refresh(seed)
@@ -93,25 +75,40 @@ def list_strategies():
 
 @strategy_bp.route("/api/strategies", methods=["POST"])
 @jwt_required()
+@admin_required
 def create_strategy():
     data  = request.get_json(silent=True) or {}
     name  = (data.get("name") or "").strip()
     rules = data.get("rules", {})
+    validate_strategy(data)
 
     if not name:
         return _bad("Strategy name is required.")
-    err = _validate_rules(rules)
-    if err:
-        return _bad(err)
+    itype = (data.get("instrument_type") or "OPTIONS").upper()
+    if itype not in ("OPTIONS", "EQUITY"):
+        return _bad("instrument_type must be OPTIONS or EQUITY")
+    # ORB-style rule validation applies to options strategies only; equity
+    # rules are the flat {qty, sl_pct, tgt_pct, ema_fast, ...} schema.
+    if itype == "OPTIONS" and isinstance(rules, dict) and "entry" in rules:
+        # Legacy ORB conditions schema — validate it. Flat param schema
+        # (target_pts / fib_trail / …) from the Builder is accepted as-is.
+        err = _validate_rules(rules)
+        if err:
+            return _bad(err)
 
     db = SessionLocal()
     try:
-        s = Strategy(user_id=_uid(), name=name, description=data.get("description",""))
+        s = Strategy(user_id=_uid(), name=name, description=data.get("description",""),
+                     instrument_type=itype,
+                     symbol=(data.get("symbol") or ("NIFTY 50" if itype == "OPTIONS" else "RELIANCE")).upper(),
+                     engine_type=(data.get("engine_type") or ("ORB" if itype == "OPTIONS" else "EQUITY_ORB")).upper())
         s.set_rules(rules)
         db.add(s)
         db.commit()
         db.refresh(s)
         return jsonify({"ok": True, "strategy": s.to_dict()}), 201
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         return _bad(str(e), 500)
@@ -134,6 +131,7 @@ def get_strategy(sid):
 
 @strategy_bp.route("/api/strategies/<int:sid>", methods=["PUT"])
 @jwt_required()
+@admin_required
 def update_strategy(sid):
     data = request.get_json(silent=True) or {}
     db   = SessionLocal()
@@ -142,6 +140,13 @@ def update_strategy(sid):
         if not s:
             return _bad("Strategy not found.", 404)
 
+        from core.engine_pool import engine_pool
+        ue = engine_pool.get(_uid())
+        if s.is_running or (ue and ue.state.active_strategy_id == sid and has_exposure(ue)):
+            return _bad('Stop the strategy and close its position before editing.', 409)
+        validate_strategy(data, s)
+        if 'instrument_type' in data and data['instrument_type'] != s.instrument_type:
+            return _bad('Create a new strategy to change instrument type.')
         if "name" in data:
             name = data["name"].strip()
             if not name:
@@ -150,14 +155,22 @@ def update_strategy(sid):
         if "description" in data:
             s.description = data["description"]
         if "rules" in data:
-            err = _validate_rules(data["rules"])
-            if err:
-                return _bad(err)
-            s.set_rules(data["rules"])
+            r = data["rules"]
+            if (s.instrument_type or "OPTIONS") == "OPTIONS" and isinstance(r, dict) and "entry" in r:
+                err = _validate_rules(r)
+                if err:
+                    return _bad(err)
+            s.set_rules(r)
+        if "symbol" in data:
+            s.symbol = (data["symbol"] or s.symbol or "").upper()
+        if "engine_type" in data:
+            s.engine_type = (data["engine_type"] or s.engine_type or "").upper()
 
         db.commit()
         db.refresh(s)
         return jsonify({"ok": True, "strategy": s.to_dict()})
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         return _bad(str(e), 500)
@@ -167,15 +180,22 @@ def update_strategy(sid):
 
 @strategy_bp.route("/api/strategies/<int:sid>", methods=["DELETE"])
 @jwt_required()
+@admin_required
 def delete_strategy(sid):
     db = SessionLocal()
     try:
         s = db.query(Strategy).filter_by(id=sid, user_id=_uid()).first()
         if not s:
             return _bad("Strategy not found.", 404)
+        from core.engine_pool import engine_pool
+        ue = engine_pool.get(_uid())
+        if s.is_running or (ue and ue.state.active_strategy_id == sid and has_exposure(ue)):
+            return _bad('Stop the strategy and close its position before deleting.', 409)
         db.delete(s)
         db.commit()
         return jsonify({"ok": True})
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         return _bad(str(e), 500)
@@ -183,8 +203,94 @@ def delete_strategy(sid):
         db.close()
 
 
+# ── Phase-2: run/stop equity strategies as parallel engines ──────────────────
+
+@strategy_bp.route("/api/strategies/<int:sid>/start", methods=["POST"])
+@jwt_required()
+@admin_required
+def start_strategy_engine(sid):
+    """Start the per-strategy equity engine (paper by default; {"mode":"live"})."""
+    from core.engine_pool import engine_pool
+    uid  = _uid()
+    body = request.get_json(silent=True) or {}
+    mode = (body.get('mode') or 'paper').lower()
+    if mode not in ('paper', 'live'):
+        return _bad('mode must be paper or live.')
+    live = mode == 'live'
+    db = SessionLocal()
+    try:
+        s = db.query(Strategy).filter_by(id=sid, user_id=uid).first()
+        if not s:
+            return _bad("Strategy not found", 404)
+        if (s.instrument_type or "OPTIONS") != "EQUITY":
+            return _bad("Only EQUITY strategies run as parallel engines — "
+                        "the OPTIONS ORB strategy runs via the main engine (Take Trades).")
+        ue = engine_pool.get_or_create(uid)
+        if ue.state.kite_auth_error or not ue.broker.kite.access_token:
+            return _bad('Connect Kite before starting a strategy.', 409)
+        validate_strategy(s.to_dict())
+        snap = ue.start_equity_strategy(s.to_dict(), paper=not live)
+        s.is_running = True
+        s.run_mode   = "LIVE" if live else "PAPER"
+        db.commit()
+        return jsonify({"ok": True, "engine": snap})
+    finally:
+        db.close()
+
+
+@strategy_bp.route("/api/strategies/<int:sid>/stop", methods=["POST"])
+@jwt_required()
+@admin_required
+def stop_strategy_engine(sid):
+    from core.engine_pool import engine_pool
+    uid = _uid()
+    ue  = engine_pool.get_or_create(uid)
+    eng = getattr(ue, 'equity_engines', {}).get(sid)
+    if eng and (eng.in_pos or getattr(eng, 'execution_blocked', False)):
+        return _bad('Exit the position and reconcile pending orders before stopping.', 409)
+    with SessionLocal() as lookup:
+        if not lookup.query(Strategy).filter_by(id=sid, user_id=uid).first():
+            return _bad('Strategy not found.', 404)
+    ue.stop_equity_strategy(sid)
+    db = SessionLocal()
+    try:
+        s = db.query(Strategy).filter_by(id=sid, user_id=uid).first()
+        if s:
+            s.is_running = False
+            s.run_mode   = None
+            db.commit()
+    finally:
+        db.close()
+    return jsonify({"ok": True})
+
+
+@strategy_bp.route("/api/strategies/<int:sid>/manual", methods=["POST"])
+@jwt_required()
+@admin_required
+def manual_equity(sid):
+    """Manually enter/exit a running equity strategy. Body: {"action":"enter"|"exit"}"""
+    from core.engine_pool import engine_pool
+    action = ((request.get_json(silent=True) or {}).get("action") or "").upper()
+    if action not in ("ENTER", "EXIT"):
+        return _bad("action must be enter or exit")
+    ue = engine_pool.get_or_create(_uid())
+    if ue.manual_equity_action(sid, action):
+        return jsonify({"ok": True, "queued": action})
+    return _bad("Strategy is not running — press Run first.", 400)
+
+
+@strategy_bp.route("/api/strategies/running")
+@jwt_required()
+def running_strategies():
+    """Live snapshots of all equity strategy engines for this user."""
+    from core.engine_pool import engine_pool
+    ue = engine_pool.get_or_create(_uid())
+    return jsonify({"ok": True, "engines": ue.equity_snapshots()})
+
+
 @strategy_bp.route("/api/strategies/<int:sid>/activate", methods=["POST"])
 @jwt_required()
+@admin_required
 def activate_strategy(sid):
     db = SessionLocal()
     try:
@@ -200,6 +306,8 @@ def activate_strategy(sid):
         db.commit()
         db.refresh(s)
         return jsonify({"ok": True, "strategy": s.to_dict()})
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         return _bad(str(e), 500)

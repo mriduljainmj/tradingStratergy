@@ -1,5 +1,6 @@
 import logging
 import os
+import datetime
 
 import bcrypt
 from flask import Flask
@@ -68,15 +69,43 @@ def create_app() -> Flask:
     by the EnginePool singleton in core/engine_pool.py.  Routes look up the
     calling user's engine via JWT identity — no global state is injected here.
     """
-    template_dir = os.path.join(os.path.dirname(__file__), "templates")
-    app = Flask(__name__, template_folder=template_dir)
+    app = Flask(__name__, static_folder=None)
+    from dashboard.portfolio_routes import portfolio_bp
+    app.register_blueprint(portfolio_bp)
 
     # JWT + Flask session secret
-    _secret = os.getenv("JWT_SECRET_KEY", "orb-dev-secret-change-in-prod")
+    from config.security import app_secret
+    _secret = app_secret()
     app.config["SECRET_KEY"]               = _secret
     app.config["JWT_SECRET_KEY"]           = _secret
-    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
-    JWTManager(app)
+    app.config["JWT_ACCESS_TOKEN_EXPIRES"] = datetime.timedelta(hours=12)
+    jwt = JWTManager(app)
+    from db.models import RevokedToken
+    @jwt.token_in_blocklist_loader
+    def token_revoked(header, payload):
+        with SessionLocal() as db:
+            try:
+                user = db.get(User, int(payload.get('sub', 0)))
+            except (TypeError, ValueError):
+                return True
+            return (not payload.get('exp') or not user
+                    or payload.get('auth_version', 0) != (user.auth_version or 0)
+                    or db.get(RevokedToken, payload['jti']) is not None)
+
+    @jwt.unauthorized_loader
+    def missing_token(reason):
+        from flask import jsonify
+        return jsonify(ok=False, error='Please sign in to continue.'), 401
+
+    @jwt.invalid_token_loader
+    def invalid_token(reason):
+        from flask import jsonify
+        return jsonify(ok=False, error='Your session is invalid. Please sign in again.'), 401
+
+    from dashboard.api_support import install_api_support
+    from dashboard.frontend import install_frontend
+    install_api_support(app)
+    install_frontend(app)
 
     # Init DB tables + migrations, then seed the default local user (if configured)
     init_db()
@@ -88,5 +117,12 @@ def create_app() -> Flask:
     app.register_blueprint(analytics_bp)
     app.register_blueprint(strategy_bp)
     app.register_blueprint(screener_bp)
+    from dashboard.execution_routes import execution_bp
+    app.register_blueprint(execution_bp)
+
+    from dashboard.workspace_routes import workspace_bp
+    app.register_blueprint(workspace_bp)
+    from dashboard.stream_routes import stream_bp
+    app.register_blueprint(stream_bp)
 
     return app

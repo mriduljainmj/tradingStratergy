@@ -1,11 +1,13 @@
 services:
   - type: web
     name: orb-trading-dashboard
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     plan: free
     envVars:
+      - key: APP_ENV
+        value: production
       - key: TZ
         value: Asia/Kolkata   # IST — critical for market time comparisons
       - key: APP_MODE
@@ -16,8 +18,6 @@ services:
         sync: false           # set manually in Render dashboard
       - key: KITE_API_SECRET
         sync: false           # set manually in Render dashboard
-      - key: KITE_ACCESS_TOKEN
-        sync: false           # optional — set each morning after Kite login
       - key: JWT_SECRET_KEY
         sync: false           # set to a long random string in Render dashboard
       - key: DATABASE_URL

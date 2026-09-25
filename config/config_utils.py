@@ -14,11 +14,11 @@ from config.settings import TradingConfig
 logger = logging.getLogger(__name__)
 
 _STRATEGY_FIELDS = ["target_pts", "fib_trail", "or_end_time", "entry_end_time", "eod_exit_time", "strike_spacing"]
-_POSITION_FIELDS = ["lot_size", "qty_multiplier"]
+_POSITION_FIELDS = ["lot_size", "qty_multiplier", "max_daily_loss", "paper_starting_balance"]
 _OPTIONS_FIELDS  = ["risk_free_rate", "assumed_iv"]
 _BROKER_FIELDS   = [
     "brokerage_per_order", "stt_pct", "exchange_charges_pct",
-    "gst_pct", "sebi_charges_pct", "stamp_duty_pct",
+    "gst_pct", "sebi_charges_pct", "stamp_duty_pct", "slippage_pct",
 ]
 _TIME_FIELDS = {"or_end_time", "entry_end_time", "eod_exit_time"}
 
@@ -98,14 +98,3 @@ def set_mode_settings(settings_json_str: str, mode: str, mode_data: dict) -> str
         all_data = {}
     all_data[mode] = mode_data
     return json.dumps(all_data)
-
-
-def apply_settings_json(cfg: TradingConfig, settings_json: str, mode: str = "PAPER"):
-    """Load settings for the given mode from a JSON string and apply to cfg in-place."""
-    if not settings_json:
-        return
-    try:
-        mode_data = get_mode_settings(settings_json, mode)
-        apply_config_dict(cfg, mode_data)
-    except Exception as e:
-        logger.warning(f"Settings: failed to apply settings JSON: {e}")

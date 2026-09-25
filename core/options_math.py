@@ -141,16 +141,32 @@ class OptionsMath:
         return expiry
 
     @staticmethod
-    def build_nfo_symbol(strike: int, option_type: str,
-                         trade_date: datetime.date | None = None) -> str:
+    def charges_breakdown(entry_prem: float, exit_prem: float, qty: int, cfg) -> tuple:
         """
-        Build the full NFO tradingsymbol for a Nifty option.
-        e.g.  build_nfo_symbol(24200, "CE", date(2026, 4, 21))
-              → "NFO:NIFTY26APR24200CE"
+        Single source of truth for round-trip transaction costs on a long
+        options trade.  Used by the strategy, the backtester, and the live
+        engine so the three can never drift apart.
+
+        Returns (total_charges, breakdown_dict) — both rounded to 2 dp.
         """
-        if trade_date is None:
-            trade_date = datetime.date.today()
-        expiry = OptionsMath.get_expiry_date(trade_date)
-        day   = f"{expiry.day:02d}"
-        month = expiry.strftime("%b").upper()   # APR, MAY …
-        return f"NFO:NIFTY{day}{month}{strike}{option_type}"
+        buy_val  = entry_prem * qty
+        sell_val = exit_prem  * qty
+        turnover = buy_val + sell_val
+
+        brokerage = cfg.brokerage_per_order * 2
+        stt       = sell_val * cfg.stt_pct
+        exch      = turnover * cfg.exchange_charges_pct
+        gst       = (brokerage + exch) * cfg.gst_pct
+        sebi      = turnover * cfg.sebi_charges_pct
+        stamp     = buy_val  * cfg.stamp_duty_pct
+
+        total = round(brokerage + stt + exch + gst + sebi + stamp, 2)
+        breakdown = {
+            f"Brokerage (₹{cfg.brokerage_per_order:g}/order)":      round(brokerage, 2),
+            f"STT ({cfg.stt_pct*100:g}% on sell)":      round(stt,       2),
+            f"Exchange ({cfg.exchange_charges_pct*100:g}%)":          round(exch,      2),
+            f"GST ({cfg.gst_pct*100:g}% on Brk+Exc)":       round(gst,       2),
+            f"SEBI (₹{cfg.sebi_charges_pct*10000000:g}/Cr)":              round(sebi,      2),
+            f"Stamp Duty ({cfg.stamp_duty_pct*100:g}% on buy)": round(stamp,     2),
+        }
+        return total, breakdown

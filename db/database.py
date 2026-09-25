@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from db.models import Base
 
-_DB_URL = os.getenv("DATABASE_URL", "sqlite:///trading.db")
+_DB_URL = os.getenv("DATABASE_URL", "").strip() or "sqlite:///trading.db"
 
 # Render / Heroku export postgres:// but SQLAlchemy needs postgresql://
 if _DB_URL.startswith("postgres://"):
@@ -31,19 +31,50 @@ else:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def get_db():
-    """Yield a DB session and always close it after use."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 def init_db():
     """Create all tables if they don't exist, then add any new columns."""
     Base.metadata.create_all(bind=engine)
     _migrate_add_columns()
+    _backfill_trade_strategy_tags()
+
+
+def _backfill_trade_strategy_tags():
+    """Tag legacy option trades (saved before per-strategy tagging) with each
+    user's default options strategy, so the Results per-strategy filter shows
+    them instead of nothing."""
+    import logging as _lg
+    log = _lg.getLogger(__name__)
+    try:
+        from sqlalchemy.orm import Session
+        from db.models import Trade, Strategy
+        with Session(engine) as db:
+            untagged = (db.query(Trade)
+                        .filter(Trade.strategy_id.is_(None))
+                        .filter(Trade.position_type.in_(("CALL", "PUT")))
+                        .all())
+            if not untagged:
+                return
+            # cache each user's options strategy (oldest = the seeded default)
+            opt_strat = {}
+            tagged = 0
+            for tr in untagged:
+                if tr.user_id not in opt_strat:
+                    s = (db.query(Strategy)
+                         .filter(Strategy.user_id == tr.user_id)
+                         .filter((Strategy.instrument_type == "OPTIONS") |
+                                 (Strategy.instrument_type.is_(None)))
+                         .order_by(Strategy.id).first())
+                    opt_strat[tr.user_id] = s
+                s = opt_strat[tr.user_id]
+                if s:
+                    tr.strategy_id = s.id
+                    tr.strategy_name = s.name
+                    tagged += 1
+            if tagged:
+                db.commit()
+                log.info(f"Backfilled strategy tags on {tagged} legacy option trade(s).")
+    except Exception as e:
+        log.warning(f"trade strategy-tag backfill skipped: {e}")
 
 
 def _migrate_add_columns():
@@ -62,6 +93,7 @@ def _migrate_add_columns():
     bool_false = "FALSE" if not _is_sqlite else "0"
 
     _new_cols = [
+        ("users", "auth_version", "INTEGER DEFAULT 0"),
         ("users",  "display_name",           "VARCHAR(150)"),
         ("users",  "bio",                    "TEXT"),
         ("users",  "photo_base64",           "TEXT"),
@@ -74,6 +106,15 @@ def _migrate_add_columns():
         ("users",  "kite_token_date",        "DATE"),
         ("trades", "trade_mode",             "VARCHAR(10) DEFAULT 'PAPER'"),
         ("users",  "is_admin",               f"BOOLEAN DEFAULT {bool_false}"),
+        ("users",  "background_trading",     f"BOOLEAN DEFAULT {bool_true}"),
+        ("watchlist", "list_name",           "VARCHAR(100) DEFAULT 'My Watchlist'"),
+        ("strategies", "instrument_type",    "VARCHAR(10) DEFAULT 'OPTIONS'"),
+        ("strategies", "symbol",             "VARCHAR(50) DEFAULT 'NIFTY 50'"),
+        ("strategies", "engine_type",        "VARCHAR(20) DEFAULT 'ORB'"),
+        ("strategies", "is_running",         f"BOOLEAN DEFAULT {bool_false}"),
+        ("trades",     "strategy_id",        "INTEGER"),
+        ("trades",     "strategy_name",      "VARCHAR(200)"),
+        ("strategies", "run_mode",           "VARCHAR(10)"),
     ]
 
     from sqlalchemy import text as _text
@@ -100,4 +141,5 @@ def _migrate_add_columns():
                     conn.commit()
                     _log.info(f"Migration: ensured column {table}.{col}")
                 except Exception as e:
-                    _log.warning(f"Migration: error adding {table}.{col}: {e}")
+                    conn.rollback()
+                    raise RuntimeError(f'Migration failed for {table}.{col}') from e

@@ -325,15 +325,3 @@ def get_sector_for_symbol(symbol: str) -> str:
 def get_name_for_symbol(symbol: str) -> str:
     """Return the company name for a given symbol."""
     return STOCK_INFO.get(symbol, {}).get("name", symbol)
-
-
-def all_symbols() -> list[str]:
-    """Return a deduplicated list of all tracked symbols."""
-    seen = set()
-    out  = []
-    for syms in SECTORS.values():
-        for s in syms:
-            if s not in seen:
-                seen.add(s)
-                out.append(s)
-    return out

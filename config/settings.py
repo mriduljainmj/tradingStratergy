@@ -41,6 +41,16 @@ class TradingConfig:
     sebi_charges_pct: float = 0.000001
     stamp_duty_pct: float = 0.00003
 
+    # Slippage applied to market-style fills (entry, stop-loss, EOD exits) as a
+    # fraction of the premium per side.  Target exits are limit-like → no slippage.
+    # 0.001 = 0.1%, roughly one tick of spread on an ATM NIFTY weekly.
+    slippage_pct: float = 0.001
+
+    # Risk guard: once today's realized loss reaches this many ₹, the engine
+    # refuses further entries for the day (paper and live).  0 = disabled.
+    max_daily_loss: float = 0.0
+    paper_starting_balance: float = 100_000.0
+
     @property
     def qty(self) -> int:
         return int(self.lot_size * self.qty_multiplier)
