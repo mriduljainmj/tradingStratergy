@@ -10,6 +10,8 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
+!frontend/dist/
+!frontend/dist/**
 build/
 .venv/
 venv/

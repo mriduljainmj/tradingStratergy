@@ -1,7 +1,12 @@
 # See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
 
 # Compiled output
-/dist
+# Keep the production bundle in Git as a fallback for existing native Render
+# services whose Blueprint build command has not been synchronized yet.
+/dist/*
+!/dist/frontend/
+!/dist/frontend/**
+/dist/frontend/3rdpartylicenses.txt
 /tmp
 /out-tsc
 /bazel-out
