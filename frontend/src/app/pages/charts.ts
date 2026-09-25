@@ -333,6 +333,7 @@ export class Charts implements OnInit, OnDestroy {
       this.panes.set(saved.panes.map((p: any) => ({ ...p, data: [], error: '', loading: false })));
       const symbol = this.route.snapshot.queryParamMap.get('symbol');
       if (symbol) this.patch(0, { symbol });
+      if (this.route.snapshot.queryParamMap.get('view') === 'single') this.count.set(1);
       this.layout(this.count());
     } catch (e) {
       this.error.set(message(e));

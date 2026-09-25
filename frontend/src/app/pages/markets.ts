@@ -196,7 +196,7 @@ import { Icon } from '../shared/icon';
           <a
             class="btn primary full"
             routerLink="/charts"
-            [queryParams]="{ symbol: selected()?.symbol }"
+            [queryParams]="{ symbol: selected()?.symbol, view: 'single' }"
             (click)="selected.set(null)"
             >Open chart<ax-icon name="arrow"
           /></a>
