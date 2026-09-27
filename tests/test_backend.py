@@ -568,6 +568,8 @@ class BackendRegressionTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/workspace/charts',headers=self.h).json['workspace'],workspace)
         other=self.client.get('/api/workspace/charts',headers=fixtures.DashboardSmokeTests.headers[1]).json
         self.assertFalse(other['saved'])
+        self.assertEqual(other['workspace']['count'],1)
+        self.assertTrue(all(p['symbol'] == '' for p in other['workspace']['panes']))
         self.assertEqual(self.client.put('/api/workspace/charts',headers=self.h,json={**workspace,'days':-1}).status_code,400)
         self.assertEqual(self.client.put('/api/workspace/charts',headers=self.h,json={**workspace,'count':True}).status_code,400)
 

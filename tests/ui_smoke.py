@@ -213,7 +213,24 @@ try:
         expect(page.get_by_text('Follow your option premium',exact=True)).to_be_visible()
         expect(page.get_by_text('Kite connected — trading paused',exact=True)).to_be_visible()
         page.unroute('**/api/state')
+        chart_requests = []
+        page.on('request', lambda r: chart_requests.append(r.url) if '/api/chart/history?' in r.url else None)
         page.goto(base+'/charts')
+        expect(page.locator('.chart-panel')).to_have_count(1)
+        expect(page.locator('ax-chart')).to_have_count(0)
+        expect(page.get_by_role('combobox',name='Chart 1 symbol',exact=True)).to_have_value('')
+        page.get_by_role('button',name='4 charts',exact=True).click()
+        expect(page.locator('.chart-panel')).to_have_count(4)
+        page.wait_for_timeout(250)
+        assert chart_requests == [], chart_requests
+        expect(page.locator('ax-chart')).to_have_count(0)
+        def populate_charts():
+            page.get_by_role('button',name='2 charts',exact=True).click()
+            for i, symbol in enumerate(['RELIANCE','NIFTY']):
+                page.get_by_role('combobox',name=f'Chart {i+1} symbol',exact=True).fill(symbol)
+                page.locator('.chart-panel').nth(i).get_by_role('button',name='Load chart',exact=True).click()
+                expect(page.locator('.chart-panel').nth(i).locator('.pane-footer')).to_contain_text(symbol)
+        populate_charts()
         expect(page.get_by_text('20 candles').first).to_be_visible()
         assert page.locator('canvas').count() >= 2
         expect(page.locator('.chart-readout').first).to_contain_text('IST')
@@ -272,9 +289,11 @@ try:
         page.get_by_label('Arrangement',exact=True).select_option('stack')
         page.get_by_role('button',name='Save workspace',exact=True).click()
         page.reload()
-        expect(page.get_by_text('20 candles').first).to_be_visible()
-        assert page.get_by_label('Arrangement',exact=True).input_value()=='stack'
+        expect(page.get_by_label('Arrangement',exact=True)).to_have_value('stack')
         expect(page.get_by_label('Chart 1 timeframe',exact=True)).to_have_value('week')
+        expect(page.locator('.chart-panel')).to_have_count(1)
+        expect(page.locator('ax-chart')).to_have_count(0)
+        populate_charts()
         page.unroute('**/api/chart/history*')
         pending_history = []
         def delayed_history(route):
@@ -305,6 +324,9 @@ try:
         page.get_by_role('button',name='Save workspace',exact=True).click()
         page.reload()
         expect(page.get_by_label('History range',exact=True)).to_have_value('all')
+        expect(page.locator('.chart-panel')).to_have_count(1)
+        expect(page.locator('ax-chart')).to_have_count(0)
+        populate_charts()
         expect(page.locator('.pane-footer').first).to_contain_text('40 candles')
         page.screenshot(path=str(artifacts/'populated-stacked-charts.png'),full_page=True)
 

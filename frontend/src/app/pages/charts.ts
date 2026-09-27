@@ -16,6 +16,12 @@ import { Chart } from '../shared/chart';
   host: { '(document:fullscreenchange)': 'syncChartFocus()' },
   styles: [
     `
+      .empty-chart-prompt {
+        padding: 24px;
+        margin: 0;
+        color: #9aafc5;
+        font-size: 14px;
+      }
       .chart-panel:fullscreen {
         width: 100vw;
         height: 100dvh;
@@ -100,7 +106,7 @@ import { Chart } from '../shared/chart';
               [(ngModel)]="pane.interval"
               [name]="'interval' + i"
               [disabled]="pane.loading"
-              (ngModelChange)="load(i)"
+              (ngModelChange)="pane.loadedSymbol && load(i)"
             >
               <option value="minute">1 min</option>
               <option value="5minute">5 min</option>
@@ -112,94 +118,98 @@ import { Chart } from '../shared/chart';
               <ax-icon name="refresh" />
             </button>
           </form>
-          <div class="pane-actions">
-            @if (days === 'all' && pane.loading) {
-              <button type="button" (click)="pause(i)">Pause history loading</button>
-            }
-            @if (days === 'all' && !pane.loading && pane.nextTo) {
-              <button type="button" (click)="load(i, true)">Load remaining history</button>
-            }
-            <button
-              type="button"
-              [disabled]="pane.loading || (days === 'all' && !pane.complete)"
-              (click)="canvas.fit()"
-            >
-              Fit data</button
-            ><button
-              type="button"
-              [disabled]="pane.loading || (days === 'all' && !pane.complete)"
-              (click)="canvas.latest()"
-            >
-              Latest</button
-            ><button
-              type="button"
-              [attr.aria-label]="'Focus chart ' + (i + 1)"
-              (click)="focusChart(frame)"
-            >
-              {{ focused() === i ? 'Restore' : 'Focus' }}
-            </button>
-          </div>
-          <div class="multi-chart-canvas">
-            <ax-chart
-              #canvas
-              [data]="days === 'all' && !pane.complete ? [] : chartData(pane)"
-              [loading]="pane.loading"
-              [fitUpdates]="false"
-              [emptyTitle]="
-                pane.loading
-                  ? 'Loading ' + pane.symbol + '…'
-                  : pane.error
-                    ? 'Market data unavailable'
-                    : days === 'all' && !pane.complete && pane.nextTo
-                      ? 'History loading paused'
-                      : 'No candles for this instrument'
-              "
-              [emptyText]="
-                pane.error ||
-                (pane.nextTo
-                  ? 'Load remaining history to display the complete chart.'
-                  : 'Load an instrument to see its chart.')
-              "
-            />
-          </div>
-          <div class="pane-footer">
-            <span
-              >{{
-                pane.historySource || (pane.cacheHit ? 'History from cache' : 'History from Kite')
-              }}
-              · {{ quoteStatus(pane) }}</span
-            >
-            <span>{{ pane.loadedSymbol || pane.symbol }} · NSE</span
-            ><span
-              >{{ pane.data.length }} candles
-              @if (pane.interval === 'week') {
-                · Weekly
-                @if (days !== 'all') {
-                  · {{ days === 3 ? 90 : days }} days
-                }
-              } @else if (days === 3) {
-                · {{ pane.sessions || 0 }} trading sessions
+          @if (pane.loading || pane.loadedSymbol || pane.error) {
+            <div class="pane-actions">
+              @if (days === 'all' && pane.loading) {
+                <button type="button" (click)="pause(i)">Pause history loading</button>
               }
-            </span>
-            @if (days === 'all') {
-              <span>{{
-                pane.loading
-                  ? 'Loading older history…'
-                  : pane.complete
-                    ? 'All available history loaded'
-                    : 'Partial history'
-              }}</span>
-            }
-            @if (pane.error && pane.data.length) {
-              <span role="alert">{{ pane.error }}</span>
-            }
-            @if (pane.data.length) {
-              <span
-                >From: {{ formatTime(pane.data[0].time) }} · Last:
-                {{ formatTime(pane.data.at(-1).time) }}</span
+              @if (days === 'all' && !pane.loading && pane.nextTo) {
+                <button type="button" (click)="load(i, true)">Load remaining history</button>
+              }
+              <button
+                type="button"
+                [disabled]="pane.loading || (days === 'all' && !pane.complete)"
+                (click)="canvas.fit()"
               >
-            }
-          </div>
+                Fit data</button
+              ><button
+                type="button"
+                [disabled]="pane.loading || (days === 'all' && !pane.complete)"
+                (click)="canvas.latest()"
+              >
+                Latest</button
+              ><button
+                type="button"
+                [attr.aria-label]="'Focus chart ' + (i + 1)"
+                (click)="focusChart(frame)"
+              >
+                {{ focused() === i ? 'Restore' : 'Focus' }}
+              </button>
+            </div>
+            <div class="multi-chart-canvas">
+              <ax-chart
+                #canvas
+                [data]="days === 'all' && !pane.complete ? [] : chartData(pane)"
+                [loading]="pane.loading"
+                [fitUpdates]="false"
+                [emptyTitle]="
+                  pane.loading
+                    ? 'Loading ' + pane.symbol + '…'
+                    : pane.error
+                      ? 'Market data unavailable'
+                      : days === 'all' && !pane.complete && pane.nextTo
+                        ? 'History loading paused'
+                        : 'No candles for this instrument'
+                "
+                [emptyText]="
+                  pane.error ||
+                  (pane.nextTo
+                    ? 'Load remaining history to display the complete chart.'
+                    : 'Load an instrument to see its chart.')
+                "
+              />
+            </div>
+            <div class="pane-footer">
+              <span
+                >{{
+                  pane.historySource || (pane.cacheHit ? 'History from cache' : 'History from Kite')
+                }}
+                · {{ quoteStatus(pane) }}</span
+              >
+              <span>{{ pane.loadedSymbol || pane.symbol }} · NSE</span
+              ><span
+                >{{ pane.data.length }} candles
+                @if (pane.interval === 'week') {
+                  · Weekly
+                  @if (days !== 'all') {
+                    · {{ days === 3 ? 90 : days }} days
+                  }
+                } @else if (days === 3) {
+                  · {{ pane.sessions || 0 }} trading sessions
+                }
+              </span>
+              @if (days === 'all') {
+                <span>{{
+                  pane.loading
+                    ? 'Loading older history…'
+                    : pane.complete
+                      ? 'All available history loaded'
+                      : 'Partial history'
+                }}</span>
+              }
+              @if (pane.error && pane.data.length) {
+                <span role="alert">{{ pane.error }}</span>
+              }
+              @if (pane.data.length) {
+                <span
+                  >From: {{ formatTime(pane.data[0].time) }} · Last:
+                  {{ formatTime(pane.data.at(-1).time) }}</span
+                >
+              }
+            </div>
+          } @else {
+            <p class="empty-chart-prompt">Select a symbol above to load its chart.</p>
+          }
         </section>
       }
     </div>
@@ -207,10 +217,10 @@ import { Chart } from '../shared/chart';
       <ax-icon name="charts" />
       <p>
         Click a chart to activate pan and zoom. Double-click to unselect, click outside or press
-        Escape to scroll the page again. Saved symbols and layouts follow your account across
-        browsers. Candles appear after the selected history finishes loading. You can pause and
-        resume older history. Three-day detail uses one-minute candles. Weekly candles start on
-        Monday; the current week may be incomplete.
+        Escape to scroll the page again. Start with one chart and select a symbol for each pane.
+        Saved history and timeframe preferences follow your account. Candles appear after the
+        selected history finishes loading. You can pause and resume older history. Three-day detail
+        uses one-minute candles. Weekly candles start on Monday; the current week may be incomplete.
       </p>
       <a href="https://www.tradingview.com/" target="_blank" rel="noopener"
         >TradingView Lightweight Charts ↗</a
@@ -348,7 +358,7 @@ export class Charts implements OnInit, OnDestroy {
   api = inject(Api);
   route = inject(ActivatedRoute);
   feedback = inject(Feedback);
-  count = signal(2);
+  count = signal(1);
   focused = signal<number | null>(null);
   arrangement = 'grid';
   days: number | string = 'all';
@@ -374,7 +384,8 @@ export class Charts implements OnInit, OnDestroy {
     return this.panes().some((p) => p.loading);
   }
   refreshAll(bypass = true) {
-    for (let i = 0; i < this.count(); i++) void this.load(i, false, bypass);
+    for (let i = 0; i < this.count(); i++)
+      if (this.panes()[i]?.loadedSymbol) void this.load(i, false, bypass);
   }
   error = signal('');
   panes = signal<any[]>([]);
@@ -382,14 +393,17 @@ export class Charts implements OnInit, OnDestroy {
     try {
       const data = await this.api.get('/workspace/charts');
       const saved = data.workspace;
-      this.count.set(saved.count);
+      this.count.set(1);
       this.arrangement = saved.arrangement;
       this.days = saved.days;
-      this.panes.set(saved.panes.map((p: any) => ({ ...p, data: [], error: '', loading: false })));
+      this.panes.set(
+        saved.panes.map((p: any) => ({ ...p, symbol: '', data: [], error: '', loading: false })),
+      );
       const symbol = this.route.snapshot.queryParamMap.get('symbol');
       if (symbol) this.patch(0, { symbol });
       if (this.route.snapshot.queryParamMap.get('view') === 'single') this.count.set(1);
       this.layout(this.count());
+      if (symbol) void this.load(0);
     } catch (e) {
       this.error.set(message(e));
     }
@@ -397,11 +411,12 @@ export class Charts implements OnInit, OnDestroy {
   layout(n: number) {
     this.focused.set(null);
     this.count.set(n);
-    for (let i = 0; i < n; i++) if (!this.panes()[i].data.length) void this.load(i);
+    for (let i = 0; i < n; i++)
+      if (this.panes()[i]?.loadedSymbol && !this.panes()[i].data.length) void this.load(i);
   }
   async load(i: number, resume = false, bypass = false) {
     const pane = this.panes()[i];
-    if (pane.loading) return;
+    if (!pane || pane.loading || !pane.symbol.trim()) return;
     this.cancelled.delete(i);
     const symbol = pane.symbol.trim().toUpperCase();
     const interval = pane.interval;

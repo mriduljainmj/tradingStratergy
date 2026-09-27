@@ -3,8 +3,7 @@ import json
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from db.database import SessionLocal
-from db.models import ChartWorkspace, Watchlist
-from config.settings import TradingConfig
+from db.models import ChartWorkspace
 from dashboard.api_support import bad
 
 workspace_bp = Blueprint('workspace', __name__)
@@ -20,10 +19,8 @@ def chart_workspace():
         if request.method == 'GET':
             if row:
                 return jsonify(ok=True, workspace=json.loads(row.payload), saved=True)
-            primary = TradingConfig().index_symbol.split(':')[-1]
-            symbols = list(dict.fromkeys([primary] + [w.symbol for w in db.query(Watchlist).filter_by(user_id=uid).order_by(Watchlist.id).limit(4)]))
-            panes = [{'symbol': symbols[i % len(symbols)], 'interval': 'day'} for i in range(4)]
-            return jsonify(ok=True, saved=False, workspace={'count': 2, 'arrangement':'grid', 'days':'all', 'panes':panes})
+            panes = [{'symbol': '', 'interval': 'day'} for _ in range(4)]
+            return jsonify(ok=True, saved=False, workspace={'count': 1, 'arrangement':'grid', 'days':'all', 'panes':panes})
         value = request.get_json()
         if isinstance(value.get('count'), bool) or value.get('count') not in (1,2,4):
             bad('Choose one, two or four charts.')
@@ -34,8 +31,8 @@ def chart_workspace():
             bad('Four chart pane settings are required.')
         clean=[]
         for pane in panes:
-            if not isinstance(pane,dict) or not isinstance(pane.get('symbol'),str) or not 1<=len(pane['symbol'].strip())<=100 or pane.get('interval') not in INTERVALS:
-                bad('Each chart requires a symbol and supported timeframe.')
+            if not isinstance(pane,dict) or not isinstance(pane.get('symbol'),str) or len(pane['symbol'].strip())>100 or pane.get('interval') not in INTERVALS:
+                bad('Each chart requires a supported timeframe and a symbol of at most 100 characters.')
             clean.append({'symbol':pane['symbol'].strip().upper(),'interval':pane['interval']})
         payload=json.dumps({'count':value['count'],'arrangement':value['arrangement'],'days':value['days'],'panes':clean})
         if row: row.payload=payload

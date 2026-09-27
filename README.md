@@ -85,6 +85,8 @@ Chart history and selected option history are cached per account, symbol, interv
 
 Multi-chart history combines up to 128 adjacent cached pages per request, with row-count and processing-time limits. Only the first page may fetch from Kite; subsequent pages are cache-only so cold requests remain bounded. Empty past ranges also remain cached for 24 hours. Large history responses use gzip when accepted by the browser. Cache labels reflect the full load, including mixed broker/cache results. Streaming preserves unchanged candle objects and updates the newest bar incrementally; corrections to older bars still redraw the history. Initial uncached loads retain broker pacing and the full requested history, and candles stay hidden until loading completes.
 
+The Charts page opens with one empty slot and fetches history only after symbol selection or an explicit Load action. Additional slots also start empty. Saved history ranges and timeframes remain available, but saved symbols are not automatically loaded on entry. Market Explorer's Open chart shortcut supplies the selected symbol and opens it directly in a single pane.
+
 - `frontend/src/app/`: standalone Angular routes, services, forms and shared charts.
 - `dashboard/`: Flask routes, authentication, validation, Angular serving and order reconciliation.
 - `core/`: per-user engine lifecycle, strategy state and rules.
