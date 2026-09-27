@@ -79,7 +79,7 @@ class BackendRegressionTests(unittest.TestCase):
         broker = Mock()
         expiry = datetime.date.today() + datetime.timedelta(days=30)
         broker.get_nfo_instruments.return_value = [dict(name='NIFTY', tradingsymbol='EXACTCE', instrument_type='CE', strike=25000, expiry=expiry, instrument_token=123)]
-        broker.get_historical_data.return_value = [dict(date=datetime.datetime.now(datetime.timezone.utc), open=100, high=110, low=90, close=105)]
+        broker.get_historical_data.return_value = [dict(date=datetime.datetime.now(datetime.timezone.utc), open=100, high=110, low=90, close=105, volume=420)]
         with patch('dashboard.routes._ue', return_value=SimpleNamespace(broker=broker)):
             catalog = self.client.get('/api/option-contracts', headers=self.h)
             self.assertEqual(catalog.json['contracts'][0]['symbol'], 'EXACTCE')
@@ -87,6 +87,7 @@ class BackendRegressionTests(unittest.TestCase):
             self.assertEqual(result.status_code, 200)
             self.assertEqual(result.json['tradingsymbol'], 'EXACTCE')
             self.assertEqual(result.json['data'][0]['close'], 105)
+            self.assertEqual(result.json['data'][0]['volume'], 420)
             self.assertEqual(broker.get_historical_data.call_args.args[0], 123)
             self.assertEqual(self.client.get('/api/option-chart?symbol=MISSING', headers=self.h).status_code, 404)
 

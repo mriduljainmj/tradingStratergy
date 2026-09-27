@@ -127,7 +127,7 @@ import { Icon } from '../shared/icon';
           </div>
           <section class="panel">
             @if (result().candles?.length) {
-              <div class="performance-chart"><ax-chart [data]="result().candles" /></div>
+              <div class="performance-chart"><ax-chart [context]="'backtest:' + result().date" [data]="result().candles" /></div>
             }
             @if (result().cumulative?.length) {
               <div class="performance-chart"><ax-chart type="area" [data]="curve()" /></div>

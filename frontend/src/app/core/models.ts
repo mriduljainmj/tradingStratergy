@@ -38,6 +38,8 @@ export interface Trade {
   strategy_name: string;
 }
 export interface Candle {
+  volume?: number;
+  volumeComplete?: boolean;
   time: any;
   open: number;
   high: number;

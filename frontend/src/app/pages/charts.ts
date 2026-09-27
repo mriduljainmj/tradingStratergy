@@ -149,6 +149,7 @@ import { Chart } from '../shared/chart';
             <div class="multi-chart-canvas">
               <ax-chart
                 #canvas
+                [context]="pane.loadedSymbol + ':' + pane.interval"
                 [data]="days === 'all' && !pane.complete ? [] : chartData(pane)"
                 [loading]="pane.loading"
                 [fitUpdates]="false"

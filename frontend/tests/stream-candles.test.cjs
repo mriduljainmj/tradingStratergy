@@ -25,4 +25,7 @@ assert.equal(changed.at(-2),many.at(-2));
 assert.equal(changed.at(-1).close,105);
 assert.equal(many.at(-1).close,100);
 assert.equal(merge(many,[{...last,last_tick:last.time+20}],'minute'),many);
+const withVolume=[{...last,volume:123}];
+assert.equal(merge(withVolume,[{...last,last_tick:last.time+20}],'minute')[0].volumeComplete,false,'A live tick without volume must not reuse an old historical volume');
+assert.equal(merge(withVolume,[{...last,last_tick:last.time+20}],'minute',last.time+30),withVolume,'An older tick must preserve refreshed history');
 console.log('PASS: minute, intraday and calendar timeframe streaming; NSE hourly alignment; history reconciliation.');

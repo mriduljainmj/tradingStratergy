@@ -27,6 +27,7 @@ export function liveCandles(history: Candle[], updates: any[], fetchedAt = 0): C
         high: Math.max(old.high, row.high),
         low: Math.min(old.low, row.low),
         close: row.last_tick >= fetchedAt ? row.close : old.close,
+        volumeComplete: row.last_tick >= fetchedAt ? false : old.volumeComplete,
       });
     else if (!history.length || row.time >= Number(history[history.length - 1].time))
       bars.set(row.time, { ...row });

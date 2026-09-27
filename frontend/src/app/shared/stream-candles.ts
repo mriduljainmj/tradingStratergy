@@ -59,8 +59,15 @@ export function mergeChartStream(
         high: Math.max(old.high, row.high),
         low: Math.min(old.low, row.low),
         close: row.last_tick >= fetchedAt ? row.close : old.close,
+        volumeComplete:
+          row.last_tick >= fetchedAt && Number.isFinite(old.volume) ? false : old.volumeComplete,
       };
-      if (updated.high !== old.high || updated.low !== old.low || updated.close !== old.close) {
+      if (
+        updated.high !== old.high ||
+        updated.low !== old.low ||
+        updated.close !== old.close ||
+        updated.volumeComplete !== old.volumeComplete
+      ) {
         if (result === history) result = history.slice();
         result[left] = updated;
       }

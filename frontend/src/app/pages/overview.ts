@@ -164,6 +164,7 @@ import { liveCandles } from '../shared/live-candles';
           <div class="main-chart">
             <ax-chart
               #niftyChart
+              context="NIFTY"
               [loading]="previewBusy()"
               [data]="niftyCandles()"
               [emptyTitle]="previewBusy() ? 'Loading market history…' : 'Your market, in focus'"
@@ -481,6 +482,7 @@ import { liveCandles } from '../shared/live-candles';
         <div class="performance-chart">
           <ax-chart
             #optionChart
+            [context]="browseOptions ? selectedOption : 'option:' + desk.state()?.option_token"
             [loading]="optionBusy()"
             [data]="displayOptionCandles()"
             emptyTitle="Follow your option premium"

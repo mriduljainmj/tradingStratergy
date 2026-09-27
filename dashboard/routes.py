@@ -660,7 +660,7 @@ def option_chart():
             records, cache_hit, history_as_of = _chart_records(contract['instrument_token'], symbol, start, end, '5minute',
                 lambda: ue.broker.get_historical_data(contract['instrument_token'], start, end, '5minute'))
             candles = [dict(time=int(r['date'].timestamp()), open=r['open'], high=r['high'],
-                            low=r['low'], close=r['close']) for r in records]
+                            low=r['low'], close=r['close'], volume=r.get('volume')) for r in records]
             return jsonify(ok=True, data=candles, tradingsymbol=symbol, expiry=str(contract['expiry']), token=contract['instrument_token'], cache_hit=cache_hit, history_as_of=history_as_of)
         except Exception:
             return jsonify(ok=False, error='Could not load option history from Kite. Check your connection and retry.'), 502
@@ -685,6 +685,7 @@ def option_chart():
                 "time":  int(r["date"].timestamp()),
                 "open":  r["open"], "high": r["high"],
                 "low":   r["low"],  "close": r["close"],
+                "volume": r.get("volume"),
             }
             for r in records
         ]

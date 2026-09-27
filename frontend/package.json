@@ -8,7 +8,7 @@
     "watch": "ng build --watch --configuration development",
     "test": "npm run test:chart-time && node tests/portfolio-totals.test.cjs && npm run build && ../.venv/bin/python ../tests/ui_smoke.py",
     "typecheck": "ng build --configuration development",
-    "test:chart-time": "node tests/chart-time.test.cjs && node tests/live-candles.test.cjs && node tests/stream-candles.test.cjs"
+    "test:chart-time": "node tests/chart-time.test.cjs && node tests/live-candles.test.cjs && node tests/stream-candles.test.cjs && node tests/chart-indicators.test.cjs"
   },
   "private": true,
   "packageManager": "npm@10.7.0",
