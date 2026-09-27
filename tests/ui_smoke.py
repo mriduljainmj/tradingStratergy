@@ -250,11 +250,19 @@ try:
         expect(page.locator('.pane-footer').first).to_contain_text('RELIANCE')
 
         page.get_by_role('button',name='Focus chart 1',exact=True).click()
+        expect(page.locator('.chart-panel:fullscreen')).to_have_count(1)
+        expect(page.get_by_role('button',name='Focus chart 1',exact=True)).to_have_text('Restore')
         expect(page.locator('.chart-panel:visible')).to_have_count(1)
         page.get_by_role('button',name='Fit data',exact=True).first.click()
         page.get_by_role('button',name='Latest',exact=True).first.click()
-        page.get_by_role('button',name='Back to layout',exact=True).click()
+        page.get_by_role('button',name='Focus chart 1',exact=True).click()
+        expect(page.locator('.chart-panel:fullscreen')).to_have_count(0)
         expect(page.locator('.chart-panel:visible')).to_have_count(2)
+        page.get_by_role('button',name='Focus chart 1',exact=True).click()
+        expect(page.locator('.chart-panel:fullscreen')).to_have_count(1)
+        page.evaluate('document.exitFullscreen()')
+        expect(page.locator('.chart-panel:visible')).to_have_count(2)
+        expect(page.get_by_role('button',name='Focus chart 1',exact=True)).to_have_text('Focus')
         with page.expect_request(lambda r: '/api/chart/history' in r.url and 'sessions=3' in r.url):
             page.get_by_label('History range',exact=True).select_option(label='Last 3 trading days · maximum detail')
         expect(page.get_by_label('Chart 1 timeframe',exact=True)).to_have_value('minute')
@@ -332,7 +340,7 @@ try:
         expect(page.locator('.chart-panel:visible')).to_have_count(1)
         page.wait_for_timeout(300)
         assert stream_tokens[-1] == {'738561'}, stream_tokens
-        page.get_by_role('button',name='Back to layout',exact=True).click()
+        page.get_by_role('button',name='Focus chart 1',exact=True).click()
         expect(page.locator('.chart-panel:visible')).to_have_count(2)
         page.wait_for_timeout(300)
         assert stream_tokens[-1] == {'738561','256265'}, stream_tokens

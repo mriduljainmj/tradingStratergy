@@ -13,6 +13,30 @@ import { SymbolSearch } from '../shared/symbol-search';
 import { Chart } from '../shared/chart';
 @Component({
   selector: 'ax-charts',
+  host: { '(document:fullscreenchange)': 'syncChartFocus()' },
+  styles: [
+    `
+      .chart-panel:fullscreen {
+        width: 100vw;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        border-radius: 0;
+        background: #101c2c;
+        overflow: auto;
+      }
+      .chart-panel:fullscreen .multi-chart-canvas {
+        flex: 1;
+        min-height: 180px;
+        height: auto;
+      }
+      .chart-panel:fullscreen .pane-toolbar,
+      .chart-panel:fullscreen .pane-actions,
+      .chart-panel:fullscreen .pane-footer {
+        flex-shrink: 0;
+      }
+    `,
+  ],
   providers: [MarketFeed],
   imports: [FormsModule, Heading, ErrorBox, Icon, Chart, SymbolSearch],
   template: `<ax-heading
@@ -51,7 +75,7 @@ import { Chart } from '../shared/chart';
       ><button class="btn" [disabled]="loading()" (click)="refreshAll()">Refresh all</button>
       <span class="muted" role="status">{{ feed.status() }}</span>
       @if (focused() !== null) {
-        <button class="btn" (click)="focused.set(null)">Back to layout</button>
+        <button class="btn" (click)="restoreLayout()">Back to layout</button>
       }
     </div>
     <div
@@ -59,7 +83,12 @@ import { Chart } from '../shared/chart';
       [class.single]="count() === 1 || focused() !== null || arrangement === 'stack'"
     >
       @for (pane of panes().slice(0, count()); track $index; let i = $index) {
-        <section class="chart-panel" [hidden]="focused() !== null && focused() !== i">
+        <section
+          #frame
+          class="chart-panel"
+          [attr.data-chart-index]="i"
+          [hidden]="focused() !== null && focused() !== i"
+        >
           <form class="pane-toolbar" (ngSubmit)="load(i, false, true)">
             <ax-symbol-search
               [label]="'Chart ' + (i + 1) + ' symbol'"
@@ -105,7 +134,7 @@ import { Chart } from '../shared/chart';
             ><button
               type="button"
               [attr.aria-label]="'Focus chart ' + (i + 1)"
-              (click)="focused.set(focused() === i ? null : i)"
+              (click)="focusChart(frame)"
             >
               {{ focused() === i ? 'Restore' : 'Focus' }}
             </button>
@@ -189,6 +218,31 @@ import { Chart } from '../shared/chart';
     </div>`,
 })
 export class Charts implements OnInit, OnDestroy {
+  private fullscreenFrame: HTMLElement | null = null;
+  syncChartFocus() {
+    const frame = this.fullscreenFrame;
+    this.focused.set(
+      frame && document.fullscreenElement === frame ? Number(frame.dataset['chartIndex']) : null,
+    );
+  }
+  async focusChart(frame: HTMLElement) {
+    try {
+      if (document.fullscreenElement === frame) await this.restoreLayout();
+      else {
+        this.fullscreenFrame = frame;
+        await frame.requestFullscreen();
+        this.syncChartFocus();
+      }
+    } catch (e) {
+      this.syncChartFocus();
+      this.error.set('Could not focus chart: ' + message(e));
+    }
+  }
+  async restoreLayout() {
+    if (this.fullscreenFrame && document.fullscreenElement === this.fullscreenFrame)
+      await document.exitFullscreen();
+    this.focused.set(null);
+  }
   private mergedHistory = new WeakMap<any[], any>();
   feed = inject(MarketFeed);
   private refreshTimer = setInterval(() => {
@@ -302,6 +356,7 @@ export class Charts implements OnInit, OnDestroy {
   private destroyed = false;
   ngOnDestroy() {
     this.destroyed = true;
+    void this.restoreLayout().catch(() => {});
     clearInterval(this.refreshTimer);
     this.feed.stop();
   }
