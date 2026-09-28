@@ -475,6 +475,22 @@ try:
         expect(page.get_by_label('Execution mode',exact=True)).to_have_value('BACKTEST')
         page.get_by_label('Execution mode',exact=True).select_option('PAPER')
         expect(page.get_by_role('button',name='Enable paper trading')).to_be_visible()
+        paper_exits = []
+        page.route('**/api/state',lambda r:r.fulfill(json={'app_mode':'PAPER','engine_running':True,'in_position':True,'option_label':'TEST PAPER CALL','entry_prem':100,'qty':65,'candles':[],'logs':[]}))
+        def close_paper(route):
+            paper_exits.append(route.request.post_data_json)
+            route.fulfill(json={'ok':True,'queued':'EXIT'})
+        page.route('**/api/manual-trade',close_paper)
+        page.reload()
+        page.get_by_role('button',name='Close paper trade',exact=True).click()
+        expect(page.get_by_role('alertdialog')).to_contain_text('No real order is placed.')
+        page.get_by_role('alertdialog').get_by_role('button',name='Cancel',exact=True).click()
+        assert not paper_exits
+        expect(page.get_by_role('alertdialog')).to_have_count(0)
+        page.get_by_role('button',name='Close paper trade',exact=True).click()
+        page.get_by_role('alertdialog').get_by_role('button',name='Close paper trade',exact=True).click()
+        page.wait_for_timeout(200)
+        assert paper_exits == [{'action':'exit','direction':'CALL'}], paper_exits
         assert not errors, errors
         browser.close()
         print(f'PASS: 36 responsive route checks, strategy CRUD/cancel, profile, outage recovery, sign-out, role guards and populated historical chart fixtures. Screenshots: {artifacts}')

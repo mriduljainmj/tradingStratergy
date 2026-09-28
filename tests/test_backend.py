@@ -8,6 +8,26 @@ import test_dashboard as fixtures
 
 
 class BackendRegressionTests(unittest.TestCase):
+    def test_regular_user_can_close_paper_but_not_live_or_enter(self):
+        ue = SimpleNamespace(is_running=True, state=SimpleNamespace(app_mode='PAPER', in_position=True, manual_action=''))
+        headers = fixtures.DashboardSmokeTests.headers[1]
+        with patch('dashboard.routes._ue', return_value=ue):
+            response = self.client.post('/api/manual-trade', headers=headers, json={'action':'exit'})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['queued'], 'EXIT')
+            self.assertEqual(ue.state.manual_action, 'EXIT')
+            self.assertEqual(self.client.post('/api/manual-trade', headers=headers, json={'action':'enter'}).status_code, 403)
+            ue.state.manual_action = ''
+            ue.state.app_mode = 'LIVE'
+            self.assertEqual(self.client.post('/api/manual-trade', headers=headers, json={'action':'exit'}).status_code, 403)
+            self.assertEqual(ue.state.manual_action, '')
+            ue.state.app_mode = 'PAPER'
+            ue.state.in_position = False
+            self.assertEqual(self.client.post('/api/manual-trade', headers=headers, json={'action':'exit'}).status_code, 409)
+            ue.state.in_position = True
+            ue.is_running = False
+            self.assertEqual(self.client.post('/api/manual-trade', headers=headers, json={'action':'exit'}).status_code, 400)
+
     def test_chart_history_batches_warm_pages_without_extra_broker_calls(self):
         broker = Mock()
         def records(token, start, end, interval, **kwargs):

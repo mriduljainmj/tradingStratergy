@@ -305,18 +305,22 @@ def set_trade_direction():
 
 @dashboard_bp.route("/api/manual-trade", methods=["POST"])
 @jwt_required()
-@admin_required
 def manual_trade():
     """Manually enter or exit the ORB options position.
     Body: {"action": "enter"|"exit", "direction": "CALL"|"PUT"}"""
     ue   = _ue()
     data = request.json or {}
     action = (data.get("action") or "").lower()
+    from dashboard.authz import current_user_is_admin
+    if not current_user_is_admin() and not (ue.state.app_mode == 'PAPER' and action == 'exit'):
+        return jsonify(ok=False, error='Admin access required. You can close your own paper position.'), 403
     if ue.state.app_mode not in ("PAPER", "LIVE"):
         return jsonify({"ok": False, "error": "Switch to Paper or Live first."}), 400
     if not ue.is_running:
         return jsonify({"ok": False, "error": "Engine not running — press Run first."}), 400
     if action == "exit":
+        if not ue.state.in_position:
+            return jsonify(ok=False, error='There is no open position to close.'), 409
         ue.state.manual_action = "EXIT"
         return jsonify({"ok": True, "queued": "EXIT"})
     if action == "enter":

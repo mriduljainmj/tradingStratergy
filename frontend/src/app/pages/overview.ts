@@ -288,10 +288,17 @@ import { liveCandles } from '../shared/live-candles';
             <div class="detail-row">
               <span>Quantity</span><strong>{{ desk.state()?.qty }}</strong>
             </div>
-            @if (auth.user()?.is_admin) {
-              <button class="btn danger full" [disabled]="busy()" (click)="manual('exit')">
-                Exit position
+            @if (auth.user()?.is_admin || desk.state()?.app_mode === 'PAPER') {
+              <button
+                class="btn danger full"
+                [disabled]="busy() || !desk.state()?.engine_running"
+                (click)="manual('exit')"
+              >
+                {{ desk.state()?.app_mode === 'PAPER' ? 'Close paper trade' : 'Exit position' }}
               </button>
+              @if (!desk.state()?.engine_running) {
+                <small class="muted">Start the engine to manage and close this position.</small>
+              }
             }
           } @else {
             <div class="compact-empty">
@@ -934,11 +941,18 @@ export class Overview implements OnInit, OnDestroy {
     await this.run(() => this.api.post('/trades-enabled', { enabled: false }));
   }
   async manual(action: string, direction = 'CALL') {
+    const paperExit = action === 'exit' && this.desk.state()?.app_mode === 'PAPER';
     if (
       !(await this.feedback.confirm(
-        action === 'exit' ? 'Exit current position?' : 'Buy ' + direction + '?',
-        `Execution mode: ${this.desk.state()?.app_mode}. This queues a market action for the options engine.`,
-        'Confirm order',
+        paperExit
+          ? 'Close paper trade?'
+          : action === 'exit'
+            ? 'Exit current position?'
+            : 'Buy ' + direction + '?',
+        paperExit
+          ? 'Queue a simulated exit on the next engine update. The exit price, charges and P&L will be recorded in your paper trade history. No real order is placed.'
+          : `Execution mode: ${this.desk.state()?.app_mode}. This queues a market action for the options engine.`,
+        paperExit ? 'Close paper trade' : 'Confirm order',
         this.desk.state()?.app_mode === 'LIVE',
       ))
     )
