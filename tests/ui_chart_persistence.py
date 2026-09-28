@@ -122,6 +122,18 @@ try:
         chart.get_by_role('button',name='Undo drawing',exact=True).click()
         chart.get_by_role('button',name='Remove EMA indicator').click()
         expect(chart.locator('.drawing-layer line')).to_have_count(1)
+        # Pane drag moves the price scale vertically; drawings follow without changing prices.
+        chart.get_by_role('button',name='Activate chart interactions').click()
+        level=chart.locator('.drawing-layer line').first
+        before_y=float(level.get_attribute('y1'))
+        plot=chart.locator('.chart-host').bounding_box()
+        page.mouse.move(plot['x']+plot['width']*.75,plot['y']+plot['height']*.2)
+        page.mouse.down()
+        page.mouse.move(plot['x']+plot['width']*.75,plot['y']+plot['height']*.2+75,steps=12)
+        page.mouse.up()
+        page.wait_for_function("([el,before]) => +el.getAttribute('y1')-before > 40", arg=[level.element_handle(),before_y])
+        page.get_by_role('button',name='Fit data',exact=True).click()
+        page.wait_for_function("([el,before]) => Math.abs(+el.getAttribute('y1')-before) < 3", arg=[level.element_handle(),before_y])
         # Leave empty chart space after the final candle, then draw into it.
         chart.get_by_role('button',name='Activate chart interactions').click()
         plot = chart.locator('.chart-host').bounding_box()

@@ -31,6 +31,9 @@ import {
     '(document:focusin)': 'outside($event)',
     '(document:keydown.escape)': 'cancelTool()',
     '(document:keydown)': 'drawingKey($event)',
+    '(document:pointermove)': 'moveChartPan($event)',
+    '(document:pointerup)': 'endChartPan()',
+    '(document:pointercancel)': 'endChartPan()',
   },
   template: `@if (type() === 'candle') {
       <div class="study-toolbar" (dblclick)="$event.stopPropagation()">
@@ -343,6 +346,7 @@ import {
             #host
             tabindex="0"
             (click)="deselectDrawing()"
+            (pointerdown)="startChartPan($event)"
             [style.visibility]="loading() ? 'hidden' : 'visible'"
           ></div>
           <svg
@@ -460,7 +464,7 @@ import {
               (keydown.enter)="select(false)"
               (keydown.space)="$event.preventDefault(); select(false)"
             >
-              Chart selected · scroll to zoom · double-click to unselect
+              Drag to move · scroll to zoom · double-click to unselect
             </button>
           }
         </div>
@@ -1602,6 +1606,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
   selected = signal(false);
   private element = inject(ElementRef<HTMLElement>);
   select(active: boolean) {
+    if (!active) this.endChartPan();
     this.selected.set(active && !this.loading() && !!this.data().length);
     this.chart?.applyOptions({
       handleScroll: this.selected() && !this.tool(),
@@ -1632,11 +1637,46 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
   @ViewChild('host') host!: ElementRef<HTMLElement>;
   readout = signal('');
   private fitted = false;
+  private panStart: { x: number; y: number } | null = null;
+  private panFrame = 0;
+  startChartPan(event: PointerEvent) {
+    if (!this.selected() || this.tool() || this.loading() || event.button !== 0) return;
+    const box = this.host.nativeElement.getBoundingClientRect();
+    if (
+      event.clientX - box.left >= (this.chart?.timeScale().width() || 0) ||
+      event.clientY - box.top >= box.height - 26
+    )
+      return;
+    this.panStart = { x: event.clientX, y: event.clientY };
+  }
+  moveChartPan(event: PointerEvent) {
+    if (!this.panStart || !this.selected() || this.tool()) return;
+    if (Math.hypot(event.clientX - this.panStart.x, event.clientY - this.panStart.y) < 3) return;
+    // Native pane dragging can move prices only when automatic scaling is disabled.
+    if (this.chart?.priceScale('right').options().autoScale)
+      this.chart.priceScale('right').applyOptions({ autoScale: false });
+    this.repaintPan();
+  }
+  private repaintPan() {
+    if (this.panFrame) return;
+    this.panFrame = requestAnimationFrame(() => {
+      this.panFrame = 0;
+      this.renderDrawings();
+    });
+  }
+  endChartPan() {
+    if (this.panStart) this.repaintPan();
+    this.panStart = null;
+  }
   fit() {
+    this.chart?.priceScale('right').applyOptions({ autoScale: true });
     this.chart?.timeScale().fitContent();
+    this.repaintPan();
   }
   latest() {
+    this.chart?.priceScale('right').applyOptions({ autoScale: true });
     this.chart?.timeScale().scrollToRealTime();
+    this.repaintPan();
   }
   private describe(row: any) {
     if (!row) return '';
@@ -1757,6 +1797,8 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
       this.studies.set(settings);
       this.studyValues.set({});
     }
+    if (this.context() !== this.lastContext)
+      this.chart?.priceScale('right').applyOptions({ autoScale: true });
     if (this.loading() || this.context() !== this.lastContext) this.cancelTool();
     this.lastContext = this.context();
     this.paint();
@@ -1817,6 +1859,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     if (!rows.length) this.fitted = false;
   }
   ngOnDestroy() {
+    if (this.panFrame) cancelAnimationFrame(this.panFrame);
     this.layoutRequest++;
     if (this.studyTimer) clearTimeout(this.studyTimer);
     this.observer?.disconnect();
