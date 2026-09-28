@@ -1,3 +1,4 @@
+import { drawingSymbol, drawingInterval, drawingPosition } from './drawing-time';
 import {
   AfterViewInit,
   Component,
@@ -122,7 +123,7 @@ import {
             Overlays share the price chart. One lower indicator at a time; adding another replaces
             it. Values use loaded candles; warm-up and unavailable volume remain gaps. Volume
             studies wait for historical volume refresh when a live candle changes. Use “Save
-            drawings &amp; indicators” to keep your setup for this symbol and timeframe in your
+            drawings &amp; indicators” to keep your setup for this symbol across timeframes in your
             account.
           </p>
           @if (studyMessage()) {
@@ -930,7 +931,15 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
       if (result.layout && initial === JSON.stringify([this.studies(), this.drawings()])) {
         for (const study of [...this.studies()]) this.removeStudy(study.id);
         this.studies.set(result.layout.studies);
-        this.drawings.set(result.layout.drawings);
+        const sourceInterval = drawingInterval(result.source_context || context);
+        const point = (p: any) => ({ ...p, interval: p.interval || sourceInterval });
+        this.drawings.set(
+          result.layout.drawings.map((d: any) =>
+            d.kind === 'brush'
+              ? { ...d, points: d.points.map(point) }
+              : { ...d, a: point(d.a), b: point(d.b) },
+          ),
+        );
         this.sequence = Math.max(
           0,
           ...this.studies().map((s) => s.id),
@@ -1334,11 +1343,14 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.drawingDrag = null;
   }
   private pointX(point: any): number | null {
-    const x = this.chart!.timeScale().timeToCoordinate(point.time);
-    return x === null
-      ? null
-      : x + (point.offset || 0) * this.chart!.timeScale().options().barSpacing;
+    const position = drawingPosition(point, this.drawingRows, drawingInterval(this.context()));
+    if (position === null) return null;
+    const index = Math.max(0, Math.min(this.drawingRows.length - 1, Math.floor(position)));
+    const scale = this.chart!.timeScale();
+    const x = scale.timeToCoordinate(this.drawingRows[index].time);
+    return x === null ? null : x + (position - index) * scale.options().barSpacing;
   }
+
   private point(event: MouseEvent) {
     if (!this.chart || !this.series || this.loading() || !this.data().length) return null;
     const box = this.host.nativeElement.getBoundingClientRect();
@@ -1375,6 +1387,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
       : {
           time,
           price,
+          interval: drawingInterval(this.context()),
           offset: this.snap()
             ? Math.round((x - baseX) / scale.options().barSpacing)
             : (x - baseX) / scale.options().barSpacing,
@@ -1417,7 +1430,17 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
       else {
         const dx = (event.clientX - drag.x) / this.chart!.timeScale().options().barSpacing;
         const dy = p.price - drag.price;
-        const move = (a: any) => ({ ...a, offset: (a.offset || 0) + dx, price: a.price + dy });
+        const move = (a: any) => {
+          const interval = drawingInterval(this.context());
+          const position = drawingPosition(a, this.drawingRows, interval)! + dx;
+          const index = Math.max(0, Math.min(this.drawingRows.length - 1, Math.round(position)));
+          return {
+            time: this.drawingRows[index].time,
+            interval,
+            offset: position - index,
+            price: a.price + dy,
+          };
+        };
         this.editSelected(
           drag.original.kind === 'brush'
             ? { points: drag.original.points.map(move) }
@@ -1683,18 +1706,25 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.paint();
   }
   ngOnChanges() {
-    if (this.context() !== this.lastContext) {
-      this.lastContext = this.context();
+    if (drawingSymbol(this.context()) !== drawingSymbol(this.lastContext)) {
       this.drawings.set([]);
       for (const study of [...this.studies()]) this.removeStudy(study.id);
       this.redo = [];
       this.cancelTool();
       void this.restoreLayout();
+    } else if (this.context() !== this.lastContext) {
+      // Remove old-timeframe series before rebuilding them against the new candle dates.
+      const settings = [...this.studies()];
+      for (const study of settings) this.removeStudy(study.id);
+      this.studies.set(settings);
+      this.studyValues.set({});
     }
-    if (this.loading()) this.cancelTool();
+    if (this.loading() || this.context() !== this.lastContext) this.cancelTool();
+    this.lastContext = this.context();
     this.paint();
   }
   private renderedData: any[] | null = null;
+  private drawingRows: any[] = [];
   private paint() {
     if (!this.series) return;
     if (this.loading()) {
@@ -1722,6 +1752,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
         for (const row of tail) this.series.update(row);
         this.readout.set(this.describe(data.at(-1)));
         this.renderedData = data;
+        this.drawingRows = data;
         this.scheduleStudies();
         this.renderDrawings();
         return;
@@ -1737,6 +1768,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.readout.set(this.describe(rows.at(-1)));
     this.chart?.applyOptions({ timeScale: { timeVisible: typeof rows[0]?.time === 'number' } });
     this.series.setData(rows);
+    this.drawingRows = rows;
     this.renderedData = data;
     this.scheduleStudies();
     this.renderDrawings();

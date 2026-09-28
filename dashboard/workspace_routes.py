@@ -50,10 +50,22 @@ def chart_annotations():
     context = request.args.get('context', '').strip()
     if not context or len(context) > 200:
         bad('A chart symbol and timeframe are required.')
+    requested_context = context
+    symbol, _, interval = context.rpartition(':')
+    if interval in INTERVALS:
+        context = symbol
     with SessionLocal() as db:
         row = db.get(ChartAnnotation, (int(get_jwt_identity()), context))
         if request.method == 'GET':
-            return jsonify(ok=True, layout=json.loads(row.payload) if row else None)
+            source_context = context
+            if row is None:
+                # Read old per-timeframe saves without deleting or overwriting them.
+                for candidate in dict.fromkeys([requested_context] + [context + ':' + i for i in INTERVALS]):
+                    row = db.get(ChartAnnotation, (int(get_jwt_identity()), candidate))
+                    if row:
+                        source_context = candidate
+                        break
+            return jsonify(ok=True, layout=json.loads(row.payload) if row else None, source_context=source_context)
         value = request.get_json(silent=True)
         if not isinstance(value, dict) or len(json.dumps(value)) > 500_000:
             bad('Chart settings must be an object smaller than 500 KB.')
@@ -65,6 +77,8 @@ def chart_annotations():
             return isinstance(v, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', v)
         def point(p):
             if not isinstance(p, dict) or not number(p.get('price')) or not number(p.get('offset', 0)):
+                return False
+            if 'interval' in p and p['interval'] not in INTERVALS:
                 return False
             t = p.get('time')
             if number(t):

@@ -39,7 +39,16 @@ try:
 
         import datetime
         candles=[{'time':str(datetime.date(2026,1,1)+datetime.timedelta(days=i)), 'open':100+i,'high':105+i,'low':98+i,'close':103+i,'volume':1000} for i in range(60)]
-        page.route('**/api/chart/history*',lambda r:r.fulfill(json={'ok':True,'data':candles,'complete':True}))
+        def history(route):
+            from urllib.parse import urlparse, parse_qs
+            interval = parse_qs(urlparse(route.request.url).query).get('interval',['day'])[0]
+            rows = candles
+            if interval == '5minute':
+                rows = [{**c, 'time':int(datetime.datetime.fromisoformat(c['time']).replace(tzinfo=datetime.timezone.utc).timestamp())+13500+step*300} for c in candles for step in range(2)]
+            elif interval == 'week':
+                rows = [c for c in candles if datetime.date.fromisoformat(c['time']).weekday()==0]
+            route.fulfill(json={'ok':True,'data':rows,'complete':True})
+        page.route('**/api/chart/history*', history)
         page.goto(base+'/markets')
         page.get_by_role('button',name='+ New watchlist',exact=True).click()
         page.get_by_label('New watchlist name').fill('Swing trades')
@@ -74,12 +83,35 @@ try:
         expect(chart.get_by_role('button',name='Remove SMA indicator')).to_be_visible()
         expect(chart.locator('.drawing-layer line')).to_have_count(1)
         page.get_by_label('Chart 1 timeframe',exact=True).select_option('week')
-        expect(chart.get_by_role('button',name='Remove SMA indicator')).to_have_count(0)
-        expect(chart.locator('.drawing-layer line')).to_have_count(0)
+        expect(chart.get_by_role('button',name='Remove SMA indicator')).to_have_count(1)
+        expect(save).to_be_enabled()
+        expect(chart.locator('.drawing-layer line')).to_have_count(1)
         page.get_by_label('Chart 1 timeframe',exact=True).select_option('day')
         expect(chart.get_by_role('button',name='Remove SMA indicator')).to_be_visible()
         expect(chart.locator('.drawing-layer line')).to_have_count(1)
 
+        # Unsaved studies and drawings survive a switch to numeric intraday candles too.
+        page.get_by_label('Chart 1 timeframe',exact=True).select_option('5minute')
+        expect(save).to_be_enabled()
+        expect(chart.get_by_role('button',name='Remove SMA indicator')).to_be_visible()
+        expect(chart.locator('.drawing-layer line')).to_have_count(1)
+        chart.get_by_role('button',name='Indicators 1',exact=True).click()
+        chart.get_by_label('Technical indicator',exact=True).select_option('EMA')
+        chart.get_by_role('button',name='Add',exact=True).click()
+        chart.get_by_role('button',name='Close indicator settings').click()
+        chart.get_by_role('button',name='Line tools',exact=True).click()
+        chart.get_by_role('menuitem',name='Horizontal level',exact=True).click()
+        expect(chart.locator('.drawing-active')).to_have_count(1)
+        plot=chart.locator('.chart-host').bounding_box()
+        page.mouse.click(plot['x']+plot['width']*.4,plot['y']+plot['height']*.4)
+        expect(chart.locator('.drawing-layer line')).to_have_count(2)
+        page.get_by_label('Chart 1 timeframe',exact=True).select_option('day')
+        expect(save).to_be_enabled()
+        expect(chart.get_by_role('button',name='Remove EMA indicator')).to_be_visible()
+        expect(chart.locator('.drawing-layer line')).to_have_count(2)
+        chart.get_by_role('button',name='Undo drawing',exact=True).click()
+        chart.get_by_role('button',name='Remove EMA indicator').click()
+        expect(chart.locator('.drawing-layer line')).to_have_count(1)
         # Leave empty chart space after the final candle, then draw into it.
         chart.get_by_role('button',name='Activate chart interactions').click()
         plot = chart.locator('.chart-host').bounding_box()
@@ -120,14 +152,14 @@ try:
         page.mouse.down()
         page.mouse.move(handle['x']-30,handle['y']-25,steps=8)
         page.mouse.up()
-        assert abs(float(line.get_attribute('x2'))-before)>15
+        page.wait_for_function("([el, before]) => Math.abs(+el.getAttribute('x2')-before)>15", arg=[line.element_handle(),before])
         before=float(line.get_attribute('y1'))
         middle=line_midpoint()
         page.mouse.move(middle['x'],middle['y'])
         page.mouse.down()
         page.mouse.move(middle['x']+20,middle['y']+25,steps=8)
         page.mouse.up()
-        assert abs(float(line.get_attribute('y1'))-before)>15
+        page.wait_for_function("([el, before]) => Math.abs(+el.getAttribute('y1')-before)>15", arg=[line.element_handle(),before])
         chart.get_by_label('Selected drawing color').fill('#ff0000')
         expect(line).to_have_attribute('stroke','#ff0000')
         # Delete inside an input must not remove the drawing.
@@ -163,7 +195,7 @@ try:
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'),width
         page.screenshot(path=str(artifacts/'saved-watchlists-mobile.png'),full_page=True)
         assert not errors,errors
-        print('PASS create/select named lists, drawings and indicators survive reload, timeframe isolation, future-space trend lines, selection, drag edits, keyboard/bin deletion, saved edits, mobile bounds:',artifacts)
+        print('PASS create/select named lists, drawings and indicators survive reload, shared timeframe settings, future-space trend lines, selection, drag edits, keyboard/bin deletion, saved edits, mobile bounds:',artifacts)
         browser.close()
 finally:
     server.shutdown()

@@ -129,6 +129,22 @@ class DashboardSmokeTests(unittest.TestCase):
             db.commit()
             self.assertEqual(_collections(db, user.id)[0].symbols, '[]')
 
+    def test_legacy_chart_setup_available_across_timeframes(self):
+        import json
+        from db.models import ChartAnnotation
+        from db.database import SessionLocal
+        value = {'studies': [{'id': 1, 'kind': 'EMA', 'period': 21, 'color': '#abcdef'}], 'drawings': []}
+        with SessionLocal() as db:
+            db.add(ChartAnnotation(user_id=1, context='LEGACY:5minute', payload=json.dumps(value)))
+            db.commit()
+        h = self.headers[0]
+        loaded = self.client.get('/api/workspace/annotations?context=LEGACY:day', headers=h).json
+        self.assertEqual(loaded['layout'], value)
+        self.assertEqual(loaded['source_context'], 'LEGACY:5minute')
+        empty = {'studies': [], 'drawings': []}
+        self.assertEqual(self.client.put('/api/workspace/annotations?context=LEGACY:day', headers=h, json=empty).status_code, 200)
+        self.assertEqual(self.client.get('/api/workspace/annotations?context=LEGACY:5minute', headers=h).json['layout'], empty)
+
     def test_chart_annotations_persistence_and_isolation(self):
         url = '/api/workspace/annotations?context=TCS:day'
         point = {'time': '2026-09-25', 'price': 100, 'offset': 0}
@@ -138,7 +154,7 @@ class DashboardSmokeTests(unittest.TestCase):
         self.assertEqual(self.client.put(url, headers=h, json=value).status_code, 200)
         self.assertEqual(self.client.get(url, headers=h).json['layout'], value)
         self.assertIsNone(self.client.get(url, headers=self.headers[1]).json['layout'])
-        self.assertIsNone(self.client.get('/api/workspace/annotations?context=TCS:week', headers=h).json['layout'])
+        self.assertEqual(self.client.get('/api/workspace/annotations?context=TCS:week', headers=h).json['layout'], value)
         malformed = {'studies': [], 'drawings': [{'id': 1, 'kind': 'brush', 'color': '#123456', 'points': [point, {'price': float('nan')}]}]}
         self.assertEqual(self.client.put(url, headers=h, json=malformed).status_code, 400)
         self.assertEqual(self.client.get(url, headers=h).json['layout'], value)
