@@ -13,7 +13,13 @@ import { Api, message, query } from '../core/api';
 import { FormsModule } from '@angular/forms';
 import { STUDIES, Study, StudyKind, calculateStudy } from './chart-indicators';
 import { formatChartTime, formatChartTick, chartDate } from './chart-time';
-import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-charts';
+import {
+  createChart,
+  IChartApi,
+  ISeriesApi,
+  ColorType,
+  MismatchDirection,
+} from 'lightweight-charts';
 @Component({
   selector: 'ax-chart',
   imports: [FormsModule],
@@ -23,6 +29,7 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
     '(document:pointerdown)': 'outside($event)',
     '(document:focusin)': 'outside($event)',
     '(document:keydown.escape)': 'cancelTool()',
+    '(document:keydown)': 'drawingKey($event)',
   },
   template: `@if (type() === 'candle') {
       <div class="study-toolbar" (dblclick)="$event.stopPropagation()">
@@ -63,6 +70,37 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
           }
         }
       </div>
+      @if (selectedDrawing(); as drawing) {
+        <div class="drawing-editor" aria-label="Selected drawing settings">
+          <strong>{{ drawing.kind }} selected</strong>
+          <label
+            >Color
+            <input
+              type="color"
+              aria-label="Selected drawing color"
+              [disabled]="locked()"
+              [ngModel]="drawing.color"
+              (ngModelChange)="editSelected({ color: $event })"
+          /></label>
+          @if (drawing.kind === 'text') {
+            <label
+              >Text
+              <input
+                aria-label="Selected drawing text"
+                maxlength="80"
+                [disabled]="locked()"
+                [ngModel]="drawing.text"
+                (ngModelChange)="editSelected({ text: $event })"
+            /></label>
+          }
+          <span>{{
+            locked()
+              ? 'Unlock drawings to edit.'
+              : 'Drag the line to move it, or drag an endpoint to reshape it. Delete removes the selection.'
+          }}</span>
+          <button type="button" (click)="deselectDrawing()">Done</button>
+        </div>
+      }
       @if (tool()) {
         <div class="tool-hint" role="status">
           {{ tool() === 'brush' ? 'Drag to draw' : anchor ? 'End point' : 'Start point' }} ·
@@ -125,15 +163,15 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
       }
       @if (objects()) {
         <div class="drawing-list">
-          <span>Drawings stay in this chart session.</span>
+          <span>Select a drawing to edit it. Use Save to keep your changes.</span>
           @for (drawing of drawings(); track drawing.id) {
             <button
               type="button"
-              (click)="removeDrawing(drawing.id)"
+              (click)="selectDrawing(drawing.id)"
               [disabled]="locked()"
-              [attr.aria-label]="'Delete ' + drawing.kind + ' drawing'"
+              [attr.aria-label]="'Select ' + drawing.kind + ' drawing'"
             >
-              {{ drawing.kind }} {{ drawing.text || '' }} ×
+              {{ drawing.kind }} {{ drawing.text || '' }}
             </button>
           }
           @if (!drawings().length) {
@@ -218,10 +256,16 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
           <span class="rail-divider"></span>
           <button
             type="button"
-            title="Remove all drawings · Redo restores them one at a time"
-            aria-label="Remove all drawings"
+            [title]="
+              selectedDrawing()
+                ? 'Delete selected drawing · Delete key'
+                : 'Remove all drawings · Redo restores them one at a time'
+            "
+            [attr.aria-label]="
+              selectedDrawing() ? 'Delete selected drawing' : 'Remove all drawings'
+            "
             [disabled]="locked() || !drawings().length"
-            (click)="clearDrawings()"
+            (click)="selectedDrawing() ? deleteSelected() : clearDrawings()"
           >
             <svg viewBox="0 0 24 24">
               <path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7" />
@@ -272,68 +316,101 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
           {{ readout() || 'Market time · IST (UTC+05:30)' }}
         </div>
         <div class="chart-plot" (dblclick)="cancelTool()">
-          <div class="chart-host" #host [style.visibility]="loading() ? 'hidden' : 'visible'"></div>
+          <div
+            class="chart-host"
+            #host
+            tabindex="0"
+            (click)="deselectDrawing()"
+            [style.visibility]="loading() ? 'hidden' : 'visible'"
+          ></div>
           <svg
             class="drawing-layer"
             [class.drawing-active]="!!tool()"
             [style.visibility]="loading() || hiddenDrawings() ? 'hidden' : 'visible'"
             (click)="drawClick($event)"
             (pointerdown)="startBrush($event)"
-            (pointerup)="finishBrush($event)"
+            (pointerup)="endDrawingDrag($event); finishBrush($event)"
             (pointercancel)="cancelTool()"
             (pointermove)="previewDrawing($event)"
             aria-label="Chart drawings"
           >
             @for (shape of shapes(); track $index) {
-              @if (shape.kind === 'brush') {
-                <polyline
-                  [attr.points]="shape.points"
-                  [attr.stroke]="shape.color"
-                  fill="none"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              } @else if (shape.kind === 'ellipse') {
-                <ellipse
-                  [attr.cx]="shape.x + shape.w / 2"
-                  [attr.cy]="shape.y + shape.h / 2"
-                  [attr.rx]="shape.w / 2"
-                  [attr.ry]="shape.h / 2"
-                  [attr.stroke]="shape.color"
-                  [attr.fill]="shape.color"
-                  fill-opacity="0.1"
-                />
-              } @else if (shape.kind === 'rect') {
-                <rect
-                  [attr.x]="shape.x"
-                  [attr.y]="shape.y"
-                  [attr.width]="shape.w"
-                  [attr.height]="shape.h"
-                  [attr.stroke]="shape.color"
-                  [attr.fill]="shape.color"
-                  fill-opacity="0.1"
-                />
-              } @else {
-                <line
-                  [attr.x1]="shape.x"
-                  [attr.y1]="shape.y"
-                  [attr.x2]="shape.x2"
-                  [attr.y2]="shape.y2"
-                  [attr.stroke]="shape.color"
-                  stroke-width="1.5"
-                />
-              }
-              @if (shape.label) {
-                <text
-                  [attr.x]="shape.x + 5"
-                  [attr.y]="shape.y - 5"
-                  [attr.fill]="shape.color"
-                  font-size="11"
-                >
-                  {{ shape.label }}
-                </text>
-              }
+              <g
+                [class.drawing-object]="selected() && !tool() && !!shape.id"
+                [class.drawing-object-selected]="selectedDrawingId() === shape.id"
+                [attr.data-drawing-id]="shape.id"
+                (pointerdown)="startDrawingDrag($event, shape.id)"
+                (click)="selectShape($event, shape.id)"
+              >
+                @if (shape.kind === 'line') {
+                  <path
+                    [attr.d]="'M' + shape.x + ',' + shape.y + 'L' + shape.x2 + ',' + shape.y2"
+                    stroke="transparent"
+                    stroke-width="14"
+                    fill="none"
+                  />
+                }
+                @if (shape.kind === 'brush') {
+                  <polyline
+                    [attr.points]="shape.points"
+                    [attr.stroke]="shape.color"
+                    fill="none"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                } @else if (shape.kind === 'ellipse') {
+                  <ellipse
+                    [attr.cx]="shape.x + shape.w / 2"
+                    [attr.cy]="shape.y + shape.h / 2"
+                    [attr.rx]="shape.w / 2"
+                    [attr.ry]="shape.h / 2"
+                    [attr.stroke]="shape.color"
+                    [attr.fill]="shape.color"
+                    fill-opacity="0.1"
+                  />
+                } @else if (shape.kind === 'rect') {
+                  <rect
+                    [attr.x]="shape.x"
+                    [attr.y]="shape.y"
+                    [attr.width]="shape.w"
+                    [attr.height]="shape.h"
+                    [attr.stroke]="shape.color"
+                    [attr.fill]="shape.color"
+                    fill-opacity="0.1"
+                  />
+                } @else {
+                  <line
+                    [attr.x1]="shape.x"
+                    [attr.y1]="shape.y"
+                    [attr.x2]="shape.x2"
+                    [attr.y2]="shape.y2"
+                    [attr.stroke]="shape.color"
+                    stroke-width="1.5"
+                  />
+                }
+                @if (shape.label) {
+                  <text
+                    [attr.x]="shape.x + 5"
+                    [attr.y]="shape.y - 5"
+                    [attr.fill]="shape.color"
+                    font-size="11"
+                  >
+                    {{ shape.label }}
+                  </text>
+                }
+              </g>
+            }
+            @for (handle of drawingHandles(); track handle.key) {
+              <circle
+                class="drawing-handle"
+                [attr.cx]="handle.x"
+                [attr.cy]="handle.y"
+                r="6"
+                [attr.data-handle]="handle.key"
+                (pointerdown)="startDrawingDrag($event, selectedDrawingId(), handle.key)"
+                (click)="$event.stopPropagation()"
+              />
             }
           </svg>
           @if (loading()) {
@@ -635,6 +712,47 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
     .drawing-list {
       max-height: 90px;
       overflow: auto;
+    }
+    .drawing-editor {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 8px 12px;
+      background: #21354a;
+      color: #e5edf7;
+      font-size: 11px;
+    }
+    .drawing-editor label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .drawing-editor input {
+      max-width: 150px;
+    }
+    .drawing-editor input[type='color'] {
+      width: 30px;
+      height: 26px;
+      padding: 0;
+    }
+    .drawing-object {
+      pointer-events: visiblePainted;
+      cursor: move;
+    }
+    .drawing-object-selected {
+      filter: drop-shadow(0 0 3px #fff8);
+    }
+    .drawing-handle {
+      fill: #101c2c;
+      stroke: #fff;
+      stroke-width: 2px;
+      pointer-events: all;
+      cursor: grab;
+      touch-action: none;
+    }
+    .drawing-object {
+      touch-action: none;
     }
     .drawing-layer {
       position: absolute;
@@ -1019,6 +1137,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     if (this.locked()) return;
     this.redo = [...this.drawings()].reverse();
     this.drawings.set([]);
+    this.deselectDrawing();
     this.renderDrawings();
   }
   addRibbon() {
@@ -1073,6 +1192,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.renderDrawings();
   }
   chooseTool(kind: string) {
+    this.deselectDrawing();
     if (this.locked() && kind) return;
     this.toolGroup.set('');
     this.hiddenDrawings.set(false);
@@ -1085,6 +1205,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.renderDrawings();
   }
   cancelTool() {
+    this.deselectDrawing();
     this.stroke = [];
     this.toolGroup.set('');
     this.tool.set('');
@@ -1116,13 +1237,112 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.redo = [];
     this.renderDrawings();
   }
+  selectedDrawingId = signal<number | null>(null);
+  drawingHandles = signal<any[]>([]);
+  private drawingDrag: any = null;
+  selectedDrawing() {
+    return this.drawings().find((d) => d.id === this.selectedDrawingId());
+  }
+  deselectDrawing() {
+    this.selectedDrawingId.set(null);
+    this.drawingHandles.set([]);
+    this.drawingDrag = null;
+  }
+  selectDrawing(id: number) {
+    this.tool.set('');
+    this.anchor = null;
+    this.preview = null;
+    this.selectedDrawingId.set(id);
+    this.select(true);
+    this.renderDrawings();
+  }
+  selectShape(event: MouseEvent, id: number) {
+    if (this.tool() || !id) return;
+    event.stopPropagation();
+    this.selectDrawing(id);
+  }
+  editSelected(patch: any) {
+    if (this.locked()) return;
+    this.drawings.update((items) =>
+      items.map((d) => (d.id === this.selectedDrawingId() ? { ...d, ...patch } : d)),
+    );
+    this.redo = [];
+    this.renderDrawings();
+  }
+  deleteSelected() {
+    const drawing = this.selectedDrawing();
+    if (!drawing || this.locked()) return;
+    this.redo.push(drawing);
+    this.drawings.update((items) => items.filter((d) => d.id !== drawing.id));
+    this.deselectDrawing();
+    this.renderDrawings();
+  }
+  drawingKey(event: KeyboardEvent) {
+    const target = event.target as HTMLElement;
+    if (
+      !this.selected() ||
+      !this.selectedDrawing() ||
+      this.locked() ||
+      target?.closest('input, textarea, select, [contenteditable="true"]') ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey
+    )
+      return;
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      this.deleteSelected();
+    }
+  }
+  startDrawingDrag(event: PointerEvent, id: number | null, handle = '') {
+    if (this.tool() || !id || event.button !== 0) return;
+    event.stopPropagation();
+    this.selectDrawing(id);
+    if (this.locked()) return;
+    const point = this.point(event);
+    if (!point) return;
+    event.preventDefault();
+    const svg = (event.currentTarget as SVGElement).ownerSVGElement!;
+    svg.setPointerCapture(event.pointerId);
+    this.drawingDrag = {
+      id,
+      handle,
+      original: this.selectedDrawing(),
+      x: event.clientX,
+      price: point.price,
+    };
+  }
+  endDrawingDrag(event: PointerEvent) {
+    if (!this.drawingDrag) return;
+    if ((event.currentTarget as SVGElement).hasPointerCapture(event.pointerId))
+      (event.currentTarget as SVGElement).releasePointerCapture(event.pointerId);
+    this.drawingDrag = null;
+  }
+  private pointX(point: any): number | null {
+    const x = this.chart!.timeScale().timeToCoordinate(point.time);
+    return x === null
+      ? null
+      : x + (point.offset || 0) * this.chart!.timeScale().options().barSpacing;
+  }
   private point(event: MouseEvent) {
     if (!this.chart || !this.series || this.loading() || !this.data().length) return null;
     const box = this.host.nativeElement.getBoundingClientRect();
     const x = event.clientX - box.left,
       y = event.clientY - box.top;
     if (x < 0 || x > this.chart.timeScale().width() || y < 0 || y > box.height - 26) return null;
-    const time = this.chart.timeScale().coordinateToTime(x);
+    const scale = this.chart.timeScale();
+    const logical = scale.coordinateToLogical(x);
+    if (logical === null) return null;
+    // Anchor empty-space points to the nearest loaded candle, preserving their bar offset.
+    // coordinateToTime returns null to the right of the newest candle.
+    const nearest = this.series.dataByIndex(
+      Math.round(logical),
+      logical < 0 ? MismatchDirection.NearestRight : MismatchDirection.NearestLeft,
+    );
+    const time = nearest?.time;
+    if (time === undefined) return null;
+    const baseX = scale.timeToCoordinate(time);
+    if (baseX === null) return null;
     let price = this.series.coordinateToPrice(y);
     if (this.snap() && price !== null) {
       const logical = this.chart.timeScale().coordinateToLogical(x);
@@ -1135,15 +1355,14 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
           );
       }
     }
-    return time === null || price === null
+    return price === null
       ? null
       : {
           time,
           price,
           offset: this.snap()
-            ? 0
-            : (x - Number(this.chart.timeScale().timeToCoordinate(time))) /
-              this.chart.timeScale().options().barSpacing,
+            ? Math.round((x - baseX) / scale.options().barSpacing)
+            : (x - baseX) / scale.options().barSpacing,
         };
   }
   drawClick(event: MouseEvent) {
@@ -1175,6 +1394,23 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     this.renderDrawings();
   }
   previewDrawing(event: MouseEvent) {
+    if (this.drawingDrag) {
+      const p = this.point(event);
+      if (!p) return;
+      const drag = this.drawingDrag;
+      if (drag.handle) this.editSelected({ [drag.handle]: p });
+      else {
+        const dx = (event.clientX - drag.x) / this.chart!.timeScale().options().barSpacing;
+        const dy = p.price - drag.price;
+        const move = (a: any) => ({ ...a, offset: (a.offset || 0) + dx, price: a.price + dy });
+        this.editSelected(
+          drag.original.kind === 'brush'
+            ? { points: drag.original.points.map(move) }
+            : { a: move(drag.original.a), b: move(drag.original.b) },
+        );
+      }
+      return;
+    }
     if (this.tool() === 'brush' && this.stroke.length) {
       const point = this.point(event);
       if (point && this.stroke.length < 2000) {
@@ -1206,29 +1442,28 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
       if (d.kind === 'brush') {
         const points = d.points
           .map((p: any) => {
-            const x = this.chart!.timeScale().timeToCoordinate(p.time),
+            const x = this.pointX(p),
               y = this.series!.priceToCoordinate(p.price);
-            return x === null || y === null
-              ? null
-              : `${x + (p.offset || 0) * this.chart!.timeScale().options().barSpacing},${y}`;
+            return x === null || y === null ? null : `${x},${y}`;
           })
           .filter(Boolean)
           .join(' ');
-        shapes.push({ kind: 'brush', points, color: d.color });
+        shapes.push({ id: d.id, kind: 'brush', points, color: d.color });
         continue;
       }
-      const x = this.chart.timeScale().timeToCoordinate(d.a.time),
+      const x = this.pointX(d.a),
         y = this.series.priceToCoordinate(d.a.price);
-      const x2 = this.chart.timeScale().timeToCoordinate(d.b.time),
+      const x2 = this.pointX(d.b),
         y2 = this.series.priceToCoordinate(d.b.price);
       if (x === null || x2 === null || y === null || y2 === null) continue;
       const line = (a: number, b: number, c: number, e: number, label = '') =>
-        shapes.push({ kind: 'line', x: a, y: b, x2: c, y2: e, color: d.color, label });
+        shapes.push({ id: d.id, kind: 'line', x: a, y: b, x2: c, y2: e, color: d.color, label });
       if (d.kind === 'horizontal') line(0, y, width, y, d.a.price.toFixed(2));
       else if (d.kind === 'vertical') line(x, 0, x, height);
       else if (d.kind === 'text') line(x, y, x, y, d.text);
       else if (d.kind === 'rectangle' || d.kind === 'ellipse')
         shapes.push({
+          id: d.id,
           kind: d.kind === 'rectangle' ? 'rect' : 'ellipse',
           x: Math.min(x, x2),
           y: Math.min(y, y2),
@@ -1270,6 +1505,22 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
         else labels.push({ x: shape.x, y: shape.y });
       }
     this.shapes.set(shapes);
+    const drawing = this.selectedDrawing();
+    this.drawingHandles.set(
+      drawing &&
+        !this.tool() &&
+        !this.locked() &&
+        !this.hiddenDrawings() &&
+        drawing.kind !== 'brush'
+        ? (['horizontal', 'vertical', 'text'].includes(drawing.kind) ? ['a'] : ['a', 'b'])
+            .map((key) => ({
+              key,
+              x: this.pointX(drawing[key]),
+              y: this.series!.priceToCoordinate(drawing[key].price),
+            }))
+            .filter((p) => p.x !== null && p.y !== null)
+        : [],
+    );
   }
   loading = input(false);
   selected = signal(false);
