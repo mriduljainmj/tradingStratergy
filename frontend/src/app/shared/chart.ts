@@ -288,26 +288,6 @@ import {
         }
       }
       <div class="chart-main">
-        @if (studies().length) {
-          <div class="study-legend">
-            @for (study of studies(); track study.id) {
-              <div>
-                <span>{{ study.kind }} {{ study.period }}</span
-                ><strong [style.color]="study.color">{{
-                  studyValues()[study.id] || 'warming up'
-                }}</strong>
-                <button
-                  type="button"
-                  (click)="removeStudy(study.id)"
-                  [attr.aria-label]="'Remove ' + study.kind + ' indicator'"
-                  title="Remove indicator"
-                >
-                  ×
-                </button>
-              </div>
-            }
-          </div>
-        }
         <div
           class="chart-readout"
           aria-live="off"
@@ -316,6 +296,31 @@ import {
           {{ readout() || 'Market time · IST (UTC+05:30)' }}
         </div>
         <div class="chart-plot" (dblclick)="cancelTool()">
+          @if (studies().length) {
+            <div
+              class="study-legend"
+              [style.visibility]="loading() ? 'hidden' : 'visible'"
+              (dblclick)="$event.stopPropagation()"
+            >
+              @for (study of studies(); track study.id) {
+                <div>
+                  <span>{{ study.kind }} {{ study.period }}</span
+                  ><strong [style.color]="study.color">{{
+                    studyValues()[study.id] || 'warming up'
+                  }}</strong>
+                  <button
+                    type="button"
+                    (click)="removeStudy(study.id)"
+                    [attr.aria-label]="'Remove ' + study.kind + ' indicator'"
+                    title="Remove indicator"
+                  >
+                    ×
+                  </button>
+                </div>
+              }
+            </div>
+          }
+
           <div
             class="chart-host"
             #host
@@ -581,9 +586,16 @@ import {
       background: #2a455b;
     }
     .study-legend {
-      flex-shrink: 0;
-      padding: 5px 10px;
-      max-height: 100px;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 7;
+      width: max-content;
+      max-width: calc(100% - 80px);
+      max-height: calc(100% - 40px);
+      padding: 2px 4px;
+      border-radius: 4px;
+      background: #101c2cb3;
       overflow: auto;
       color: #bdccdd;
       font: 11px/1.5 system-ui;
@@ -601,7 +613,7 @@ import {
       white-space: nowrap;
     }
     .study-legend button {
-      margin-left: auto;
+      margin-left: 4px;
       background: transparent;
       color: #8fa5bd;
       border: 0;
@@ -806,9 +818,9 @@ import {
       cursor: pointer;
       color: #e5edf7;
       display: flex;
-      align-items: flex-start;
+      align-items: flex-end;
       justify-content: center;
-      padding: 12px;
+      padding: 12px 12px 32px;
       touch-action: pan-y;
     }
     .chart-activate span,
@@ -826,7 +838,7 @@ import {
     }
     .chart-selection {
       position: absolute;
-      top: 6px;
+      bottom: 32px;
       left: 12px;
       right: 12px;
       width: fit-content;

@@ -65,7 +65,10 @@ try:
         expect(save).to_be_enabled()
         chart.get_by_role('button',name='Indicators',exact=True).click()
         chart.get_by_label('Indicator period',exact=True).fill('3')
+        plot_before_indicator = chart.locator('.chart-host').bounding_box()
         chart.get_by_role('button',name='Add',exact=True).click()
+        expect(chart.get_by_role('button',name='Remove SMA indicator')).to_be_visible()
+        assert chart.locator('.chart-host').bounding_box() == plot_before_indicator, 'Indicator labels resized the plot'
         chart.get_by_role('button',name='Close indicator settings').click()
         chart.get_by_role('button',name='Line tools',exact=True).click()
         chart.get_by_role('menuitem',name='Horizontal level',exact=True).click()
