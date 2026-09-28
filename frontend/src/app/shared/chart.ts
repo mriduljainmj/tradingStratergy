@@ -70,37 +70,6 @@ import {
           }
         }
       </div>
-      @if (selectedDrawing(); as drawing) {
-        <div class="drawing-editor" aria-label="Selected drawing settings">
-          <strong>{{ drawing.kind }} selected</strong>
-          <label
-            >Color
-            <input
-              type="color"
-              aria-label="Selected drawing color"
-              [disabled]="locked()"
-              [ngModel]="drawing.color"
-              (ngModelChange)="editSelected({ color: $event })"
-          /></label>
-          @if (drawing.kind === 'text') {
-            <label
-              >Text
-              <input
-                aria-label="Selected drawing text"
-                maxlength="80"
-                [disabled]="locked()"
-                [ngModel]="drawing.text"
-                (ngModelChange)="editSelected({ text: $event })"
-            /></label>
-          }
-          <span>{{
-            locked()
-              ? 'Unlock drawings to edit.'
-              : 'Drag the line to move it, or drag an endpoint to reshape it. Delete removes the selection.'
-          }}</span>
-          <button type="button" (click)="deselectDrawing()">Done</button>
-        </div>
-      }
       @if (tool()) {
         <div class="tool-hint" role="status">
           {{ tool() === 'brush' ? 'Drag to draw' : anchor ? 'End point' : 'Start point' }} ·
@@ -181,6 +150,36 @@ import {
       }
     }
     <div class="chart-body">
+      @if (selectedDrawing(); as drawing) {
+        <div class="drawing-editor" role="toolbar" aria-label="Selected drawing settings">
+          <strong>{{ drawing.kind }} selected</strong>
+          <label
+            >Color
+            <input
+              type="color"
+              aria-label="Selected drawing color"
+              [disabled]="locked()"
+              [ngModel]="drawing.color"
+              (ngModelChange)="editSelected({ color: $event })"
+          /></label>
+          @if (drawing.kind === 'text') {
+            <label
+              >Text
+              <input
+                aria-label="Selected drawing text"
+                maxlength="80"
+                [disabled]="locked()"
+                [ngModel]="drawing.text"
+                (ngModelChange)="editSelected({ text: $event })"
+            /></label>
+          }
+          <span>{{
+            locked() ? 'Unlock drawings to edit.' : 'Drag endpoints to edit · Delete to remove'
+          }}</span>
+          <button type="button" (click)="deselectDrawing()">Done</button>
+        </div>
+      }
+
       @if (type() === 'candle') {
         <nav class="drawing-rail" aria-label="Drawing tools" (dblclick)="$event.stopPropagation()">
           <button
@@ -661,6 +660,8 @@ import {
     .study-chips button,
     .drawing-list button,
     .tool-hint button,
+    .drawing-editor button,
+    .drawing-editor input,
     .tool-hint input {
       background: #203449;
       color: #e5edf7;
@@ -714,6 +715,16 @@ import {
       overflow: auto;
     }
     .drawing-editor {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 14;
+      width: max-content;
+      max-width: calc(100% - 64px);
+      box-sizing: border-box;
+      border: 1px solid #40556a;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px #0005;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
@@ -724,6 +735,10 @@ import {
       font-size: 11px;
     }
     .drawing-editor label {
+      margin: 0;
+      min-width: 0;
+      color: inherit;
+      flex-direction: row;
       display: flex;
       align-items: center;
       gap: 6px;

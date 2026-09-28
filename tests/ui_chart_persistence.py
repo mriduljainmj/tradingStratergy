@@ -104,8 +104,15 @@ try:
         def line_midpoint():
             return line.evaluate("el => { const b=el.ownerSVGElement.getBoundingClientRect(); return {x:b.x+(+el.getAttribute('x1') + +el.getAttribute('x2'))/2, y:b.y+(+el.getAttribute('y1') + +el.getAttribute('y2'))/2}; }")
         middle=line_midpoint()
+        bounds_before_selection=chart.locator('.chart-host').bounding_box()
         page.mouse.click(middle['x'],middle['y'])
         expect(chart.get_by_label('Selected drawing settings')).to_be_visible()
+        assert chart.locator('.chart-host').bounding_box()==bounds_before_selection, 'Selecting a drawing resized the plot'
+        expect(chart.locator('.drawing-handle')).to_have_count(2)
+        chart.get_by_role('button',name='Done',exact=True).click()
+        expect(chart.get_by_label('Selected drawing settings')).to_have_count(0)
+        assert chart.locator('.chart-host').bounding_box()==bounds_before_selection, 'Deselecting resized the plot'
+        page.mouse.click(middle['x'],middle['y'])
         expect(chart.locator('.drawing-handle')).to_have_count(2)
         before=float(line.get_attribute('x2'))
         handle=chart.locator('[data-handle="b"]').bounding_box()
