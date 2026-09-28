@@ -225,3 +225,18 @@ class InstrumentCatalog(Base):
     exchange = Column(String(10), primary_key=True)
     fetched_on = Column(Date, nullable=False)
     payload = Column(Text, nullable=False)
+
+
+class WatchlistCollection(Base):
+    """Named lists; Watchlist retains shared per-user instrument metadata."""
+    __tablename__ = 'watchlist_collections'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    name = Column(String(100), primary_key=True)
+    symbols = Column(Text, nullable=False, default='[]')
+
+
+class ChartAnnotation(Base):
+    __tablename__ = 'chart_annotations'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    context = Column(String(200), primary_key=True)
+    payload = Column(Text, nullable=False)

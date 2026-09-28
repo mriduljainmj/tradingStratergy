@@ -95,6 +95,57 @@ class DashboardSmokeTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json['user']['display_name'], 'Smoke Test')
 
+    def test_named_watchlists_independent_membership(self):
+        # Separate account keeps the existing smoke fixtures independent.
+        result = self.client.post('/api/auth/register', json={
+            'email': 'lists@example.test', 'username': 'lists', 'password': 'TestPassword123'})
+        h = {'Authorization': 'Bearer ' + result.json['token']}
+        with patch('dashboard.screener_routes._get_broker', return_value=None):
+            for name in ['Long term', 'Intraday']:
+                self.assertEqual(self.client.post('/api/screener/watchlists', headers=h, json={'name': name}).status_code, 200)
+                self.assertEqual(self.client.post('/api/screener/watchlist', headers=h, json={'symbol': 'TCS', 'list': name}).status_code, 200)
+            self.assertEqual(self.client.post('/api/screener/watchlists', headers=h, json={'name': 'long TERM'}).status_code, 409)
+            self.client.delete('/api/screener/watchlist/TCS?list=Intraday', headers=h)
+            self.assertEqual(self.client.get('/api/screener/watchlist?list=Intraday', headers=h).json['data'], [])
+            kept = self.client.get('/api/screener/watchlist?list=Long%20term', headers=h).json
+            self.assertEqual([s['symbol'] for s in kept['data']], ['TCS'])
+            self.assertIn('Intraday', kept['lists'])
+            self.assertNotIn('Long term', self.client.get('/api/screener/watchlist', headers=self.headers[1]).json['lists'])
+
+    def test_legacy_watchlist_import_only_once(self):
+        from db.models import Watchlist, WatchlistCollection, User
+        from db.database import SessionLocal
+        from dashboard.screener_routes import _collections
+        with SessionLocal() as db:
+            user = User(email='legacy@example.test', username='legacy', password_hash='unused')
+            db.add(user)
+            db.flush()
+            db.add(Watchlist(user_id=user.id, symbol='TCS', list_name='Legacy'))
+            db.commit()
+            groups = _collections(db, user.id)
+            self.assertEqual(groups[0].name, 'Legacy')
+            self.assertEqual(groups[0].symbols, '["TCS"]')
+            groups[0].symbols = '[]'
+            db.commit()
+            self.assertEqual(_collections(db, user.id)[0].symbols, '[]')
+
+    def test_chart_annotations_persistence_and_isolation(self):
+        url = '/api/workspace/annotations?context=TCS:day'
+        point = {'time': '2026-09-25', 'price': 100, 'offset': 0}
+        value = {'studies': [{'id': 1, 'kind': 'EMA', 'period': 21, 'color': '#abcdef'}],
+                 'drawings': [{'id': 2, 'kind': 'horizontal', 'a': point, 'b': point, 'color': '#123456'}]}
+        h = self.headers[0]
+        self.assertEqual(self.client.put(url, headers=h, json=value).status_code, 200)
+        self.assertEqual(self.client.get(url, headers=h).json['layout'], value)
+        self.assertIsNone(self.client.get(url, headers=self.headers[1]).json['layout'])
+        self.assertIsNone(self.client.get('/api/workspace/annotations?context=TCS:week', headers=h).json['layout'])
+        malformed = {'studies': [], 'drawings': [{'id': 1, 'kind': 'brush', 'color': '#123456', 'points': [point, {'price': float('nan')}]}]}
+        self.assertEqual(self.client.put(url, headers=h, json=malformed).status_code, 400)
+        self.assertEqual(self.client.get(url, headers=h).json['layout'], value)
+        self.assertEqual(self.client.put(url, headers=h, json={'studies': [], 'drawings': []}).status_code, 200)
+        self.assertEqual(self.client.get(url, headers=h).json['layout']['drawings'], [])
+        self.assertEqual(self.client.get(url).status_code, 401)
+
 
 if __name__ == '__main__':
     unittest.main()

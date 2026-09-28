@@ -20,7 +20,8 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from dashboard.nse_data import SECTORS, STOCK_INFO, get_name_for_symbol, get_sector_for_symbol
 from db.database import SessionLocal
-from db.models import Watchlist
+from db.models import Watchlist, WatchlistCollection
+import json
 
 logger = logging.getLogger(__name__)
 screener_bp = Blueprint("screener", __name__)
@@ -647,10 +648,11 @@ def momentum_rank():
         wl_list = (request.args.get("list") or "").strip()
         db = SessionLocal()
         try:
-            q = db.query(Watchlist).filter_by(user_id=uid)
-            if wl_list:
-                q = q.filter(Watchlist.list_name == wl_list)
-            symbols = [w.symbol for w in q.all()][:60]
+            symbols = list(dict.fromkeys(
+                symbol for group in _collections(db, uid)
+                if not wl_list or group.name == wl_list
+                for symbol in json.loads(group.symbols)
+            ))[:60]
         finally:
             db.close()
     if not symbols:
@@ -698,91 +700,109 @@ def momentum_rank():
                     "framework": "Weinstein Stage-2 momentum (June batch checklist)"})
 
 
-@screener_bp.route("/api/screener/watchlist", methods=["GET"])
+def _collections(db, uid):
+    rows = db.query(WatchlistCollection).filter_by(user_id=uid).all()
+    if not rows:
+        # Import existing lists once. Keep empty lists so removed symbols cannot reappear.
+        groups = {}
+        for item in db.query(Watchlist).filter_by(user_id=uid).all():
+            groups.setdefault(item.list_name or 'My Watchlist', []).append(item.symbol)
+        for name, symbols in (groups or {'My Watchlist': []}).items():
+            db.add(WatchlistCollection(user_id=uid, name=name, symbols=json.dumps(symbols)))
+        from sqlalchemy.exc import IntegrityError
+        try:
+            db.commit()
+        except IntegrityError:
+            # Another request may have completed the initial import first.
+            db.rollback()
+        rows = db.query(WatchlistCollection).filter_by(user_id=uid).all()
+    return sorted(rows, key=lambda r: r.name.casefold())
+
+
+def _list_name(value):
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > 100:
+        return None
+    return value.strip()
+
+
+@screener_bp.route('/api/screener/watchlists', methods=['POST'])
+@jwt_required()
+def create_watchlist():
+    name = _list_name((request.get_json(silent=True) or {}).get('name'))
+    if not name:
+        return _bad('Enter a watchlist name of 1–100 characters.')
+    with SessionLocal() as db:
+        rows = _collections(db, _uid())
+        if any(r.name.casefold() == name.casefold() for r in rows):
+            return _bad('A watchlist with this name already exists.', 409)
+        if len(rows) >= 50:
+            return _bad('You can create up to 50 watchlists.')
+        db.add(WatchlistCollection(user_id=_uid(), name=name, symbols='[]'))
+        db.commit()
+    return jsonify(ok=True, name=name)
+
+
+@screener_bp.route('/api/screener/watchlist', methods=['GET'])
 @jwt_required()
 def get_watchlist():
     uid = _uid()
-    wl_list = (request.args.get("list") or "").strip()
-    db  = SessionLocal()
-    try:
-        q = db.query(Watchlist).filter_by(user_id=uid)
-        if wl_list:
-            q = q.filter(Watchlist.list_name == wl_list)
-        items = q.order_by(Watchlist.added_at).all()
-        symbols = [w.symbol for w in items]
-        broker  = _get_broker()
-        quotes  = _fetch_quotes(symbols, broker) if broker and symbols else {}
-
-        all_lists = sorted({(r[0] or "My Watchlist") for r in
-                            db.query(Watchlist.list_name).filter_by(user_id=uid).all()}) or ["My Watchlist"]
-
+    selected = request.args.get('list', '').strip()
+    with SessionLocal() as db:
+        lists = _collections(db, uid)
+        metadata = {w.symbol: w.to_dict() for w in db.query(Watchlist).filter_by(user_id=uid).all()}
         data = []
-        for w in items:
-            q = quotes.get(w.symbol, {})
-            entry = w.to_dict()
-            entry.update({
-                "ltp":        q.get("ltp"),
-                "open":       q.get("open"),
-                "high":       q.get("high"),
-                "low":        q.get("low"),
-                "prev_close": q.get("prev_close"),
-                "change_pct": q.get("change_pct"),
-                "volume":     q.get("volume"),
-            })
-            data.append(entry)
-        return jsonify({"ok": True, "data": data, "lists": all_lists})
-    finally:
-        db.close()
+        for group in lists:
+            if selected and group.name != selected:
+                continue
+            for symbol in json.loads(group.symbols):
+                data.append({**metadata.get(symbol, {'symbol': symbol, 'company_name': symbol}),
+                             'list_name': group.name})
+        broker = _get_broker()
+        symbols = list(dict.fromkeys(w['symbol'] for w in data))
+        quotes = _fetch_quotes(symbols, broker) if broker and symbols else {}
+        for entry in data:
+            entry.update(quotes.get(entry['symbol'], {}))
+        return jsonify(ok=True, data=data, lists=[r.name for r in lists])
 
 
-@screener_bp.route("/api/screener/watchlist", methods=["POST"])
+@screener_bp.route('/api/screener/watchlist', methods=['POST'])
 @jwt_required()
 def add_to_watchlist():
-    uid  = _uid()
-    body = request.get_json(silent=True) or {}
-    sym  = (body.get("symbol") or "").strip().upper()
-    if not sym:
-        return _bad("symbol is required")
-    name    = get_name_for_symbol(sym) or body.get("name", sym)
-    sector  = get_sector_for_symbol(sym) or body.get("sector", "")
-    wl_list = (body.get("list") or "My Watchlist").strip()[:100] or "My Watchlist"
-
-    db = SessionLocal()
-    try:
-        existing = db.query(Watchlist).filter_by(user_id=uid, symbol=sym).first()
-        if existing:
-            # Symbol is unique per user — treat re-add as a move between lists
-            if existing.list_name != wl_list:
-                existing.list_name = wl_list
-                db.commit()
-                return jsonify({"ok": True, "symbol": sym, "moved_to": wl_list})
-            return jsonify({"ok": True, "msg": "Already in watchlist"})
-        db.add(Watchlist(user_id=uid, symbol=sym, company_name=name,
-                         sector=sector, list_name=wl_list))
-        db.commit()
-        return jsonify({"ok": True, "symbol": sym})
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Watchlist add failed: {e}")
-        return _bad(str(e), 500)
-    finally:
-        db.close()
-
-
-@screener_bp.route("/api/screener/watchlist/<symbol>", methods=["DELETE"])
-@jwt_required()
-def remove_from_watchlist(symbol: str):
     uid = _uid()
-    sym = symbol.strip().upper()
-    db  = SessionLocal()
-    try:
-        row = db.query(Watchlist).filter_by(user_id=uid, symbol=sym).first()
-        if row:
-            db.delete(row)
-            db.commit()
-        return jsonify({"ok": True, "symbol": sym})
-    except Exception as e:
-        db.rollback()
-        return _bad(str(e), 500)
-    finally:
-        db.close()
+    body = request.get_json(silent=True) or {}
+    sym = body.get('symbol')
+    name = _list_name(body.get('list', 'My Watchlist'))
+    if not isinstance(sym, str) or not sym.strip() or len(sym.strip()) > 30 or not name:
+        return _bad('A valid symbol and watchlist name are required.')
+    sym = sym.strip().upper()
+    with SessionLocal() as db:
+        lists = _collections(db, uid)
+        group = next((r for r in lists if r.name == name), None)
+        if group is None:
+            if len(lists) >= 50:
+                return _bad('You can create up to 50 watchlists.')
+            group = WatchlistCollection(user_id=uid, name=name, symbols='[]')
+            db.add(group)
+        symbols = json.loads(group.symbols)
+        if sym not in symbols:
+            symbols.append(sym)
+        group.symbols = json.dumps(symbols)
+        if not db.query(Watchlist).filter_by(user_id=uid, symbol=sym).first():
+            db.add(Watchlist(user_id=uid, symbol=sym, list_name=name,
+                            company_name=get_name_for_symbol(sym) or sym,
+                            sector=get_sector_for_symbol(sym) or ''))
+        db.commit()
+    return jsonify(ok=True, symbol=sym)
+
+
+@screener_bp.route('/api/screener/watchlist/<symbol>', methods=['DELETE'])
+@jwt_required()
+def remove_from_watchlist(symbol):
+    # An omitted list only removes from the default list, never other lists.
+    name = request.args.get('list', 'My Watchlist').strip()
+    with SessionLocal() as db:
+        for group in _collections(db, _uid()):
+            if group.name == name:
+                group.symbols = json.dumps([s for s in json.loads(group.symbols) if s != symbol.upper()])
+        db.commit()
+    return jsonify(ok=True, symbol=symbol.upper())

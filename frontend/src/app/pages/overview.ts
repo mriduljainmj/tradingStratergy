@@ -164,7 +164,7 @@ import { liveCandles } from '../shared/live-candles';
           <div class="main-chart">
             <ax-chart
               #niftyChart
-              context="NIFTY"
+              context="NIFTY 50:5minute"
               [loading]="previewBusy()"
               [data]="niftyCandles()"
               [emptyTitle]="previewBusy() ? 'Loading market history…' : 'Your market, in focus'"

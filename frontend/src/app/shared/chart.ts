@@ -9,6 +9,7 @@ import {
   signal,
   inject,
 } from '@angular/core';
+import { Api, message, query } from '../core/api';
 import { FormsModule } from '@angular/forms';
 import { STUDIES, Study, StudyKind, calculateStudy } from './chart-indicators';
 import { formatChartTime, formatChartTick, chartDate } from './chart-time';
@@ -48,6 +49,19 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
         <button type="button" (click)="objects.set(!objects())" [attr.aria-expanded]="objects()">
           Drawings {{ drawings().length || '' }}
         </button>
+        @if (context()) {
+          <button
+            type="button"
+            (click)="saveLayout()"
+            [disabled]="layoutBusy() || !layoutReady || loading()"
+          >
+            Save drawings &amp; indicators
+          </button>
+          <span role="status">{{ layoutStatus() }}</span>
+          @if (!layoutReady && !layoutBusy()) {
+            <button type="button" (click)="restoreLayout()">Retry saved settings</button>
+          }
+        }
       </div>
       @if (tool()) {
         <div class="tool-hint" role="status">
@@ -100,8 +114,9 @@ import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-chart
           <p>
             Overlays share the price chart. One lower indicator at a time; adding another replaces
             it. Values use loaded candles; warm-up and unavailable volume remain gaps. Volume
-            studies wait for historical volume refresh when a live candle changes. Settings last for
-            this chart session.
+            studies wait for historical volume refresh when a live candle changes. Use “Save
+            drawings &amp; indicators” to keep your setup for this symbol and timeframe in your
+            account.
           </p>
           @if (studyMessage()) {
             <p role="status">{{ studyMessage() }}</p>
@@ -760,6 +775,64 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
   private studyTimer?: ReturnType<typeof setTimeout>;
   private syncing = false;
   private lastContext = '';
+  private api = inject(Api);
+  layoutBusy = signal(false);
+  layoutStatus = signal('');
+  layoutReady = false;
+  private layoutRequest = 0;
+  async restoreLayout() {
+    const context = this.context();
+    const request = ++this.layoutRequest;
+    this.layoutReady = false;
+    this.layoutBusy.set(false);
+    this.layoutStatus.set('');
+    if (!context || context.startsWith(':') || this.type() !== 'candle') return;
+    this.layoutBusy.set(true);
+    this.layoutStatus.set('Loading saved settings…');
+    const initial = JSON.stringify([this.studies(), this.drawings()]);
+    try {
+      const result = await this.api.get('/workspace/annotations' + query({ context }));
+      if (request !== this.layoutRequest) return;
+      // Do not replace an edit made while the settings request was in flight.
+      if (result.layout && initial === JSON.stringify([this.studies(), this.drawings()])) {
+        for (const study of [...this.studies()]) this.removeStudy(study.id);
+        this.studies.set(result.layout.studies);
+        this.drawings.set(result.layout.drawings);
+        this.sequence = Math.max(
+          0,
+          ...this.studies().map((s) => s.id),
+          ...this.drawings().map((d) => d.id),
+        );
+        this.updateStudies();
+        this.renderDrawings();
+      }
+      this.layoutReady = true;
+      this.layoutStatus.set('Use Save to keep changes.');
+    } catch (e) {
+      if (request === this.layoutRequest)
+        this.layoutStatus.set('Could not load saved settings. ' + message(e));
+    } finally {
+      if (request === this.layoutRequest) this.layoutBusy.set(false);
+    }
+  }
+  async saveLayout() {
+    if (!this.layoutReady || this.layoutBusy()) return;
+    const context = this.context();
+    const request = this.layoutRequest;
+    this.layoutBusy.set(true);
+    this.layoutStatus.set('Saving…');
+    try {
+      await this.api.put('/workspace/annotations' + query({ context }), {
+        studies: this.studies(),
+        drawings: this.drawings(),
+      });
+      if (request === this.layoutRequest) this.layoutStatus.set('Saved to your account.');
+    } catch (e) {
+      if (request === this.layoutRequest) this.layoutStatus.set('Not saved. ' + message(e));
+    } finally {
+      if (request === this.layoutRequest) this.layoutBusy.set(false);
+    }
+  }
   @ViewChild('oscillator') oscillator!: ElementRef<HTMLElement>;
   addStudy() {
     const definition = this.studyDefinition();
@@ -1347,8 +1420,10 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     if (this.context() !== this.lastContext) {
       this.lastContext = this.context();
       this.drawings.set([]);
+      for (const study of [...this.studies()]) this.removeStudy(study.id);
       this.redo = [];
       this.cancelTool();
+      void this.restoreLayout();
     }
     if (this.loading()) this.cancelTool();
     this.paint();
@@ -1406,6 +1481,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     if (!rows.length) this.fitted = false;
   }
   ngOnDestroy() {
+    this.layoutRequest++;
     if (this.studyTimer) clearTimeout(this.studyTimer);
     this.observer?.disconnect();
     this.lowerChart?.remove();

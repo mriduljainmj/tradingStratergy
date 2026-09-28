@@ -1,3 +1,4 @@
+import { WatchlistPicker } from '../shared/watchlist-picker';
 import { SymbolSearch } from '../shared/symbol-search';
 import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { CurrencyPipe, DecimalPipe, KeyValuePipe } from '@angular/common';
@@ -11,6 +12,7 @@ import { Icon } from '../shared/icon';
 @Component({
   selector: 'ax-markets',
   imports: [
+    WatchlistPicker,
     SymbolSearch,
     Heading,
     ErrorBox,
@@ -70,15 +72,12 @@ import { Icon } from '../shared/icon';
             >· {{ live() ? 'Broker quotes' : 'Quotes unavailable · connect Kite' }}</span
           ></span
         >
-        <div class="inline-field">
-          <label for="watch-list">Watchlist</label
-          ><input
-            id="watch-list"
-            [(ngModel)]="listName"
-            placeholder="My Watchlist"
-            maxlength="100"
-          />
-        </div>
+        <ax-watchlist-picker
+          [names]="watchlistNames()"
+          [selected]="listName"
+          (changed)="selectWatchlist($event)"
+          (created)="selectWatchlist($event)"
+        />
         <select
           aria-label="Sort stocks"
           [ngModel]="sort()"
@@ -219,6 +218,22 @@ export class Markets implements OnInit, OnDestroy {
   error = signal('');
   pending = signal('');
   listName = 'My Watchlist';
+  watchlistNames = signal<string[]>(['My Watchlist']);
+  private watchlistRequest = 0;
+  async selectWatchlist(name: string) {
+    this.listName = name;
+    this.watch.set([]);
+    this.page.set(1);
+    const request = ++this.watchlistRequest;
+    try {
+      const result = await this.api.get('/screener/watchlist' + query({ list: name }));
+      if (request !== this.watchlistRequest || this.destroyed) return;
+      this.watchlistNames.set(result.lists);
+      this.watch.set(result.data);
+    } catch (e) {
+      this.error.set(message(e));
+    }
+  }
   selected = signal<Stock | null>(null);
   technical = signal<any>(null);
   technicalError = signal('');
@@ -265,10 +280,12 @@ export class Markets implements OnInit, OnDestroy {
     try {
       const [s, w] = await Promise.all([
         this.api.get('/screener/all-instruments'),
-        this.api.get('/screener/watchlist'),
+        this.api.get('/screener/watchlist' + query({ list: this.listName })),
       ]);
       this.stocks.set(s.data);
+      this.watchlistNames.set(w.lists);
       this.watch.set(w.data);
+      if (!w.lists.includes(this.listName)) await this.selectWatchlist(w.lists[0]);
       await this.quotes();
     } catch (e) {
       this.error.set(message(e));
@@ -306,16 +323,21 @@ export class Markets implements OnInit, OnDestroy {
   }
   async toggle(s: Stock) {
     this.pending.set(s.symbol);
+    const list = this.listName;
     try {
       if (this.isWatched(s.symbol)) {
-        await this.api.delete('/screener/watchlist/' + encodeURIComponent(s.symbol));
-        this.watch.update((rows) => rows.filter((r) => r.symbol !== s.symbol));
+        await this.api.delete(
+          '/screener/watchlist/' + encodeURIComponent(s.symbol) + query({ list }),
+        );
+        if (list === this.listName)
+          this.watch.update((rows) => rows.filter((r) => r.symbol !== s.symbol));
       } else {
         await this.api.post('/screener/watchlist', {
           symbol: s.symbol,
-          list: this.listName || 'My Watchlist',
+          list,
         });
-        this.watch.update((rows) => [...rows, s]);
+        if (list === this.listName)
+          this.watch.update((rows) => [...rows, { ...s, list_name: list }]);
       }
       this.feedback.notify('Watchlist updated.');
     } catch (e) {

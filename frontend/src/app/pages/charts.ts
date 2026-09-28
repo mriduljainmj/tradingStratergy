@@ -1,4 +1,5 @@
 import { Component, inject, signal, OnInit, OnDestroy, effect, untracked } from '@angular/core';
+import { WatchlistPicker } from '../shared/watchlist-picker';
 import { MarketFeed } from '../core/market-feed';
 import { mergeChartStream } from '../shared/stream-candles';
 import { chartDate } from '../shared/chart-time';
@@ -159,7 +160,17 @@ import { Chart } from '../shared/chart';
     `,
   ],
   providers: [MarketFeed],
-  imports: [FormsModule, DecimalPipe, RouterLink, Heading, ErrorBox, Icon, Chart, SymbolSearch],
+  imports: [
+    WatchlistPicker,
+    FormsModule,
+    DecimalPipe,
+    RouterLink,
+    Heading,
+    ErrorBox,
+    Icon,
+    Chart,
+    SymbolSearch,
+  ],
   template: `<ax-heading
       title="A wider view of the market."
       subtitle="Your instruments, side by side. Every perspective in one place."
@@ -265,7 +276,7 @@ import { Chart } from '../shared/chart';
               <div class="multi-chart-canvas">
                 <ax-chart
                   #canvas
-                  [context]="pane.loadedSymbol + ':' + pane.interval"
+                  [context]="pane.loadedSymbol ? pane.loadedSymbol + ':' + pane.interval : ''"
                   [data]="days === 'all' && !pane.complete ? [] : chartData(pane)"
                   [loading]="pane.loading"
                   [fitUpdates]="false"
@@ -352,6 +363,12 @@ import { Chart } from '../shared/chart';
         </div>
         @if (!watchlistCollapsed()) {
           <div class="watchlist-content" id="chart-watchlist-content">
+            <ax-watchlist-picker
+              [names]="watchlistNames()"
+              [selected]="watchlistName"
+              (changed)="selectWatchlist($event)"
+              (created)="selectWatchlist($event)"
+            />
             <div class="watchlist-actions">
               <a routerLink="/markets">Manage watchlist</a
               ><button class="btn small" [disabled]="watchlistBusy()" (click)="loadWatchlist()">
@@ -436,7 +453,15 @@ export class Charts implements OnInit, OnDestroy {
   watchlist = signal<any[]>([]);
   watchlistBusy = signal(false);
   watchlistError = signal('');
+  watchlistNames = signal<string[]>(['My Watchlist']);
+  watchlistName = 'My Watchlist';
+  private watchlistRequest = 0;
   watchlistSearch = '';
+  selectWatchlist(name: string) {
+    this.watchlistName = name;
+    this.watchlistSearch = '';
+    void this.loadWatchlist();
+  }
   watchlistTarget = 0;
   toggleWatchlist() {
     this.watchlistCollapsed.update((v) => !v);
@@ -457,10 +482,19 @@ export class Charts implements OnInit, OnDestroy {
     );
   }
   async loadWatchlist() {
+    const request = ++this.watchlistRequest;
     this.watchlistBusy.set(true);
     this.watchlistError.set('');
     try {
-      const result = await this.api.get('/screener/watchlist');
+      const result = await this.api.get(
+        '/screener/watchlist' + query({ list: this.watchlistName }),
+      );
+      if (this.destroyed || request !== this.watchlistRequest) return;
+      this.watchlistNames.set(result.lists || ['My Watchlist']);
+      if (!this.watchlistNames().includes(this.watchlistName)) {
+        this.selectWatchlist(this.watchlistNames()[0]);
+        return;
+      }
       if (!this.destroyed)
         this.watchlist.set([
           ...new Map<string, any>(
@@ -471,9 +505,9 @@ export class Charts implements OnInit, OnDestroy {
           ).values(),
         ]);
     } catch (e) {
-      if (!this.destroyed) this.watchlistError.set(message(e));
+      if (!this.destroyed && request === this.watchlistRequest) this.watchlistError.set(message(e));
     } finally {
-      this.watchlistBusy.set(false);
+      if (request === this.watchlistRequest) this.watchlistBusy.set(false);
     }
   }
   openWatchlistSymbol(symbol: string) {
