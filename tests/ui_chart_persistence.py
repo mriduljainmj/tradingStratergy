@@ -70,6 +70,13 @@ try:
         expect(chart.get_by_role('button',name='Remove SMA indicator')).to_be_visible()
         assert chart.locator('.chart-host').bounding_box() == plot_before_indicator, 'Indicator labels resized the plot'
         chart.get_by_role('button',name='Close indicator settings').click()
+        chart.get_by_role('button',name='Hide indicator labels').click()
+        expect(chart.get_by_role('button',name='Remove SMA indicator')).to_have_count(0)
+        assert chart.locator('.chart-host').bounding_box() == plot_before_indicator
+        chart.get_by_role('button',name='Show indicator labels').click()
+        expect(chart.get_by_role('button',name='Remove SMA indicator')).to_be_visible()
+        chart.get_by_role('button',name='Indicators 1',exact=True).click()
+        chart.get_by_role('button',name='Close indicator settings').click()
         chart.get_by_role('button',name='Line tools',exact=True).click()
         chart.get_by_role('menuitem',name='Horizontal level',exact=True).click()
         expect(chart.locator('.drawing-active')).to_have_count(1)

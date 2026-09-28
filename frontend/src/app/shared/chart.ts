@@ -288,39 +288,56 @@ import {
         }
       }
       <div class="chart-main">
-        <div
-          class="chart-readout"
-          aria-live="off"
-          [style.visibility]="loading() ? 'hidden' : 'visible'"
-        >
-          {{ readout() || 'Market time · IST (UTC+05:30)' }}
-        </div>
         <div class="chart-plot" (dblclick)="cancelTool()">
-          @if (studies().length) {
+          <div class="chart-info">
             <div
-              class="study-legend"
+              class="chart-readout"
+              aria-live="off"
               [style.visibility]="loading() ? 'hidden' : 'visible'"
-              (dblclick)="$event.stopPropagation()"
             >
-              @for (study of studies(); track study.id) {
-                <div>
-                  <span>{{ study.kind }} {{ study.period }}</span
-                  ><strong [style.color]="study.color">{{
-                    studyValues()[study.id] || 'warming up'
-                  }}</strong>
-                  <button
-                    type="button"
-                    (click)="removeStudy(study.id)"
-                    [attr.aria-label]="'Remove ' + study.kind + ' indicator'"
-                    title="Remove indicator"
-                  >
-                    ×
-                  </button>
-                </div>
-              }
+              {{ readout() || 'Market time · IST (UTC+05:30)' }}
             </div>
-          }
 
+            @if (studies().length) {
+              <div
+                class="study-legend"
+                [style.visibility]="loading() ? 'hidden' : 'visible'"
+                (dblclick)="$event.stopPropagation()"
+              >
+                @if (!legendCollapsed()) {
+                  <div class="legend-items">
+                    @for (study of studies(); track study.id) {
+                      <div>
+                        <span>{{ study.kind }} {{ study.period }}</span
+                        ><strong [style.color]="study.color">{{
+                          studyValues()[study.id] || 'warming up'
+                        }}</strong>
+                        <button
+                          type="button"
+                          (click)="removeStudy(study.id)"
+                          [attr.aria-label]="'Remove ' + study.kind + ' indicator'"
+                          title="Remove indicator"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    }
+                  </div>
+                }
+                <button
+                  type="button"
+                  class="legend-toggle"
+                  (click)="legendCollapsed.set(!legendCollapsed())"
+                  [attr.aria-expanded]="!legendCollapsed()"
+                  [attr.aria-label]="
+                    legendCollapsed() ? 'Show indicator labels' : 'Hide indicator labels'
+                  "
+                >
+                  {{ legendCollapsed() ? '⌄ ' + studies().length + ' indicators' : '⌃' }}
+                </button>
+              </div>
+            }
+          </div>
           <div
             class="chart-host"
             #host
@@ -466,16 +483,21 @@ import {
       border-radius: 12px;
       overflow: hidden;
     }
-    .chart-readout {
-      flex-shrink: 0;
-      height: 42px;
-      box-sizing: border-box;
-      padding: 8px 12px;
+    .chart-info {
+      position: absolute;
+      top: 8px;
+      left: 12px;
+      right: 80px;
+      z-index: 7;
+      pointer-events: none;
       color: #bdccdd;
-      font: 11px/1.3 system-ui;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
+      font: 11px/1.5 system-ui;
+      text-shadow:
+        0 1px 2px #101c2c,
+        0 0 3px #101c2c;
+    }
+    .chart-readout {
+      margin-bottom: 6px;
     }
     .chart-host {
       height: 100%;
@@ -586,25 +608,28 @@ import {
       background: #2a455b;
     }
     .study-legend {
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      z-index: 7;
-      width: max-content;
-      max-width: calc(100% - 80px);
-      max-height: calc(100% - 40px);
-      padding: 2px 4px;
-      border-radius: 4px;
-      background: #101c2cb3;
-      overflow: auto;
-      color: #bdccdd;
-      font: 11px/1.5 system-ui;
+      background: transparent;
     }
-    .study-legend > div {
+    .legend-items {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px 16px;
+    }
+    .legend-items > div {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       min-height: 20px;
+    }
+    .study-legend button {
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .legend-toggle {
+      border: 1px solid #40556a !important;
+      border-radius: 4px;
+      margin: 4px 0 0 !important;
+      min-width: 26px;
     }
     .study-legend strong {
       font-weight: 500;
@@ -902,6 +927,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
   panel = signal(false);
   objects = signal(false);
   studies = signal<Study[]>([]);
+  legendCollapsed = signal(false);
   studyKind: StudyKind = 'SMA';
   studyPeriod = 20;
   studyColor = '#f5c76b';
