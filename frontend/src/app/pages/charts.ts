@@ -3,7 +3,8 @@ import { MarketFeed } from '../core/market-feed';
 import { mergeChartStream } from '../shared/stream-candles';
 import { chartDate } from '../shared/chart-time';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { DecimalPipe } from '@angular/common';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api, message, query } from '../core/api';
 import { Feedback } from '../core/feedback';
 import { Heading, ErrorBox } from '../shared/ui';
@@ -16,6 +17,120 @@ import { Chart } from '../shared/chart';
   host: { '(document:fullscreenchange)': 'syncChartFocus()' },
   styles: [
     `
+      .chart-and-watchlist {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 250px;
+        gap: 16px;
+        align-items: start;
+      }
+      .chart-and-watchlist.watchlist-collapsed {
+        grid-template-columns: minmax(0, 1fr) 42px;
+      }
+      .chart-watchlist {
+        position: sticky;
+        top: 16px;
+        min-width: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+      .watchlist-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .watchlist-heading h2 {
+        font-size: 14px;
+        margin: 0;
+      }
+      .watchlist-content {
+        padding: 12px;
+        display: grid;
+        gap: 12px;
+      }
+      .watchlist-content label {
+        min-width: 0;
+      }
+      .watchlist-rows {
+        max-height: 60vh;
+        overflow: auto;
+        margin: 0 -12px;
+      }
+      .watchlist-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        text-align: left;
+        padding: 12px;
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .watchlist-row:hover,
+      .watchlist-row.active {
+        background: var(--mint);
+      }
+      .watchlist-row:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .watchlist-row:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      .watchlist-row strong {
+        display: block;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .watchlist-row small {
+        display: block;
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .watchlist-quote {
+        text-align: right;
+        flex-shrink: 0;
+        font-size: 12px;
+      }
+      .watchlist-collapsed .watchlist-heading {
+        padding: 6px;
+        border: 0;
+      }
+      .watchlist-heading button {
+        padding: 6px;
+        min-width: 28px;
+      }
+      .watchlist-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12px;
+      }
+      @media (max-width: 900px) {
+        .chart-and-watchlist,
+        .chart-and-watchlist.watchlist-collapsed {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .chart-watchlist {
+          position: static;
+          grid-row: 1;
+        }
+        .watchlist-collapsed .watchlist-heading {
+          justify-content: flex-end;
+        }
+        .watchlist-rows {
+          max-height: 250px;
+        }
+      }
       .empty-chart-prompt {
         padding: 24px;
         margin: 0;
@@ -44,7 +159,7 @@ import { Chart } from '../shared/chart';
     `,
   ],
   providers: [MarketFeed],
-  imports: [FormsModule, Heading, ErrorBox, Icon, Chart, SymbolSearch],
+  imports: [FormsModule, DecimalPipe, RouterLink, Heading, ErrorBox, Icon, Chart, SymbolSearch],
   template: `<ax-heading
       title="A wider view of the market."
       subtitle="Your instruments, side by side. Every perspective in one place."
@@ -84,135 +199,223 @@ import { Chart } from '../shared/chart';
         <button class="btn" (click)="restoreLayout()">Back to layout</button>
       }
     </div>
-    <div
-      class="multi-charts"
-      [class.single]="count() === 1 || focused() !== null || arrangement === 'stack'"
-    >
-      @for (pane of panes().slice(0, count()); track $index; let i = $index) {
-        <section
-          #frame
-          class="chart-panel"
-          [attr.data-chart-index]="i"
-          [hidden]="focused() !== null && focused() !== i"
-        >
-          <form class="pane-toolbar" (ngSubmit)="load(i, false, true)">
-            <ax-symbol-search
-              [label]="'Chart ' + (i + 1) + ' symbol'"
-              [(value)]="pane.symbol"
-              [disabled]="pane.loading"
-              (selected)="load(i)"
-            /><select
-              [attr.aria-label]="'Chart ' + (i + 1) + ' timeframe'"
-              [(ngModel)]="pane.interval"
-              [name]="'interval' + i"
-              [disabled]="pane.loading"
-              (ngModelChange)="pane.loadedSymbol && load(i)"
-            >
-              <option value="minute">1 min</option>
-              <option value="5minute">5 min</option>
-              <option value="15minute">15 min</option>
-              <option value="60minute">1 hour</option>
-              <option value="day">1 day</option>
-              <option value="week">1 week</option></select
-            ><button class="chart-load" [disabled]="pane.loading" aria-label="Load chart">
-              <ax-icon name="refresh" />
-            </button>
-          </form>
-          @if (pane.loading || pane.loadedSymbol || pane.error) {
-            <div class="pane-actions">
-              @if (days === 'all' && pane.loading) {
-                <button type="button" (click)="pause(i)">Pause history loading</button>
-              }
-              @if (days === 'all' && !pane.loading && pane.nextTo) {
-                <button type="button" (click)="load(i, true)">Load remaining history</button>
-              }
-              <button
-                type="button"
-                [disabled]="pane.loading || (days === 'all' && !pane.complete)"
-                (click)="canvas.fit()"
+    <div class="chart-and-watchlist" [class.watchlist-collapsed]="watchlistCollapsed()">
+      <div
+        class="multi-charts"
+        [class.single]="count() === 1 || focused() !== null || arrangement === 'stack'"
+      >
+        @for (pane of panes().slice(0, count()); track $index; let i = $index) {
+          <section
+            #frame
+            class="chart-panel"
+            [attr.data-chart-index]="i"
+            [hidden]="focused() !== null && focused() !== i"
+          >
+            <form class="pane-toolbar" (ngSubmit)="load(i, false, true)">
+              <ax-symbol-search
+                [label]="'Chart ' + (i + 1) + ' symbol'"
+                [(value)]="pane.symbol"
+                [disabled]="pane.loading"
+                (selected)="load(i)"
+              /><select
+                [attr.aria-label]="'Chart ' + (i + 1) + ' timeframe'"
+                [(ngModel)]="pane.interval"
+                [name]="'interval' + i"
+                [disabled]="pane.loading"
+                (ngModelChange)="pane.loadedSymbol && load(i)"
               >
-                Fit data</button
-              ><button
-                type="button"
-                [disabled]="pane.loading || (days === 'all' && !pane.complete)"
-                (click)="canvas.latest()"
-              >
-                Latest</button
-              ><button
-                type="button"
-                [attr.aria-label]="'Focus chart ' + (i + 1)"
-                (click)="focusChart(frame)"
-              >
-                {{ focused() === i ? 'Restore' : 'Focus' }}
+                <option value="minute">1 min</option>
+                <option value="5minute">5 min</option>
+                <option value="15minute">15 min</option>
+                <option value="60minute">1 hour</option>
+                <option value="day">1 day</option>
+                <option value="week">1 week</option></select
+              ><button class="chart-load" [disabled]="pane.loading" aria-label="Load chart">
+                <ax-icon name="refresh" />
+              </button>
+            </form>
+            @if (pane.loading || pane.loadedSymbol || pane.error) {
+              <div class="pane-actions">
+                @if (days === 'all' && pane.loading) {
+                  <button type="button" (click)="pause(i)">Pause history loading</button>
+                }
+                @if (days === 'all' && !pane.loading && pane.nextTo) {
+                  <button type="button" (click)="load(i, true)">Load remaining history</button>
+                }
+                <button
+                  type="button"
+                  [disabled]="pane.loading || (days === 'all' && !pane.complete)"
+                  (click)="canvas.fit()"
+                >
+                  Fit data</button
+                ><button
+                  type="button"
+                  [disabled]="pane.loading || (days === 'all' && !pane.complete)"
+                  (click)="canvas.latest()"
+                >
+                  Latest</button
+                ><button
+                  type="button"
+                  [attr.aria-label]="'Focus chart ' + (i + 1)"
+                  (click)="focusChart(frame)"
+                >
+                  {{ focused() === i ? 'Restore' : 'Focus' }}
+                </button>
+              </div>
+              <div class="multi-chart-canvas">
+                <ax-chart
+                  #canvas
+                  [context]="pane.loadedSymbol + ':' + pane.interval"
+                  [data]="days === 'all' && !pane.complete ? [] : chartData(pane)"
+                  [loading]="pane.loading"
+                  [fitUpdates]="false"
+                  [emptyTitle]="
+                    pane.loading
+                      ? 'Loading ' + pane.symbol + '…'
+                      : pane.error
+                        ? 'Market data unavailable'
+                        : days === 'all' && !pane.complete && pane.nextTo
+                          ? 'History loading paused'
+                          : 'No candles for this instrument'
+                  "
+                  [emptyText]="
+                    pane.error ||
+                    (pane.nextTo
+                      ? 'Load remaining history to display the complete chart.'
+                      : 'Load an instrument to see its chart.')
+                  "
+                />
+              </div>
+              <div class="pane-footer">
+                <span
+                  >{{
+                    pane.historySource ||
+                      (pane.cacheHit ? 'History from cache' : 'History from Kite')
+                  }}
+                  · {{ quoteStatus(pane) }}</span
+                >
+                <span>{{ pane.loadedSymbol || pane.symbol }} · NSE</span
+                ><span
+                  >{{ pane.data.length }} candles
+                  @if (pane.interval === 'week') {
+                    · Weekly
+                    @if (days !== 'all') {
+                      · {{ days === 3 ? 90 : days }} days
+                    }
+                  } @else if (days === 3) {
+                    · {{ pane.sessions || 0 }} trading sessions
+                  }
+                </span>
+                @if (days === 'all') {
+                  <span>{{
+                    pane.loading
+                      ? 'Loading older history…'
+                      : pane.complete
+                        ? 'All available history loaded'
+                        : 'Partial history'
+                  }}</span>
+                }
+                @if (pane.error && pane.data.length) {
+                  <span role="alert">{{ pane.error }}</span>
+                }
+                @if (pane.data.length) {
+                  <span
+                    >From: {{ formatTime(pane.data[0].time) }} · Last:
+                    {{ formatTime(pane.data.at(-1).time) }}</span
+                  >
+                }
+              </div>
+            } @else {
+              <p class="empty-chart-prompt">Select a symbol above to load its chart.</p>
+            }
+          </section>
+        }
+      </div>
+      <aside class="panel chart-watchlist" aria-label="Chart watchlist">
+        <div class="watchlist-heading">
+          @if (!watchlistCollapsed()) {
+            <h2>
+              Watchlist <span class="muted">{{ watchlist().length }}</span>
+            </h2>
+          }
+          <button
+            type="button"
+            class="btn small"
+            (click)="toggleWatchlist()"
+            [attr.aria-expanded]="!watchlistCollapsed()"
+            aria-controls="chart-watchlist-content"
+            [attr.aria-label]="watchlistCollapsed() ? 'Expand watchlist' : 'Collapse watchlist'"
+            [title]="watchlistCollapsed() ? 'Expand watchlist' : 'Collapse watchlist'"
+          >
+            {{ watchlistCollapsed() ? '‹' : '›' }}
+          </button>
+        </div>
+        @if (!watchlistCollapsed()) {
+          <div class="watchlist-content" id="chart-watchlist-content">
+            <div class="watchlist-actions">
+              <a routerLink="/markets">Manage watchlist</a
+              ><button class="btn small" [disabled]="watchlistBusy()" (click)="loadWatchlist()">
+                Refresh
               </button>
             </div>
-            <div class="multi-chart-canvas">
-              <ax-chart
-                #canvas
-                [context]="pane.loadedSymbol + ':' + pane.interval"
-                [data]="days === 'all' && !pane.complete ? [] : chartData(pane)"
-                [loading]="pane.loading"
-                [fitUpdates]="false"
-                [emptyTitle]="
-                  pane.loading
-                    ? 'Loading ' + pane.symbol + '…'
-                    : pane.error
-                      ? 'Market data unavailable'
-                      : days === 'all' && !pane.complete && pane.nextTo
-                        ? 'History loading paused'
-                        : 'No candles for this instrument'
-                "
-                [emptyText]="
-                  pane.error ||
-                  (pane.nextTo
-                    ? 'Load remaining history to display the complete chart.'
-                    : 'Load an instrument to see its chart.')
-                "
-              />
-            </div>
-            <div class="pane-footer">
-              <span
-                >{{
-                  pane.historySource || (pane.cacheHit ? 'History from cache' : 'History from Kite')
-                }}
-                · {{ quoteStatus(pane) }}</span
-              >
-              <span>{{ pane.loadedSymbol || pane.symbol }} · NSE</span
-              ><span
-                >{{ pane.data.length }} candles
-                @if (pane.interval === 'week') {
-                  · Weekly
-                  @if (days !== 'all') {
-                    · {{ days === 3 ? 90 : days }} days
+            <input
+              aria-label="Search watchlist"
+              placeholder="Find a saved symbol…"
+              [(ngModel)]="watchlistSearch"
+            />
+            @if (count() > 1) {
+              <label
+                >Open in<select aria-label="Watchlist target chart" [(ngModel)]="watchlistTarget">
+                  @for (pane of panes().slice(0, count()); track $index; let i = $index) {
+                    <option [ngValue]="i">
+                      Chart {{ i + 1 }}{{ pane.loadedSymbol ? ' · ' + pane.loadedSymbol : '' }}
+                    </option>
                   }
-                } @else if (days === 3) {
-                  · {{ pane.sessions || 0 }} trading sessions
+                </select></label
+              >
+            }
+            @if (watchlistBusy()) {
+              <p class="muted" role="status">Loading watchlist…</p>
+            } @else if (watchlistError()) {
+              <p role="alert">{{ watchlistError() }}</p>
+            } @else {
+              <div class="watchlist-rows">
+                @for (stock of filteredWatchlist(); track stock.symbol) {
+                  <button
+                    class="watchlist-row"
+                    [class.active]="panes()[targetChart()]?.loadedSymbol === stock.symbol"
+                    [disabled]="!panes().length || panes()[targetChart()]?.loading"
+                    (click)="openWatchlistSymbol(stock.symbol)"
+                    [attr.aria-label]="'Open ' + stock.symbol + ' in chart ' + (targetChart() + 1)"
+                  >
+                    <span
+                      ><strong>{{ stock.symbol }}</strong
+                      ><small>{{ stock.name || 'NSE' }}</small></span
+                    >
+                    <span class="watchlist-quote"
+                      >{{ stock.ltp == null ? '—' : (stock.ltp | number: '1.2-2')
+                      }}<small>{{
+                        stock.change_pct == null ? '—' : (stock.change_pct | number: '1.2-2') + '%'
+                      }}</small></span
+                    >
+                  </button>
+                } @empty {
+                  <p class="muted" style="padding:0 12px">
+                    {{
+                      watchlist().length
+                        ? 'No matching symbols.'
+                        : 'Add stocks in Market Explorer to see them here.'
+                    }}
+                  </p>
                 }
-              </span>
-              @if (days === 'all') {
-                <span>{{
-                  pane.loading
-                    ? 'Loading older history…'
-                    : pane.complete
-                      ? 'All available history loaded'
-                      : 'Partial history'
-                }}</span>
-              }
-              @if (pane.error && pane.data.length) {
-                <span role="alert">{{ pane.error }}</span>
-              }
-              @if (pane.data.length) {
-                <span
-                  >From: {{ formatTime(pane.data[0].time) }} · Last:
-                  {{ formatTime(pane.data.at(-1).time) }}</span
-                >
-              }
-            </div>
-          } @else {
-            <p class="empty-chart-prompt">Select a symbol above to load its chart.</p>
-          }
-        </section>
-      }
+              </div>
+              <small class="muted"
+                >Click a symbol to load its chart. Prices update when you refresh this list.</small
+              >
+            }
+          </div>
+        }
+      </aside>
     </div>
     <div class="help-strip">
       <ax-icon name="charts" />
@@ -229,6 +432,56 @@ import { Chart } from '../shared/chart';
     </div>`,
 })
 export class Charts implements OnInit, OnDestroy {
+  watchlistCollapsed = signal(localStorage.getItem('axiom-chart-watchlist-collapsed') === '1');
+  watchlist = signal<any[]>([]);
+  watchlistBusy = signal(false);
+  watchlistError = signal('');
+  watchlistSearch = '';
+  watchlistTarget = 0;
+  toggleWatchlist() {
+    this.watchlistCollapsed.update((v) => !v);
+    try {
+      localStorage.setItem(
+        'axiom-chart-watchlist-collapsed',
+        this.watchlistCollapsed() ? '1' : '0',
+      );
+    } catch {}
+  }
+  targetChart() {
+    return this.watchlistTarget < this.count() ? this.watchlistTarget : 0;
+  }
+  filteredWatchlist() {
+    const q = this.watchlistSearch.trim().toLowerCase();
+    return this.watchlist().filter((s) =>
+      (s.symbol + ' ' + (s.name || '')).toLowerCase().includes(q),
+    );
+  }
+  async loadWatchlist() {
+    this.watchlistBusy.set(true);
+    this.watchlistError.set('');
+    try {
+      const result = await this.api.get('/screener/watchlist');
+      if (!this.destroyed)
+        this.watchlist.set([
+          ...new Map<string, any>(
+            (result.data || []).map(
+              (s: any) =>
+                [s.symbol, { ...s, name: s.company_name || s.name || s.symbol }] as [string, any],
+            ),
+          ).values(),
+        ]);
+    } catch (e) {
+      if (!this.destroyed) this.watchlistError.set(message(e));
+    } finally {
+      this.watchlistBusy.set(false);
+    }
+  }
+  openWatchlistSymbol(symbol: string) {
+    const i = this.targetChart();
+    if (!this.panes()[i] || this.panes()[i].loading) return;
+    this.patch(i, { symbol });
+    void this.load(i);
+  }
   private fullscreenFrame: HTMLElement | null = null;
   syncChartFocus() {
     const frame = this.fullscreenFrame;
@@ -391,6 +644,7 @@ export class Charts implements OnInit, OnDestroy {
   error = signal('');
   panes = signal<any[]>([]);
   async ngOnInit() {
+    void this.loadWatchlist();
     try {
       const data = await this.api.get('/workspace/charts');
       const saved = data.workspace;
@@ -410,6 +664,7 @@ export class Charts implements OnInit, OnDestroy {
     }
   }
   layout(n: number) {
+    if (this.watchlistTarget >= n) this.watchlistTarget = 0;
     this.focused.set(null);
     this.count.set(n);
     for (let i = 0; i < n; i++)
