@@ -104,6 +104,7 @@ export class Shell implements OnInit, OnDestroy {
   today = new Date();
   nav = [
     { path: 'overview', icon: 'overview', label: 'Overview' },
+    { path: 'orders', icon: 'markets', label: 'Equity trading' },
     { path: 'portfolio', icon: 'results', label: 'Kite portfolio' },
     { path: 'markets', icon: 'markets', label: 'Market explorer' },
     { path: 'strategies', icon: 'strategies', label: 'Strategies' },

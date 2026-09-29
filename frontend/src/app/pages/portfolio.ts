@@ -38,10 +38,11 @@ interface PortfolioSnapshot {
     </ax-heading>
     <ax-error [text]="error()" />
     <p class="panel-copy">
-      These are your actual broker holdings, regardless of the application's Paper or Live mode.
-      This page is read-only; it does not place orders.
+      These are your actual broker holdings, regardless of the application's Paper or Live mode. Use
+      Buy or Sell to prepare an equity order. Every submission requires a live-order review.
     </p>
     <div class="button-row">
+      <a class="btn primary" routerLink="/orders">Trade equities</a>
       <a class="btn" routerLink="/profile">Manage Kite connection</a>
       @if (data(); as snapshot) {
         <span class="muted" role="status"
@@ -113,6 +114,7 @@ interface PortfolioSnapshot {
                   <th>Last price</th>
                   <th>Current value</th>
                   <th>Holding P&amp;L</th>
+                  <th>Trade</th>
                 </tr>
               </thead>
               <tbody>
@@ -149,6 +151,33 @@ interface PortfolioSnapshot {
                     <td [class.positive]="(row.pnl ?? 0) > 0" [class.negative]="(row.pnl ?? 0) < 0">
                       {{ row.pnl === null ? '—' : (row.pnl | currency: 'INR') }}
                     </td>
+                    <td>
+                      <div class="button-row">
+                        <a
+                          class="btn"
+                          routerLink="/orders"
+                          [queryParams]="{
+                            symbol: row.tradingsymbol,
+                            exchange: row.exchange,
+                            side: 'BUY',
+                          }"
+                          >Buy</a
+                        >
+                        @if ((row.quantity || 0) + (row.t1_quantity || 0) > 0) {
+                          <a
+                            class="btn"
+                            routerLink="/orders"
+                            [queryParams]="{
+                              symbol: row.tradingsymbol,
+                              exchange: row.exchange,
+                              side: 'SELL',
+                              quantity: (row.quantity || 0) + (row.t1_quantity || 0),
+                            }"
+                            >Sell</a
+                          >
+                        }
+                      </div>
+                    </td>
                   </tr>
                 }
               </tbody>
@@ -179,6 +208,7 @@ interface PortfolioSnapshot {
                   <th>Average price</th>
                   <th>Last price</th>
                   <th>Broker P&amp;L</th>
+                  <th>Trade</th>
                 </tr>
               </thead>
               <tbody>
@@ -198,6 +228,16 @@ interface PortfolioSnapshot {
                     </td>
                     <td [class.positive]="(row.pnl ?? 0) > 0" [class.negative]="(row.pnl ?? 0) < 0">
                       {{ row.pnl === null ? '—' : (row.pnl | currency: 'INR') }}
+                    </td>
+                    <td>
+                      @if (
+                        ['NSE', 'BSE'].includes(row.exchange) &&
+                        ['CNC', 'MIS'].includes(row.product)
+                      ) {
+                        <a class="btn" routerLink="/orders" [queryParams]="positionOrder(row)"
+                          >Close position</a
+                        >
+                      }
                     </td>
                   </tr>
                 }
@@ -260,6 +300,15 @@ interface PortfolioSnapshot {
   `,
 })
 export class Portfolio implements OnInit, OnDestroy {
+  positionOrder(row: Holding) {
+    return {
+      symbol: row.tradingsymbol,
+      exchange: row.exchange,
+      product: row.product,
+      side: (row.quantity || 0) > 0 ? 'SELL' : 'BUY',
+      quantity: Math.abs(row.quantity || 0),
+    };
+  }
   currentValue(row: Holding) {
     return portfolioTotals([row], []).current;
   }

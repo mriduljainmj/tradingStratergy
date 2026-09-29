@@ -23,6 +23,6 @@ def install_frontend(app):
         candidate = (FRONTEND / path).resolve()
         if candidate.is_relative_to(FRONTEND.resolve()) and candidate.is_file():
             return send_from_directory(FRONTEND, path)
-        if path in ('overview', 'portfolio', 'markets', 'strategies', 'backtests', 'results', 'charts', 'settings'):
+        if path in ('overview', 'orders', 'portfolio', 'markets', 'strategies', 'backtests', 'results', 'charts', 'settings'):
             return page()
         abort(404)

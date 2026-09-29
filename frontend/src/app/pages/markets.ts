@@ -199,6 +199,13 @@ import { Icon } from '../shared/icon';
             (click)="selected.set(null)"
             >Open chart<ax-icon name="arrow"
           /></a>
+          <a
+            class="btn full"
+            routerLink="/orders"
+            [queryParams]="{ symbol: selected()?.symbol }"
+            (click)="selected.set(null)"
+            >Buy / sell equity</a
+          >
         </section>
       </div>
     }`,

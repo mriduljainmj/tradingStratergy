@@ -46,7 +46,7 @@ try:
         expect(page.get_by_text('Your market, in focus')).to_be_visible()
         for width in [1440,768,390,320]:
             page.set_viewport_size({'width':width,'height':1000})
-            for path in ['overview','portfolio','markets','strategies','backtests','results','charts','profile','settings']:
+            for path in ['overview','orders','portfolio','markets','strategies','backtests','results','charts','profile','settings']:
                 page.goto(base+'/'+path)
                 expect(page.locator('h1')).to_be_visible()
                 expect(page.locator('html')).to_have_attribute('data-theme',theme)
@@ -493,6 +493,6 @@ try:
         assert paper_exits == [{'action':'exit','direction':'CALL'}], paper_exits
         assert not errors, errors
         browser.close()
-        print(f'PASS: 36 responsive route checks, strategy CRUD/cancel, profile, outage recovery, sign-out, role guards and populated historical chart fixtures. Screenshots: {artifacts}')
+        print(f'PASS: 40 responsive route checks, strategy CRUD/cancel, profile, outage recovery, sign-out, role guards and populated historical chart fixtures. Screenshots: {artifacts}')
 finally:
     server.shutdown()

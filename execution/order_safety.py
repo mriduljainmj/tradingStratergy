@@ -3,7 +3,7 @@ import math
 import threading
 from functools import wraps
 from db.database import SessionLocal
-from db.models import ExecutionIncident
+from db.models import ExecutionIncident, ManualEquityOrder
 
 
 class ExecutionBlocked(RuntimeError):
@@ -15,6 +15,9 @@ def unresolved_orders(user_id):
         return db.query(ExecutionIncident).filter(
             ExecutionIncident.user_id == user_id,
             ExecutionIncident.status.in_(('pending', 'needs_review')),
+        ).count() > 0 or db.query(ManualEquityOrder).filter(
+            ManualEquityOrder.user_id == user_id,
+            ManualEquityOrder.status.in_(("pending", "unknown")),
         ).count() > 0
 
 

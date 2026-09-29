@@ -240,3 +240,18 @@ class ChartAnnotation(Base):
     user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
     context = Column(String(200), primary_key=True)
     payload = Column(Text, nullable=False)
+
+
+class ManualEquityOrder(Base):
+    """Durable submission journal; an unknown outcome must never be retried blindly."""
+    __tablename__ = 'manual_equity_orders'
+    active_user = Column(Integer, unique=True, nullable=True)  # DB-level in-flight guard across workers
+    id = Column(String(32), primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    action = Column(String(12), nullable=False)
+    payload = Column(Text, nullable=False)
+    tag = Column(String(20), nullable=False)
+    order_id = Column(String(100))
+    status = Column(String(20), nullable=False)
+    message = Column(Text)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)

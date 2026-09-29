@@ -72,6 +72,8 @@ def create_app() -> Flask:
     app = Flask(__name__, static_folder=None)
     from dashboard.portfolio_routes import portfolio_bp
     app.register_blueprint(portfolio_bp)
+    from dashboard.equity_orders import bp as equity_orders_bp
+    app.register_blueprint(equity_orders_bp)
 
     # JWT + Flask session secret
     from config.security import app_secret

@@ -640,7 +640,8 @@ def delete_account():
 
         # Children have non-nullable user_id FKs — bulk-delete them first,
         # otherwise SQLAlchemy tries to NULL them out and the delete fails.
-        from db.models import Trade, Strategy, Watchlist, ExecutionIncident, ChartWorkspace, WatchlistCollection, ChartAnnotation
+        from db.models import Trade, Strategy, Watchlist, ExecutionIncident, ChartWorkspace, WatchlistCollection, ChartAnnotation, ManualEquityOrder
+        db.query(ManualEquityOrder).filter_by(user_id=uid).delete(synchronize_session=False)
         db.query(WatchlistCollection).filter_by(user_id=uid).delete(synchronize_session=False)
         db.query(ChartAnnotation).filter_by(user_id=uid).delete(synchronize_session=False)
         db.query(ChartWorkspace).filter_by(user_id=uid).delete(synchronize_session=False)

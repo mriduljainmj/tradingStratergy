@@ -8,7 +8,8 @@ An Angular frontend and Python Flask API for a multi-user NIFTY options and NSE 
 | --- | --- |
 | Overview | Paper balance, realized/open P&L, win rate, NIFTY candles, opening-range levels, selected option premium chart, option chain with expiry selection, positions, recent trades and engine activity |
 | Trading controls | Mode selection with execution paused, personal paper trading and backtests, administrator-only live execution, entry pause, manual call/put entry and exit, optional paper restart auto-resume |
-| Kite portfolio | Read-only broker holdings, T1 and pledged quantities, open broker positions, prices and P&L, refreshed every 30 seconds while visible |
+| Kite portfolio | Broker holdings, invested/current value, P&L, Buy/Sell shortcuts and cash-equity position exits; refreshed every 30 seconds while visible |
+| Equity trading | NSE/BSE cash-equity search; buy/sell, MARKET/LIMIT/SL/SL-M, CNC/MIS, regular/AMO, DAY/IOC, disclosed quantity, market protection, reviewed submissions, order status, modification and cancellation |
 | Market explorer | NSE instrument search, sector filters, quotes, personal watchlists, technical stock details and momentum scanning |
 | Strategy studio | Create/edit/delete options ORB, equity ORB and EMA crossover strategies; position size, direction, targets, stops, trading windows and loss limits; select options strategy or run equity engines |
 | Backtest lab | Single session, date range and parameter optimization for options ORB; historical candles, cumulative P&L, result tables and full assumptions |
@@ -97,3 +98,20 @@ The left icon toolbar groups line tools and shapes, alongside Fibonacci retracem
 - `execution/`: broker integration, options/equity execution and historical backtesting.
 - `db/`: SQLAlchemy models, migrations and trade persistence.
 - `tests/`: isolated Python integration/regression and Playwright browser checks.
+
+## Manual equity trading
+
+Open **Equity trading**, or choose **Buy**, **Sell** or **Close position** in Kite portfolio. Market Explorer also links to the ticket. Select a cash-equity symbol from the NSE/BSE catalogue, choose delivery (CNC) or intraday (MIS), enter quantity and order conditions, then review and confirm. The review shows the last available broker quote and an estimated margin for new orders. Quotes can be stale outside market hours and market-order prices are not guaranteed. Modifications use total quantity including existing fills. Cancellation only affects the unfilled remainder.
+
+Submission requires an administrator account, a current Kite session, Live mode, and stopped automated strategies without managed exposure. The ticket never enables Live or starts an engine. The order book refreshes every ten seconds and shows today's broker statuses and partial fills, including orders placed through Kite. This ticket supports regular and AMO cash-equity orders; GTT, iceberg, cover, auctions, TTL and MTF are not implemented. Instruments and broker restrictions determine whether an individual order is accepted. Delivery sells may require authorisation in Kite/CDSL; no TPIN is collected by this app.
+
+Every confirmation carries a signed, two-minute review and persists a request ID before contacting Kite. Repeating that request returns its original outcome. Unknown outcomes block additional execution; refreshing Orders reconciles submissions by their broker tag, and modification/cancellation by the observed broker state. An absent order is never automatically assumed to have failed. For remaining uncertainty, Profile exposes explicit broker reconciliation after a two-minute cooldown, only against a flat account with no outstanding orders. Prior-day unknown requests require an operator audit of broker history. The database must persist across deploys for these protections (PostgreSQL or a persistent SQLite volume). Run one application worker as required by the existing per-account engine architecture.
+
+Offline equity checks (never place real orders):
+
+```sh
+.venv/bin/python -m unittest discover -s tests -p test_equity_orders.py -v
+.venv/bin/python tests/ui_equity_orders.py
+```
+
+API contract reference: [Kite orders](https://kite.trade/docs/connect/v3/orders/), [margins](https://kite.trade/docs/connect/v3/margins/) and [holdings authorisation](https://kite.trade/docs/connect/v3/portfolio/).
