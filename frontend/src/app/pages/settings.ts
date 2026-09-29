@@ -44,15 +44,20 @@ import { Icon } from '../shared/icon';
           <div class="form-grid">
             @for (f of strategyFields; track f.key) {
               <label
-                >{{ f.label
-                }}<input
-                  [name]="f.key"
-                  [type]="f.type || 'number'"
-                  [(ngModel)]="form[f.key]"
-                  [min]="f.min ?? 0"
-                  [step]="f.step || '1'"
-                  required
-              /></label>
+                >{{ f.label }}
+                @if (f.type === 'time') {
+                  <input [name]="f.key" type="time" [(ngModel)]="form[f.key]" required />
+                } @else {
+                  <input
+                    [name]="f.key"
+                    type="number"
+                    [(ngModel)]="form[f.key]"
+                    [min]="f.min ?? 0"
+                    [step]="f.step || '1'"
+                    required
+                  />
+                }
+              </label>
             }
             <label
               >Trade direction<select name="direction" [(ngModel)]="form['trade_direction']">
@@ -62,6 +67,10 @@ import { Icon } from '../shared/icon';
               </select></label
             >
           </div>
+          <p class="muted">
+            For the first four 5-minute candles (9:15, 9:20, 9:25 and 9:30), set opening range end
+            to 09:35. Set last entry time to 12:00 for noon cutoff. Times are IST.
+          </p>
           <h3 class="form-section-title">Position & risk</h3>
           <div class="form-grid">
             @for (f of riskFields; track f.key) {
