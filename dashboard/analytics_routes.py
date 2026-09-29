@@ -648,8 +648,10 @@ def import_csv():
         else:
             try:
                 import pandas as pd
-                df = pd.read_excel(io.BytesIO(raw), header=None)
-                df = _detect_and_clean(df)
+                df = _parse_zerodha_taxpnl(raw)
+                if df is None:
+                    df = pd.read_excel(io.BytesIO(raw), header=None)
+                    df = _detect_and_clean(df)
             except ImportError:
                 return _bad("pandas/openpyxl not installed — upload a CSV instead.")
 
@@ -675,6 +677,77 @@ def _parse_csv(stream):
     # Read with no header assumption first to detect the schema
     raw = pd.read_csv(stream, header=None, dtype=str)
     return _detect_and_clean(raw)
+
+
+def _parse_zerodha_taxpnl(raw: bytes):
+    """Read closed trades from Console's multi-section Tradewise Exits sheet.
+
+    Buy/Sell Value are total consideration, unlike Trade Book's unit prices.
+    Other tax-report sheets are summaries and must not be imported as trades.
+    """
+    import io
+    import pandas as pd
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(io.BytesIO(raw), read_only=False, data_only=True)
+    sheet = next((s for s in workbook if s.title.lower().startswith('tradewise exits')), None)
+    if sheet is None:
+        return None
+    records = []
+    columns = {}
+    section = ''
+    def parse_date(value):
+        if isinstance(value, datetime.datetime):
+            return value.date()
+        if isinstance(value, datetime.date):
+            return value
+        try:
+            return datetime.date.fromisoformat(str(value))
+        except (ValueError, TypeError):
+            return pd.to_datetime(value, errors='raise', dayfirst=True).date()
+
+    for cells in sheet.iter_rows(values_only=True):
+        values = list(cells)
+        labels = {str(value).strip().lower(): index for index, value in enumerate(values)
+                  if isinstance(value, str)}
+        if 'symbol' in labels and 'entry date' in labels and 'exit date' in labels and 'quantity' in labels and 'buy value' in labels and 'sell value' in labels:
+            columns = labels
+            continue
+        heading = values[1] if len(values) > 1 else None
+        if isinstance(heading, str) and all(value is None for value in values[2:]):
+            section = heading
+            columns = {}
+            continue
+        if not columns:
+            continue
+        def field(name):
+            index = columns.get(name)
+            return values[index] if index is not None and index < len(values) else None
+        try:
+            symbol = str(field('symbol') or '').strip()
+            entry_date = parse_date(field('entry date'))
+            exit_date = parse_date(field('exit date'))
+            quantity = float(field('quantity'))
+            buy_value = float(field('buy value'))
+            sell_value = float(field('sell value'))
+            if not symbol or quantity <= 0 or not all(math.isfinite(v) for v in (quantity, buy_value, sell_value)):
+                continue
+            gross = sell_value - buy_value
+            charge_names = ('brokerage', 'exchange transaction charges', 'ipft', 'sebi charges',
+                            'cgst', 'sgst', 'igst', 'stamp duty', 'stt')
+            charges = sum(float(field(name) or 0) for name in charge_names)
+            if not math.isfinite(charges):
+                continue
+        except (TypeError, ValueError, OverflowError):
+            continue
+        suffix = symbol.upper()[-2:]
+        position_type = 'CALL' if suffix == 'CE' else 'PUT' if suffix == 'PE' else 'FUTURE' if section == 'F&O' else 'EQUITY'
+        records.append(dict(symbol=symbol, trade_date=entry_date, exit_date=exit_date,
+                            quantity=int(quantity), buy_price=buy_value/quantity,
+                            sell_price=sell_value/quantity, gross_pnl=round(gross, 2),
+                            charges=round(charges, 2), net_pnl=round(gross-charges, 2),
+                            position_type=position_type))
+    return pd.DataFrame(records)
 
 
 def _detect_and_clean(raw):
