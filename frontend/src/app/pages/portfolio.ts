@@ -76,7 +76,7 @@ interface PortfolioSnapshot {
           label="Current value"
           prefix="₹"
           [value]="totals().current"
-          [note]="percent(totalReturn()) + ' vs invested value'"
+          note="Latest value of your holdings"
         />
         <ax-stat
           label="Total holdings P&L"
@@ -84,6 +84,16 @@ interface PortfolioSnapshot {
           [value]="totals().pnl"
           [tone]="(totals().pnl || 0) < 0 ? 'negative' : 'positive'"
           note="Broker P&L adjusted using incoming prices"
+        />
+        <ax-stat
+          label="Overall portfolio return"
+          [value]="totalReturn()"
+          [prefix]="(totalReturn() ?? 0) > 0 ? '+' : ''"
+          suffix="%"
+          [tone]="
+            (totalReturn() ?? 0) > 0 ? 'positive' : (totalReturn() ?? 0) < 0 ? 'negative' : ''
+          "
+          note="Current holdings vs invested cost · includes T1 and MTF"
         />
         <ax-stat
           label="Positions P&L"
@@ -294,7 +304,7 @@ interface PortfolioSnapshot {
   styles: `
     .portfolio-summary {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 16px;
       margin-top: 22px;
     }

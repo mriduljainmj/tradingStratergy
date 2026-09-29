@@ -43,7 +43,7 @@ try:
         expect(current).to_contain_text('₹1,440',timeout=10000)
         expect(pnl).to_contain_text('₹240')
         expect(positions).to_contain_text('₹100')
-        expect(current).to_contain_text('+20.00% vs invested value')
+        expect(page.locator('ax-stat[label="Overall portfolio return"]')).to_contain_text('+20%')
         expect(page.locator('tr').filter(has_text='TESTHOLD')).to_contain_text('+20.00% today')
         expect(page.locator('tr').filter(has_text='TESTHOLD')).to_contain_text('+20.00% vs cost')
         expect(page.locator('tr').filter(has_text='TESTSHORT')).to_contain_text('+20.00%')
