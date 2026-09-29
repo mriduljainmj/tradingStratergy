@@ -17,7 +17,7 @@ import { Chart } from '../shared/chart';
       ><label class="btn upload"
         ><ax-icon name="plus" />Import trades<input
           type="file"
-          accept=".csv"
+          accept=".csv,.xlsx,.xls"
           [disabled]="busy()"
           (change)="importFile($event)" /></label
       ><button class="btn primary" [disabled]="busy() || !total()" (click)="exportAll()">
