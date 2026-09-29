@@ -8,6 +8,31 @@ import { Icon } from '../shared/icon';
 import { formatChartTime } from '../shared/chart-time';
 @Component({
   selector: 'ax-backtests',
+  host: { '(document:fullscreenchange)': 'syncChartFocus()' },
+  styles: `
+    .backtest-chart-frame {
+      background: var(--surface);
+    }
+    .backtest-chart-frame:fullscreen {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: auto;
+    }
+    .backtest-chart-frame:fullscreen .performance-chart {
+      flex: 1;
+      height: auto;
+      min-height: 280px;
+    }
+    .chart-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+  `,
   imports: [FormsModule, CurrencyPipe, JsonPipe, Heading, Stat, ErrorBox, Icon, Chart],
   template: `<ax-heading
       title="Test the idea. Build conviction."
@@ -128,19 +153,31 @@ import { formatChartTime } from '../shared/chart-time';
           </div>
           <section class="panel">
             @if (result().candles?.length) {
-              <h3>NIFTY · Tested session · 5-minute candles</h3>
-              <div class="performance-chart">
-                <ax-chart
-                  [context]="'backtest:' + result().date"
-                  [data]="sessionCandles"
-                  [markers]="tradeMarkers"
-                  [levels]="rangeLevels"
-                />
+              <div class="backtest-chart-frame" #sessionFrame>
+                <div class="chart-heading">
+                  <h3>NIFTY · Tested session · 5-minute candles</h3>
+                  <button
+                    type="button"
+                    class="btn"
+                    (click)="focusChart(sessionFrame)"
+                    [attr.aria-pressed]="focusedChart() === sessionFrame"
+                  >
+                    {{ focusedChart() === sessionFrame ? 'Restore' : 'Focus' }}
+                  </button>
+                </div>
+                <div class="performance-chart">
+                  <ax-chart
+                    [context]="'backtest:' + result().date"
+                    [data]="sessionCandles"
+                    [markers]="tradeMarkers"
+                    [levels]="rangeLevels"
+                  />
+                </div>
+                <p class="muted text-small">
+                  OR high / OR low include candle wicks. Arrows show entry and exit on NIFTY; prices
+                  in the results below are option premiums.
+                </p>
               </div>
-              <p class="muted text-small">
-                OR high / OR low include candle wicks. Arrows show entry and exit on NIFTY; prices
-                in the results below are option premiums.
-              </p>
             }
             @if (result().cumulative?.length) {
               <div class="performance-chart"><ax-chart type="area" [data]="curve()" /></div>
@@ -241,6 +278,18 @@ import { formatChartTime } from '../shared/chart-time';
     </div>`,
 })
 export class Backtests implements OnInit {
+  focusedChart = signal<Element | null>(null);
+  syncChartFocus() {
+    this.focusedChart.set(document.fullscreenElement);
+  }
+  async focusChart(element: HTMLElement) {
+    try {
+      if (document.fullscreenElement === element) await document.exitFullscreen();
+      else await element.requestFullscreen();
+    } catch (e) {
+      this.error.set('Could not focus chart: ' + message(e));
+    }
+  }
   api = inject(Api);
   auth = inject(Auth);
   busy = signal(false);
