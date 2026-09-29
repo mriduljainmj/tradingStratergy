@@ -1631,6 +1631,9 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     if (!this.element.nativeElement.contains(event.target as Node)) this.cancelTool();
   }
   data = input<any[]>([]);
+  markers = input<any[]>([]);
+  levels = input<{ price: number; title: string; color: string }[]>([]);
+  private resultLines: any[] = [];
   type = input<'candle' | 'area'>('candle');
   fitUpdates = input(false);
   emptyTitle = input('Your market, in focus');
@@ -1787,6 +1790,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     });
     this.observer.observe(this.host.nativeElement);
     this.paint();
+    this.paintAnnotations();
   }
   ngOnChanges() {
     if (drawingSymbol(this.context()) !== drawingSymbol(this.lastContext)) {
@@ -1807,6 +1811,24 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
     if (this.loading() || this.context() !== this.lastContext) this.cancelTool();
     this.lastContext = this.context();
     this.paint();
+    this.paintAnnotations();
+  }
+  private paintAnnotations() {
+    if (!this.series) return;
+    this.series.setMarkers(this.loading() ? [] : this.markers());
+    for (const line of this.resultLines) this.series.removePriceLine(line);
+    this.resultLines = this.loading()
+      ? []
+      : this.levels()
+          .filter((level) => Number.isFinite(level.price) && level.price > 0)
+          .map((level) =>
+            this.series!.createPriceLine({
+              ...level,
+              lineWidth: 2,
+              lineStyle: 2,
+              axisLabelVisible: true,
+            }),
+          );
   }
   private renderedData: any[] | null = null;
   private drawingRows: any[] = [];

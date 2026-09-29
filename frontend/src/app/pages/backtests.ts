@@ -5,6 +5,7 @@ import { Api, Auth, message } from '../core/api';
 import { Heading, Stat, ErrorBox } from '../shared/ui';
 import { Chart } from '../shared/chart';
 import { Icon } from '../shared/icon';
+import { formatChartTime } from '../shared/chart-time';
 @Component({
   selector: 'ax-backtests',
   imports: [FormsModule, CurrencyPipe, JsonPipe, Heading, Stat, ErrorBox, Icon, Chart],
@@ -127,7 +128,19 @@ import { Icon } from '../shared/icon';
           </div>
           <section class="panel">
             @if (result().candles?.length) {
-              <div class="performance-chart"><ax-chart [context]="'backtest:' + result().date" [data]="result().candles" /></div>
+              <h3>NIFTY · Tested session · 5-minute candles</h3>
+              <div class="performance-chart">
+                <ax-chart
+                  [context]="'backtest:' + result().date"
+                  [data]="sessionCandles"
+                  [markers]="tradeMarkers"
+                  [levels]="rangeLevels"
+                />
+              </div>
+              <p class="muted text-small">
+                OR high / OR low include candle wicks. Arrows show entry and exit on NIFTY; prices
+                in the results below are option premiums.
+              </p>
             }
             @if (result().cumulative?.length) {
               <div class="performance-chart"><ax-chart type="area" [data]="curve()" /></div>
@@ -146,7 +159,8 @@ import { Icon } from '../shared/icon';
                   <thead>
                     <tr>
                       <th>Session / OR end</th>
-                      <th>Direction</th>
+                      <th>Trade / direction filter</th>
+                      <th>Entry / exit (IST)</th>
                       <th>Target</th>
                       <th class="numeric">P&L</th>
                       <th>Result</th>
@@ -156,7 +170,32 @@ import { Icon } from '../shared/icon';
                     @for (r of rows(); track $index) {
                       <tr>
                         <td>{{ r.date || r.or_end_time || r.or_time }}</td>
-                        <td>{{ r.direction || r.position_type || '—' }}</td>
+                        <td>
+                          {{
+                            r.position_type === 'CALL' || r.position_type === 'PUT'
+                              ? 'BUY ' + r.position_type
+                              : r.trade_taken === false
+                                ? 'No trade'
+                                : r.direction || '—'
+                          }}
+                        </td>
+                        <td>
+                          @if (r.markers?.length) {
+                            @for (m of r.markers; track $index) {
+                              <div>
+                                {{ $index === 0 ? 'Buy' : 'Sell' }} · {{ formatTime(m.time) }}
+                              </div>
+                            }
+                          } @else {
+                            —
+                          }
+                          @if (r.trade_taken) {
+                            <div>
+                              Premium: {{ r.entry_prem | currency: 'INR' }} →
+                              {{ r.exit_prem | currency: 'INR' }}
+                            </div>
+                          }
+                        </td>
                         <td>{{ r.target_pts || '—' }}</td>
                         <td class="numeric">
                           {{ r.total_pnl ?? r.net_pnl ?? r.pnl | currency: 'INR' }}
@@ -207,6 +246,25 @@ export class Backtests implements OnInit {
   busy = signal(false);
   error = signal('');
   result = signal<any>(null);
+  sessionCandles: any[] = [];
+  tradeMarkers: any[] = [];
+  rangeLevels: { price: number; title: string; color: string }[] = [];
+  formatTime = formatChartTime;
+  prepareChart(result: any) {
+    this.sessionCandles = (result.candles || []).filter(
+      (bar: any) => new Date(bar.time * 1000 + 19800000).toISOString().slice(0, 10) === result.date,
+    );
+    this.tradeMarkers = (result.markers || [])
+      .flatMap((marker: any) => {
+        const bar = [...this.sessionCandles].reverse().find((row: any) => row.time <= marker.time);
+        return bar ? [{ ...marker, time: bar.time }] : [];
+      })
+      .sort((a: any, b: any) => a.time - b.time);
+    this.rangeLevels = [
+      { price: result.or_high, title: 'OR high', color: '#55d9b0' },
+      { price: result.or_low, title: 'OR low', color: '#f0798a' },
+    ];
+  }
   type = 'single';
   maxDate = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   day = this.maxDate;
@@ -265,6 +323,7 @@ export class Backtests implements OnInit {
       this.result.set(
         await this.api.post('/backtest/' + (this.type === 'optimize' ? 'optimize' : 'run'), body),
       );
+      this.prepareChart(this.result());
     } catch (e) {
       this.error.set(message(e));
     } finally {
