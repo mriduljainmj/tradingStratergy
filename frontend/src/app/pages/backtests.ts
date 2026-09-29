@@ -128,12 +128,67 @@ import { formatChartTime } from '../shared/chart-time';
             </select></label
           >
         }
+        <details open>
+          <summary>Timing & position size</summary>
+          <div class="form-grid">
+            @for (field of timeFields; track field.key) {
+              <label
+                >{{ field.label
+                }}<input
+                  type="time"
+                  [name]="field.key"
+                  [(ngModel)]="parameters[field.key]"
+                  required
+              /></label>
+            }
+            @for (field of strategyFields; track field.key) {
+              <label
+                >{{ field.label
+                }}<input
+                  type="number"
+                  [name]="field.key"
+                  [(ngModel)]="parameters[field.key]"
+                  [min]="field.min"
+                  [max]="field.max"
+                  [step]="field.step"
+                  required
+              /></label>
+            }
+          </div>
+          <p class="muted text-small">
+            Times are IST. Use 09:35 for the first four 5-minute candles. The strategy takes at most
+            one trade per session.
+          </p>
+        </details>
+        <details>
+          <summary>Option pricing, charges & slippage</summary>
+          <div class="form-grid">
+            @for (field of costFields; track field.key) {
+              <label
+                >{{ field.label
+                }}<input
+                  type="number"
+                  [name]="field.key"
+                  [(ngModel)]="parameters[field.key]"
+                  min="0"
+                  [max]="field.key === 'brokerage_per_order' ? 10000000 : 1"
+                  step="0.000001"
+                  required
+              /></label>
+            }
+          </div>
+          <p class="muted text-small">
+            Rates are fractions: 0.001 means 0.1%. Volatility and interest rate apply to estimated
+            option prices. Starting balance and daily loss limits are not modeled by this
+            one-trade-per-session backtest.
+          </p>
+        </details>
         <button class="btn primary full" [disabled]="busy()">
           <ax-icon name="backtests" />{{ busy() ? 'Running historical test…' : 'Run backtest' }}
         </button>
         <p class="muted text-small">
           Requires an authenticated Kite historical-data session. Trading charges and model
-          assumptions follow your Backtest settings.
+          assumptions start from your Backtest settings. Changes here apply only to this test.
         </p>
       </form>
       <div class="lab-results">
@@ -322,14 +377,41 @@ export class Backtests implements OnInit {
   direction = 'BOTH';
   target: number | null = null;
   orEnd = '';
+  parameters: Record<string, any> = {};
+  timeFields = [
+    { key: 'entry_end_time', label: 'Last entry time' },
+    { key: 'eod_exit_time', label: 'Forced exit time' },
+  ];
+  strategyFields = [
+    { key: 'fib_trail', label: 'Fibonacci trailing ratio', min: 0, max: 1, step: 0.01 },
+    { key: 'strike_spacing', label: 'Strike spacing', min: 1, max: 10000000, step: 1 },
+    { key: 'lot_size', label: 'Contract lot size', min: 1, max: 10000000, step: 1 },
+    { key: 'qty_multiplier', label: 'Number of lots', min: 1, max: 10000000, step: 1 },
+  ];
+  costFields = [
+    { key: 'assumed_iv', label: 'Fallback implied volatility' },
+    { key: 'risk_free_rate', label: 'Risk-free rate' },
+    { key: 'brokerage_per_order', label: 'Brokerage per order ₹' },
+    { key: 'stt_pct', label: 'STT rate' },
+    { key: 'exchange_charges_pct', label: 'Exchange charges rate' },
+    { key: 'gst_pct', label: 'GST rate' },
+    { key: 'sebi_charges_pct', label: 'SEBI charges rate' },
+    { key: 'stamp_duty_pct', label: 'Stamp duty rate' },
+    { key: 'slippage_pct', label: 'Slippage per side' },
+  ];
   async ngOnInit() {
+    this.busy.set(true);
     try {
       const settings = await this.api.get('/settings?mode=BACKTEST');
       this.target = settings.target_pts;
       this.orEnd = settings.or_end_time;
       this.direction = settings.trade_direction;
+      for (const field of [...this.timeFields, ...this.strategyFields, ...this.costFields])
+        this.parameters[field.key] = settings[field.key];
     } catch (e) {
       this.error.set(message(e));
+    } finally {
+      this.busy.set(false);
     }
   }
   targets = '80, 100, 130, 160';
@@ -370,7 +452,10 @@ export class Backtests implements OnInit {
               or_end_time: this.orEnd,
             };
       this.result.set(
-        await this.api.post('/backtest/' + (this.type === 'optimize' ? 'optimize' : 'run'), body),
+        await this.api.post('/backtest/' + (this.type === 'optimize' ? 'optimize' : 'run'), {
+          ...body,
+          parameters: this.parameters,
+        }),
       );
       this.prepareChart(this.result());
     } catch (e) {

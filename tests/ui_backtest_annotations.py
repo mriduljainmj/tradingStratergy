@@ -33,9 +33,14 @@ try:
         page.goto(base+'/backtests')
         page.get_by_label('Target points', exact=True).fill('80')
         page.get_by_label('Opening range end', exact=True).fill('09:35')
+        page.get_by_label('Last entry time', exact=True).fill('12:00')
+        page.get_by_label('Number of lots', exact=True).fill('2')
         for direction in ['PUT', 'CALL']:
             result['position_type'] = direction
-            page.get_by_role('button', name='Run backtest').click()
+            with page.expect_request('**/api/backtest/run') as sent:
+                page.get_by_role('button', name='Run backtest').click()
+            assert sent.value.post_data_json['parameters']['qty_multiplier'] == 2
+            assert sent.value.post_data_json['parameters']['entry_end_time'].startswith('12:00')
             expect(page.locator('tbody')).to_contain_text('BUY ' + direction)
             expect(page.locator('tbody')).to_contain_text('09:36 IST')
             expect(page.locator('tbody')).to_contain_text('09:56 IST')

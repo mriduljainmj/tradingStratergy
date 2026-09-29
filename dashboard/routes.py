@@ -498,6 +498,23 @@ def set_active_strategy():
 
 # ── Historical backtest ───────────────────────────────────────────────────────
 
+def _request_backtest_config(data):
+    from config.config_utils import ALL_FIELDS, config_to_dict, apply_config_dict
+    from dashboard.api_support import validate_settings, bad
+    cfg = _backtest_config()
+    overrides = data.get('parameters', {})
+    if not isinstance(overrides, dict):
+        bad('Backtest parameters must be an object.')
+    if any(key not in ALL_FIELDS for key in overrides):
+        bad('Unknown backtest parameter.')
+    overrides = {**overrides, **{key: data[key] for key in ('target_pts', 'or_end_time') if key in data}}
+    validate_settings({**config_to_dict(cfg), **overrides})
+    if 'or_times' in data:
+        for value in data['or_times']:
+            validate_settings({**config_to_dict(cfg), **overrides, 'or_end_time': value})
+    apply_config_dict(cfg, overrides)
+    return cfg
+
 @dashboard_bp.route("/api/backtest/run", methods=["POST"])
 @jwt_required()
 def run_historical_backtest():
@@ -530,18 +547,7 @@ def run_historical_backtest():
     # Optional per-request config overrides (used by analytics compare feature)
     # These are applied temporarily to a cloned config — the live engine config
     # is never mutated.
-    bt_cfg = _backtest_config()
-    if "or_end_time" in data:
-        try:
-            parts = str(data["or_end_time"]).split(":")
-            bt_cfg.or_end_time = datetime.time(int(parts[0]), int(parts[1]))
-        except Exception:
-            pass
-    if "target_pts" in data:
-        try:
-            bt_cfg.target_pts = int(data["target_pts"])
-        except Exception:
-            pass
+    bt_cfg = _request_backtest_config(data)
 
     # Use the (possibly overridden) config for this request's backtester
     from execution.historical_backtest import HistoricalBacktester
@@ -616,7 +622,7 @@ def run_backtest_optimize():
 
     from execution.historical_backtest import HistoricalBacktester
 
-    bt_cfg    = _backtest_config()
+    bt_cfg    = _request_backtest_config(data)
     backtester = HistoricalBacktester(bt_cfg, ue.backtester.broker)
 
     result = backtester.optimize(
