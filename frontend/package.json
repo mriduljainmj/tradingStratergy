@@ -6,9 +6,9 @@
     "start": "ng serve --proxy-config proxy.conf.json",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "npm run test:chart-time && node tests/portfolio-totals.test.cjs && npm run build && ../.venv/bin/python ../tests/ui_smoke.py",
+    "test": "npm run test:chart-time && node tests/portfolio-totals.test.cjs && node tests/portfolio-live.test.cjs && npm run build && ../.venv/bin/python ../tests/ui_smoke.py",
     "typecheck": "ng build --configuration development",
-    "test:chart-time": "node tests/chart-time.test.cjs && node tests/live-candles.test.cjs && node tests/stream-candles.test.cjs && node tests/chart-indicators.test.cjs && node tests/drawing-time.test.cjs"
+    "test:chart-time": "node tests/chart-time.test.cjs && node tests/live-candles.test.cjs && node tests/stream-candles.test.cjs && node tests/chart-indicators.test.cjs && node tests/drawing-time.test.cjs && node tests/percentage-change.test.cjs"
   },
   "private": true,
   "packageManager": "npm@10.7.0",

@@ -3,9 +3,16 @@ import { CurrencyPipe, DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { Api, message } from '../core/api';
 import { Heading, ErrorBox, Stat } from '../shared/ui';
+import { MarketFeed } from '../core/market-feed';
+import { livePortfolio } from '../shared/portfolio-live';
 import { portfolioTotals } from '../shared/portfolio-totals';
+import { percentageChange, formatPercentage } from '../shared/percentage-change';
 
 interface Holding {
+  instrument_token?: number;
+  multiplier?: number;
+  live_time?: number;
+  day_change_percentage?: number | null;
   tradingsymbol: string;
   exchange: string;
   product: string;
@@ -26,6 +33,7 @@ interface PortfolioSnapshot {
 }
 @Component({
   selector: 'ax-portfolio',
+  providers: [MarketFeed],
   imports: [Heading, ErrorBox, Stat, CurrencyPipe, DatePipe, RouterLink],
   template: `<ax-heading
       title="Your Kite portfolio."
@@ -52,6 +60,10 @@ interface PortfolioSnapshot {
         >
       }
     </div>
+    <p class="panel-copy" role="status">
+      {{ streamStatus() }} · Prices and P&amp;L update from Kite ticks; quantities and cost refresh
+      every 30 seconds.
+    </p>
     @if (data(); as snapshot) {
       <div class="portfolio-summary">
         <ax-stat
@@ -64,21 +76,21 @@ interface PortfolioSnapshot {
           label="Current value"
           prefix="₹"
           [value]="totals().current"
-          note="Current holdings valued at Kite's last prices"
+          [note]="percent(totalReturn()) + ' vs invested value'"
         />
         <ax-stat
           label="Total holdings P&L"
           prefix="₹"
           [value]="totals().pnl"
           [tone]="(totals().pnl || 0) < 0 ? 'negative' : 'positive'"
-          note="Sum of holding P&L reported by Kite"
+          note="Broker P&L adjusted using incoming prices"
         />
         <ax-stat
           label="Positions P&L"
           prefix="₹"
           [value]="totals().positionsPnl"
           [tone]="(totals().positionsPnl || 0) < 0 ? 'negative' : 'positive'"
-          note="All net positions, including closed positions"
+          note="Live revaluation of net positions, including closed P&L"
         />
       </div>
       @if (
@@ -144,12 +156,27 @@ interface PortfolioSnapshot {
                     </td>
                     <td>
                       {{ row.last_price === null ? '—' : (row.last_price | currency: 'INR') }}
+                      <small
+                        [class.positive]="(row.day_change_percentage ?? 0) > 0"
+                        [class.negative]="(row.day_change_percentage ?? 0) < 0"
+                        >{{ percent(row.day_change_percentage) }} today</small
+                      >
+                      <small>{{
+                        row.live_time
+                          ? 'Tick ' + (row.live_time * 1000 | date: 'HH:mm:ss' : '+0530') + ' IST'
+                          : 'Broker snapshot'
+                      }}</small>
                     </td>
                     <td>
                       {{ currentValue(row) === null ? '—' : (currentValue(row) | currency: 'INR') }}
                     </td>
                     <td [class.positive]="(row.pnl ?? 0) > 0" [class.negative]="(row.pnl ?? 0) < 0">
                       {{ row.pnl === null ? '—' : (row.pnl | currency: 'INR') }}
+                      <small
+                        [class.positive]="(holdingReturn(row) ?? 0) > 0"
+                        [class.negative]="(holdingReturn(row) ?? 0) < 0"
+                        >{{ percent(holdingReturn(row)) }} vs cost</small
+                      >
                     </td>
                     <td>
                       <div class="button-row">
@@ -194,8 +221,8 @@ interface PortfolioSnapshot {
           </h2>
         </div>
         <p class="panel-copy">
-          Includes positions opened outside this application. Broker P&amp;L is shown as returned by
-          Kite.
+          Includes positions opened outside this application. Broker P&amp;L is updated with live
+          price changes.
         </p>
         @if (openPositions().length) {
           <div class="portfolio-table">
@@ -208,6 +235,7 @@ interface PortfolioSnapshot {
                   <th>Average price</th>
                   <th>Last price</th>
                   <th>Broker P&amp;L</th>
+                  <th>Open price return</th>
                   <th>Trade</th>
                 </tr>
               </thead>
@@ -225,9 +253,21 @@ interface PortfolioSnapshot {
                     </td>
                     <td>
                       {{ row.last_price === null ? '—' : (row.last_price | currency: 'INR') }}
+                      <small>{{
+                        row.live_time
+                          ? 'Tick ' + (row.live_time * 1000 | date: 'HH:mm:ss' : '+0530') + ' IST'
+                          : 'Broker snapshot'
+                      }}</small>
                     </td>
                     <td [class.positive]="(row.pnl ?? 0) > 0" [class.negative]="(row.pnl ?? 0) < 0">
                       {{ row.pnl === null ? '—' : (row.pnl | currency: 'INR') }}
+                    </td>
+                    <td
+                      [class.positive]="(positionReturn(row) ?? 0) > 0"
+                      [class.negative]="(positionReturn(row) ?? 0) < 0"
+                      title="Price return from average entry, adjusted for long or short direction; excludes realised P&L and margin leverage."
+                    >
+                      {{ percent(positionReturn(row)) }}
                     </td>
                     <td>
                       @if (
@@ -300,6 +340,17 @@ interface PortfolioSnapshot {
   `,
 })
 export class Portfolio implements OnInit, OnDestroy {
+  percent = formatPercentage;
+  holdingReturn(row: Holding) {
+    return percentageChange(this.currentValue(row), this.investedValue(row));
+  }
+  totalReturn() {
+    return percentageChange(this.totals().current, this.totals().invested);
+  }
+  positionReturn(row: Holding) {
+    const change = percentageChange(row.last_price, row.average_price);
+    return change === null || !row.quantity ? null : change * (row.quantity < 0 ? -1 : 1);
+  }
   positionOrder(row: Holding) {
     return {
       symbol: row.tradingsymbol,
@@ -316,7 +367,25 @@ export class Portfolio implements OnInit, OnDestroy {
     return portfolioTotals([row], []).invested;
   }
   api = inject(Api);
-  data = signal<PortfolioSnapshot | null>(null);
+  feed = inject(MarketFeed);
+  private baseline = signal<PortfolioSnapshot | null>(null);
+  data = computed(() => {
+    const base = this.baseline();
+    return base ? livePortfolio(base, this.feed.snapshot()) : null;
+  });
+  streamStatus() {
+    const rows = [...(this.baseline()?.holdings || []), ...(this.baseline()?.positions || [])];
+    const tokens = new Set(
+      rows.map((r) => r.instrument_token).filter((t) => typeof t === 'number' && t > 0),
+    );
+    if (!rows.length) return 'No portfolio instruments to stream';
+    if (!tokens.size) return 'Instrument tokens unavailable · using broker snapshots';
+    const partial = tokens.size > 500 || rows.some((r) => !r.instrument_token);
+    return (
+      this.feed.status().replace('historical data', 'last known prices') +
+      (partial ? ' · partial stream coverage; remaining rows use snapshots' : '')
+    );
+  }
   totals = computed(() =>
     portfolioTotals(this.data()?.holdings || [], this.data()?.positions || []),
   );
@@ -335,6 +404,7 @@ export class Portfolio implements OnInit, OnDestroy {
   }
   ngOnDestroy() {
     this.destroyed = true;
+    this.feed.stop();
     clearInterval(this.timer);
   }
   async refresh() {
@@ -343,7 +413,15 @@ export class Portfolio implements OnInit, OnDestroy {
     try {
       const snapshot = await this.api.get<PortfolioSnapshot>('/portfolio');
       if (!this.destroyed) {
-        this.data.set(snapshot);
+        this.baseline.set(snapshot);
+        const tokens = [
+          ...new Set(
+            [...snapshot.holdings, ...snapshot.positions]
+              .map((r) => r.instrument_token)
+              .filter((t): t is number => typeof t === 'number' && t > 0),
+          ),
+        ].slice(0, 500);
+        this.feed.configure(tokens, 'portfolio');
         this.error.set('');
       }
     } catch (e) {

@@ -357,7 +357,7 @@ class BackendRegressionTests(unittest.TestCase):
 
     def test_portfolio_reads_only_current_users_broker(self):
         broker = Mock()
-        broker.kite.holdings.return_value = [dict(tradingsymbol='TEST',exchange='NSE',product='CNC',quantity=10,t1_quantity=2,used_quantity=1,average_price=100,last_price=110,pnl=120,private_value='omit')]
+        broker.kite.holdings.return_value = [dict(instrument_token=123,tradingsymbol='TEST',exchange='NSE',product='CNC',quantity=10,t1_quantity=2,used_quantity=1,average_price=100,last_price=110,pnl=120,private_value='omit')]
         broker.kite.holdings.return_value[0]['mtf'] = dict(quantity=3, average_price=90, private_value='omit')
         broker.kite.positions.return_value = {'net':[dict(tradingsymbol='SHORT',quantity=-5,pnl=25)],'day':[]}
         ue = SimpleNamespace(user_id=2,broker=broker,state=SimpleNamespace(kite_auth_error=False))
@@ -368,6 +368,8 @@ class BackendRegressionTests(unittest.TestCase):
         row = response.json['holdings'][0]
         self.assertEqual((row['quantity'],row['t1_quantity'],row['used_quantity']),(10,2,1))
         self.assertNotIn('private_value',row)
+        self.assertEqual(row['instrument_token'], 123)
+        self.assertEqual(ue._portfolio_stream_tokens[0], {123})
         self.assertEqual(row['mtf'], {'quantity':3, 'average_price':90})
         self.assertEqual(response.json['positions'][0]['quantity'],-5)
         broker.kite.place_order.assert_not_called()

@@ -1,4 +1,5 @@
 import { drawingSymbol, drawingInterval, drawingPosition } from './drawing-time';
+import { chartChange, formatPercentage } from './percentage-change';
 import {
   AfterViewInit,
   Component,
@@ -1681,6 +1682,7 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
   private describe(row: any) {
     if (!row) return '';
     const number = (v: number) => v.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    const change = chartChange(this.data(), row, this.type() === 'area');
     return (
       formatChartTime(row.time) +
       (this.type() === 'area'
@@ -1692,7 +1694,10 @@ export class Chart implements AfterViewInit, OnChanges, OnDestroy {
           ' L ' +
           number(row.low) +
           ' C ' +
-          number(row.close))
+          number(row.close)) +
+      (change
+        ? ` · ${change.amount > 0 ? '+' : ''}${number(change.amount)} (${formatPercentage(change.percent)}) ${change.label}`
+        : '')
     );
   }
   private chart?: IChartApi;

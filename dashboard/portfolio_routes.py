@@ -22,7 +22,9 @@ def portfolio():
         if (not isinstance(holdings, list) or not isinstance(positions, dict)
                 or not isinstance(positions.get('net'), list)):
             raise ValueError('Invalid portfolio response')
-        common = ('tradingsymbol', 'exchange', 'product', 'quantity', 'average_price', 'last_price', 'pnl')
+        from dashboard.stream_routes import register_portfolio_tokens
+        register_portfolio_tokens(ue, [r.get('instrument_token') for r in holdings + positions['net'] if isinstance(r, dict)])
+        common = ('instrument_token', 'tradingsymbol', 'exchange', 'product', 'quantity', 'average_price', 'last_price', 'pnl')
         def clean(rows, fields):
             if any(not isinstance(row, dict) or not row.get('tradingsymbol') for row in rows):
                 raise ValueError('Invalid portfolio row')
@@ -37,7 +39,7 @@ def portfolio():
             return cleaned
         return jsonify(ok=True,
                        holdings=clean(holdings, common + ('t1_quantity', 'used_quantity', 'collateral_quantity', 'day_change_percentage', 'discrepancy', 'mtf')),
-                       positions=clean(positions['net'], common + ('unrealised', 'realised',)),
+                       positions=clean(positions['net'], common + ('unrealised', 'realised', 'multiplier',)),
                        fetched_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
     except Exception as exc:
         if is_kite_auth_error(exc):

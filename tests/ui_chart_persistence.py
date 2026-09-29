@@ -7,6 +7,7 @@ import threading
 import tempfile
 import json
 import time
+import re
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from test_dashboard import DashboardSmokeTests
@@ -61,6 +62,7 @@ try:
         page.get_by_label('Selected watchlist').select_option('Swing trades')
         page.get_by_role('button',name='Open RELIANCE in chart 1').click()
         chart=page.locator('ax-chart').first
+        expect(chart.locator('.chart-readout')).to_contain_text(re.compile(r'%\) vs prev close'))
         save=chart.get_by_role('button',name='Save drawings & indicators',exact=True)
         expect(save).to_be_enabled()
         chart.get_by_role('button',name='Indicators',exact=True).click()

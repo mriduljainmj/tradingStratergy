@@ -9,16 +9,16 @@ export class MarketFeed {
   private key = '';
   private controller?: AbortController;
   private retry?: ReturnType<typeof setTimeout>;
-  configure(tokens: number[]) {
+  configure(tokens: number[], scope: 'chart' | 'portfolio' = 'chart') {
     tokens = [...new Set(tokens)].sort((a, b) => a - b);
     const jwt = this.auth.token();
-    const key = tokens.join(',') + jwt;
+    const key = scope + tokens.join(',') + jwt;
     if (key === this.key) return;
     this.stop();
     if (!tokens.length || !jwt) return;
     this.key = key;
     this.controller = new AbortController();
-    void this.connect(tokens, jwt, this.controller);
+    void this.connect(tokens, jwt, this.controller, scope);
   }
   stop() {
     this.key = '';
@@ -27,15 +27,23 @@ export class MarketFeed {
     this.snapshot.set(null);
     this.status.set('Live feed disconnected');
   }
-  private async connect(tokens: number[], jwt: string, controller: AbortController) {
+  private async connect(
+    tokens: number[],
+    jwt: string,
+    controller: AbortController,
+    scope: 'chart' | 'portfolio',
+  ) {
     if (controller.signal.aborted) return;
     this.status.set('Connecting to Kite…');
     let retry = true;
     try {
-      const response = await fetch('/api/market-stream?tokens=' + tokens.join(','), {
-        headers: { Authorization: 'Bearer ' + jwt },
-        signal: controller.signal,
-      });
+      const response = await fetch(
+        '/api/market-stream?scope=' + scope + '&tokens=' + tokens.join(','),
+        {
+          headers: { Authorization: 'Bearer ' + jwt },
+          signal: controller.signal,
+        },
+      );
       if (!response.ok || !response.body) {
         retry = ![400, 401, 403].includes(response.status);
         throw new Error(
@@ -112,8 +120,9 @@ export class MarketFeed {
       if (!controller.signal.aborted)
         this.status.set(e instanceof Error ? e.message : 'Live feed unavailable');
     } finally {
+      if (!controller.signal.aborted && !retry) this.key = '';
       if (!controller.signal.aborted && retry)
-        this.retry = setTimeout(() => void this.connect(tokens, jwt, controller), 3000);
+        this.retry = setTimeout(() => void this.connect(tokens, jwt, controller, scope), 3000);
     }
   }
 }

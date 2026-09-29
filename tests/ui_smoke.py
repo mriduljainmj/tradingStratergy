@@ -98,7 +98,7 @@ try:
         page.goto(base+'/portfolio')
         expect(page.get_by_text('HOLDINGTEST',exact=True)).to_be_visible()
         expect(page.get_by_text('SHORTTEST',exact=True)).to_be_visible()
-        expect(page.locator('ax-stat').filter(has_text='Invested value')).to_contain_text('₹1,200')
+        expect(page.locator('ax-stat[label="Invested value"]')).to_contain_text('₹1,200')
         expect(page.locator('ax-stat').filter(has_text='Current value')).to_contain_text('₹1,320')
         expect(page.locator('ax-stat').filter(has_text='Total holdings P&L')).to_contain_text('₹120')
         expect(page.locator('ax-stat').filter(has_text='Positions P&L')).to_contain_text('₹50')

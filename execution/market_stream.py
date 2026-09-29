@@ -138,11 +138,11 @@ class MarketStream:
                 row.update(high=max(row['high'],price), low=min(row['low'],price), close=price,last_tick=ts)
                 self.minute_bars[token] = dict(sorted(minutes.items())[-390:])
 
-    def snapshot(self, tokens, tail=None):
+    def snapshot(self, tokens, tail=None, quotes_only=False):
         with self.lock:
             def rows(source, token):
                 values = [dict(b) for b in source.get(token, {}).values()]
                 return values[-tail:] if tail else values
             return dict(status=self.status, server_time=time.time(), quotes={str(t): self.quotes[t] for t in tokens if t in self.quotes},
-                        minute_candles={str(t): rows(self.minute_bars,t) for t in tokens},
-                        candles={str(t): rows(self.bars,t) for t in tokens})
+                        minute_candles={} if quotes_only else {str(t): rows(self.minute_bars,t) for t in tokens},
+                        candles={} if quotes_only else {str(t): rows(self.bars,t) for t in tokens})

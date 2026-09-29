@@ -86,3 +86,23 @@ class MarketStreamTests(unittest.TestCase):
             response.close()
             self.assertEqual(client.get('/api/market-stream?tokens=999',headers=headers).status_code,400)
             self.assertEqual(client.get('/api/market-stream?tokens='+','.join(str(i) for i in range(1,34)),headers=headers).status_code,400)
+
+    def test_portfolio_stream_uses_only_account_snapshot_tokens_and_quote_only_frames(self):
+        from dashboard.stream_routes import register_portfolio_tokens
+        fixtures.DashboardSmokeTests.setUpClass()
+        client, headers = fixtures.DashboardSmokeTests.client, fixtures.DashboardSmokeTests.headers[0]
+        feed = Mock(closed=False, credentials=('key','token'))
+        feed.snapshot.return_value = {'status':'connected','quotes':{}}
+        ue = SimpleNamespace(broker=SimpleNamespace(kite=SimpleNamespace(api_key='key',access_token='token')), state=SimpleNamespace(kite_auth_error=False), _lifecycle_lock=threading.RLock(), _market_stream=feed)
+        register_portfolio_tokens(ue, list(range(1, 501)) + [None, -1, True])
+        with patch('dashboard.stream_routes._ue', return_value=ue):
+            url = '/api/market-stream?scope=portfolio&tokens='
+            response = client.get(url + ','.join(str(i) for i in range(1, 501)), headers=headers, buffered=False)
+            self.assertEqual(response.status_code, 200)
+            feed.snapshot.assert_called_with(set(range(1,501)), tail=None, quotes_only=True)
+            response.close()
+            self.assertEqual(client.get(url+'999', headers=headers).status_code, 400)
+            register_portfolio_tokens(ue, [2])
+            self.assertEqual(client.get(url+'1', headers=headers).status_code, 400)
+            ue._portfolio_stream_tokens = ({2}, 0)
+            self.assertEqual(client.get(url+'2', headers=headers).status_code, 400)

@@ -8,7 +8,7 @@ An Angular frontend and Python Flask API for a multi-user NIFTY options and NSE 
 | --- | --- |
 | Overview | Paper balance, realized/open P&L, win rate, NIFTY candles, opening-range levels, selected option premium chart, option chain with expiry selection, positions, recent trades and engine activity |
 | Trading controls | Mode selection with execution paused, personal paper trading and backtests, administrator-only live execution, entry pause, manual call/put entry and exit, optional paper restart auto-resume |
-| Kite portfolio | Broker holdings, invested/current value, P&L, Buy/Sell shortcuts and cash-equity position exits; refreshed every 30 seconds while visible |
+| Kite portfolio | Live Kite prices, current value and P&L for holdings/positions; Buy/Sell shortcuts and equity exits; quantities/cost reconciled every 30 seconds |
 | Equity trading | NSE/BSE cash-equity search; buy/sell, MARKET/LIMIT/SL/SL-M, CNC/MIS, regular/AMO, DAY/IOC, disclosed quantity, market protection, reviewed submissions, order status, modification and cancellation |
 | Market explorer | NSE instrument search, sector filters, quotes, personal watchlists, technical stock details and momentum scanning |
 | Strategy studio | Create/edit/delete options ORB, equity ORB and EMA crossover strategies; position size, direction, targets, stops, trading windows and loss limits; select options strategy or run equity engines |
@@ -115,3 +115,11 @@ Offline equity checks (never place real orders):
 ```
 
 API contract reference: [Kite orders](https://kite.trade/docs/connect/v3/orders/), [margins](https://kite.trade/docs/connect/v3/margins/) and [holdings authorisation](https://kite.trade/docs/connect/v3/portfolio/).
+
+### Live portfolio prices
+
+Kite portfolio subscribes to instrument tokens returned by the signed-in account's holdings and positions. The quote-only SSE view supports up to 500 unique instruments while sharing the same Kite WebSocket connection as charts. Larger portfolios keep snapshot pricing on remaining instruments, with a coverage notice. Prices, current value and P&L update from ticks; invested cost and quantities remain broker-snapshot values refreshed every 30 seconds. Position revaluation uses net quantity and the broker's contract multiplier, preserving closed-position P&L. Missing inputs remain unavailable rather than being guessed. Cached quotes older than the latest portfolio snapshot are ignored. Feed status and per-row tick times distinguish streaming from retained prices; leaving the page releases its subscription. This is read-only and does not enable trading.
+
+Additional offline checks: `node frontend/tests/portfolio-live.test.cjs` and `.venv/bin/python tests/ui_portfolio_live.py`.
+
+Chart OHLC readouts also show price and percentage change versus the previous loaded candle's close. The first loaded candle uses its open and is labelled accordingly. Hover updates the comparison to the selected candle. Portfolio rows show daily price change where Kite supplies the reference, return versus current holdings' cost, and direction-adjusted open-position price returns (not margin returns or realised P&L). The current-value summary shows the total return versus invested value. Missing or zero reference values display an em dash rather than an invented percentage.
