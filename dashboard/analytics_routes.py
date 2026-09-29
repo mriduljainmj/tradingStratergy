@@ -659,8 +659,12 @@ def import_csv():
             return _bad("File parsed successfully but no trade rows found.")
 
         inserted = _insert_imported_trades(df, uid)
+        summary = 'summary' in df.columns and bool(df['summary'].all())
+        label = 'symbol summaries' if summary else 'trades'
         return jsonify({"ok": True, "inserted": inserted,
-                        "message": f"Imported {inserted} trades from {f.filename}"})
+                        "message": f"Imported {inserted} {label} from {f.filename}"
+                        + (". Charges were allocated by turnover; dates are the report period end, not execution dates."
+                           if summary else "")})
 
     except Exception as e:
         logger.exception("CSV import failed")
@@ -680,73 +684,100 @@ def _parse_csv(stream):
 
 
 def _parse_zerodha_taxpnl(raw: bytes):
-    """Read closed trades from Console's multi-section Tradewise Exits sheet.
-
-    Buy/Sell Value are total consideration, unlike Trade Book's unit prices.
-    Other tax-report sheets are summaries and must not be imported as trades.
-    """
+    """Read symbol summaries from Console's Equity and F&O tax-report sheets."""
     import io
     import pandas as pd
     from openpyxl import load_workbook
 
     workbook = load_workbook(io.BytesIO(raw), read_only=False, data_only=True)
-    sheet = next((s for s in workbook if s.title.lower().startswith('tradewise exits')), None)
-    if sheet is None:
+    sheets = [s for s in workbook if s.title in ('Equity and Non Equity', 'F&O')]
+    if not sheets:
         return None
     records = []
-    columns = {}
-    section = ''
-    def parse_date(value):
-        if isinstance(value, datetime.datetime):
-            return value.date()
-        if isinstance(value, datetime.date):
-            return value
-        try:
-            return datetime.date.fromisoformat(str(value))
-        except (ValueError, TypeError):
-            return pd.to_datetime(value, errors='raise', dayfirst=True).date()
+    for sheet in sheets:
+        rows = list(sheet.iter_rows(values_only=True))
+        period_end = None
+        for row in rows[:15]:
+            for value in row:
+                if isinstance(value, str) and 'Taxpnl Statement' in value:
+                    dates = re.findall(r'\d{4}-\d{2}-\d{2}', value)
+                    if len(dates) >= 2:
+                        period_end = datetime.date.fromisoformat(dates[-1])
+        if period_end is None:
+            raise ValueError(f'{sheet.title}: report period end date is missing.')
 
-    for cells in sheet.iter_rows(values_only=True):
-        values = list(cells)
-        labels = {str(value).strip().lower(): index for index, value in enumerate(values)
-                  if isinstance(value, str)}
-        if 'symbol' in labels and 'entry date' in labels and 'exit date' in labels and 'quantity' in labels and 'buy value' in labels and 'sell value' in labels:
-            columns = labels
-            continue
-        heading = values[1] if len(values) > 1 else None
-        if isinstance(heading, str) and all(value is None for value in values[2:]):
-            section = heading
-            columns = {}
-            continue
-        if not columns:
-            continue
-        def field(name):
-            index = columns.get(name)
-            return values[index] if index is not None and index < len(values) else None
-        try:
-            symbol = str(field('symbol') or '').strip()
-            entry_date = parse_date(field('entry date'))
-            exit_date = parse_date(field('exit date'))
-            quantity = float(field('quantity'))
-            buy_value = float(field('buy value'))
-            sell_value = float(field('sell value'))
-            if not symbol or quantity <= 0 or not all(math.isfinite(v) for v in (quantity, buy_value, sell_value)):
+        section = ''
+        columns = {}
+        sheet_records = []
+        charge_lines = []
+        in_charges = False
+        for row in rows:
+            values = list(row)
+            title = str(values[1]).strip() if len(values) > 1 and values[1] is not None else ''
+            if title == 'Charges':
+                in_charges = True
+                columns = {}
                 continue
-            gross = sell_value - buy_value
-            charge_names = ('brokerage', 'exchange transaction charges', 'ipft', 'sebi charges',
-                            'cgst', 'sgst', 'igst', 'stamp duty', 'stt')
-            charges = sum(float(field(name) or 0) for name in charge_names)
-            if not math.isfinite(charges):
+            if title in ('Other Charges', 'Other Credits & Debits'):
+                in_charges = False
+            if in_charges and (title.endswith(' - Z') or title == 'IPFT'):
+                try:
+                    amount = float(values[2] or 0)
+                    if math.isfinite(amount):
+                        charge_lines.append(amount)
+                except (TypeError, ValueError, IndexError):
+                    pass
+            if title in ('Equity Intraday', 'Equity Short Term', 'Equity Long Term',
+                         'Options', 'Futures') and all(value is None for value in values[2:]):
+                section = title
+                columns = {}
                 continue
-        except (TypeError, ValueError, OverflowError):
-            continue
-        suffix = symbol.upper()[-2:]
-        position_type = 'CALL' if suffix == 'CE' else 'PUT' if suffix == 'PE' else 'FUTURE' if section == 'F&O' else 'EQUITY'
-        records.append(dict(symbol=symbol, trade_date=entry_date, exit_date=exit_date,
-                            quantity=int(quantity), buy_price=buy_value/quantity,
-                            sell_price=sell_value/quantity, gross_pnl=round(gross, 2),
-                            charges=round(charges, 2), net_pnl=round(gross-charges, 2),
-                            position_type=position_type))
+            labels = {str(value).strip().lower(): index for index, value in enumerate(values)
+                      if isinstance(value, str)}
+            if all(name in labels for name in ('symbol', 'quantity', 'buy value', 'sell value', 'realized p&l')):
+                columns = labels
+                continue
+            if not columns:
+                continue
+            def field(name):
+                index = columns.get(name)
+                return values[index] if index is not None and index < len(values) else None
+            try:
+                symbol = str(field('symbol') or '').strip()
+                quantity = float(field('quantity'))
+                buy_value = float(field('buy value'))
+                sell_value = float(field('sell value'))
+                gross = float(field('realized p&l'))
+                if not symbol or quantity <= 0 or not all(math.isfinite(v) for v in (quantity, buy_value, sell_value, gross)):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            suffix = symbol.upper()[-2:]
+            position_type = ('CALL' if suffix == 'CE' else 'PUT' if suffix == 'PE'
+                             else 'FUTURE' if section == 'Futures' else 'EQUITY')
+            sheet_records.append(dict(symbol=symbol, trade_date=period_end,
+                                      exit_date=period_end, quantity=int(quantity),
+                                      buy_price=buy_value/quantity,
+                                      sell_price=sell_value/quantity,
+                                      gross_pnl=round(gross, 2),
+                                      position_type=position_type,
+                                      strategy_name=f'Kite Tax P&L · {section}',
+                                      summary=True, turnover=abs(buy_value)+abs(sell_value)))
+
+        # Charges are sheet totals, without symbol-level allocation. Spread them
+        # by turnover so aggregate net P&L reconciles, and label them as allocated.
+        total_charges = round(sum(charge_lines), 2)
+        total_turnover = sum(row['turnover'] for row in sheet_records)
+        allocated = 0.0
+        for index, record in enumerate(sheet_records):
+            charge = (round(total_charges - allocated, 2) if index == len(sheet_records)-1
+                      else round(total_charges * record['turnover']/total_turnover, 2)
+                      if total_turnover else 0.0)
+            allocated += charge
+            record['charges'] = charge
+            record['net_pnl'] = round(record['gross_pnl'] - charge, 2)
+            record.pop('turnover')
+        records.extend(sheet_records)
     return pd.DataFrame(records)
 
 
@@ -857,6 +888,7 @@ def _insert_imported_trades(df, uid: int) -> int:
     """Insert normalised DataFrame rows into the Trade table as IMPORT trades."""
     db = SessionLocal()
     inserted = 0
+    seen_summaries = set()
     try:
         for _, row in df.iterrows():
             try:
@@ -874,14 +906,26 @@ def _insert_imported_trades(df, uid: int) -> int:
                 chg   = float(row.get("charges")   or 0)
                 net   = float(row.get("net_pnl")    or gross - chg)
 
-                entry_dt = datetime.datetime.combine(trade_date, datetime.time(9, 15))
-                exit_dt  = datetime.datetime.combine(exit_date,  datetime.time(15, 30))
+                is_summary = bool(row.get('summary', False))
+                symbol = str(row.get("symbol", "UNKNOWN"))[:50]
+                strategy_name = str(row.get('strategy_name', '')) if is_summary else None
+                if is_summary:
+                    key = (trade_date, symbol, strategy_name)
+                    if key in seen_summaries:
+                        continue
+                    seen_summaries.add(key)
+                    if db.query(Trade.id).filter_by(user_id=uid, trade_mode='IMPORT',
+                            date=trade_date, symbol=symbol, strategy_name=strategy_name).first():
+                        continue
+                entry_dt = None if is_summary else datetime.datetime.combine(trade_date, datetime.time(9, 15))
+                exit_dt  = None if is_summary else datetime.datetime.combine(exit_date, datetime.time(15, 30))
 
                 t = Trade(
                     user_id       = uid,
                     date          = trade_date,
                     trade_mode    = "IMPORT",
-                    symbol        = str(row.get("symbol", "UNKNOWN"))[:50],
+                    symbol        = symbol,
+                    strategy_name = strategy_name,
                     position_type = str(row.get("position_type", "CALL")),
                     entry_time    = entry_dt,
                     exit_time     = exit_dt,
@@ -892,7 +936,7 @@ def _insert_imported_trades(df, uid: int) -> int:
                     gross_pnl     = gross,
                     charges       = chg,
                     net_pnl       = net,
-                    exit_reason   = "Console Import",
+                    exit_reason   = "Tax P&L summary · allocated charges" if is_summary else "Console Import",
                     or_high       = None,
                     or_low        = None,
                 )

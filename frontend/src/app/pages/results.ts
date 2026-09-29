@@ -147,7 +147,11 @@ import { Chart } from '../shared/chart';
           <tbody>
             @for (t of trades(); track t.id) {
               <tr>
-                <td>{{ t.date }}</td>
+                <td>{{ t.date }}
+                  @if (t.exit_reason?.startsWith('Tax P&L summary')) {
+                    <small>Report period end</small>
+                  }
+                </td>
                 <td>
                   <strong>{{ t.symbol || 'NIFTY' }}</strong
                   ><small>{{ t.strategy_name }}</small>
