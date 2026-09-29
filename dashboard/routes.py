@@ -324,6 +324,9 @@ def manual_trade():
         ue.state.manual_action = "EXIT"
         return jsonify({"ok": True, "queued": "EXIT"})
     if action == "enter":
+        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=5, minutes=30))).time()
+        if not ue.config.or_end_time <= now <= ue.config.entry_end_time:
+            return jsonify(ok=False, error=f'ORB entries are allowed only from {ue.config.or_end_time:%H:%M} to {ue.config.entry_end_time:%H:%M} IST.'), 409
         direction = (data.get("direction") or "CALL").upper()
         if direction not in ("CALL", "PUT"):
             return jsonify({"ok": False, "error": "direction must be CALL or PUT"}), 400

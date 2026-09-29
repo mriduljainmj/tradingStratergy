@@ -599,6 +599,8 @@ class TradingEngine:
                             self.state.logs.append(
                                 f"[{now_dt.strftime('%H:%M:%S')}] ✋ Manual {signal['type']} "
                                 f"entry @ NIFTY {ltp:.0f}")
+                        else:
+                            self.state.logs.append('ORB entry skipped: entry window, range breakout, direction or daily trade limit not satisfied.')
 
                 if signal is None:
                     signal = self.strategy.process_tick(

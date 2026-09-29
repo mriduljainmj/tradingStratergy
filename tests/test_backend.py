@@ -8,6 +8,28 @@ import test_dashboard as fixtures
 
 
 class BackendRegressionTests(unittest.TestCase):
+    def test_orb_late_start_and_manual_entries_obey_cutoff_and_range(self):
+        from config.settings import TradingConfig
+        from core.state import BotState
+        from core.strategy import ORBStrategy
+        cfg = TradingConfig(entry_end_time=datetime.time(11))
+        state = BotState(or_high=23000, or_low=22900)
+        strategy = ORBStrategy(cfg, state)
+        with patch.object(strategy, '_look_for_entry') as entry:
+            for hour in (14, 15):
+                self.assertIsNone(strategy.process_tick(1, datetime.time(hour), 23100, 23100, 23100, 23100))
+            entry.assert_not_called()
+        for t, price, side in [(datetime.time(14),23100,'CALL'),
+                               (datetime.time(14),22800,'PUT'),
+                               (datetime.time(9,30),23100,'CALL'),
+                               (datetime.time(10),22950,'CALL'),
+                               (datetime.time(10),22950,'PUT'),
+                               (datetime.time(10),23000,'CALL'),
+                               (datetime.time(10),22900,'PUT')]:
+            self.assertIsNone(strategy.manual_enter(1,t,price,side))
+        self.assertFalse(strategy.has_traded)
+        self.assertFalse(strategy.in_position)
+
     def test_regular_user_can_close_paper_but_not_live_or_enter(self):
         ue = SimpleNamespace(is_running=True, state=SimpleNamespace(app_mode='PAPER', in_position=True, manual_action=''))
         headers = fixtures.DashboardSmokeTests.headers[1]

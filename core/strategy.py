@@ -337,15 +337,22 @@ class ORBStrategy:
 
     def manual_enter(self, unix_time: int, t: datetime.time, price: float,
                      direction: str) -> Optional[dict]:
-        """Force an immediate CALL/PUT entry at the current NIFTY price,
-        bypassing the opening-range breakout. Sets the same state the auto
-        entry does so exits, markers and P&L work identically."""
+        """Request an ORB entry, subject to the same window and breakout rules."""
         if self.in_position or self.has_traded:
             return None
         cfg = direction.upper()
         if cfg not in ("CALL", "PUT"):
             return None
         c = self.config
+        if not c.or_end_time <= t <= c.entry_end_time:
+            return None
+        if self.state.or_high <= 0 or self.state.or_low <= 0:
+            return None
+        allowed = getattr(self.state, 'trade_direction', 'BOTH').upper()
+        if allowed not in ('BOTH', cfg):
+            return None
+        if (cfg == 'CALL' and price <= self.state.or_high) or (cfg == 'PUT' and price >= self.state.or_low):
+            return None
         _IST_tz    = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
         trade_date = datetime.datetime.fromtimestamp(unix_time, tz=_IST_tz).date()
         expiry     = OptionsMath.get_expiry_date(trade_date)
