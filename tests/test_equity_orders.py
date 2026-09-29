@@ -93,14 +93,49 @@ class EquityOrderTests(unittest.TestCase):
         self.assertEqual(self.preview().status_code, 409)
         self.ue.state.app_mode = 'LIVE'
         self.ue.is_running = True
-        self.assertEqual(self.preview().status_code, 409)
+        self.assertEqual(self.preview().status_code, 200)
         self.ue.is_running = False
-        self.ue.equity_engines = {1:SimpleNamespace(in_pos=False, running=True)}
+        self.ue.equity_engines = {1:SimpleNamespace(in_pos=False, running=True, paper=False, symbol='RELIANCE', name='Equity ORB')}
         self.assertEqual(self.preview().status_code, 409)
         self.ue.equity_engines = {}
         self.kite.access_token = ''
         self.assertEqual(self.preview().status_code, 409)
         self.kite.place_order.assert_not_called()
+
+    def test_options_exposure_and_unrelated_or_paper_equity_do_not_block(self):
+        self.ue.is_running = True
+        self.ue._engine = SimpleNamespace(strategy=SimpleNamespace(in_position=True), execution_blocked=False)
+        for symbol, paper in [('SBIN', False), ('RELIANCE', True)]:
+            self.ue.equity_engines = {1: SimpleNamespace(symbol=symbol, paper=paper, running=True, in_pos=True)}
+            with self.subTest(symbol=symbol, paper=paper):
+                self.assertEqual(self.execute(self.preview()).json['state'], 'submitted')
+
+    def test_same_symbol_conflict_rechecked_before_submission(self):
+        review = self.preview()
+        engine = SimpleNamespace(symbol='RELIANCE', paper=False, running=True, in_pos=False, name='Equity ORB')
+        self.ue.equity_engines = {1:engine}
+        response = self.execute(review)
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('RELIANCE', response.json['error'])
+        self.assertIn('Equity ORB', response.json['error'])
+        engine.running, engine.in_pos = False, True
+        self.assertEqual(self.preview().status_code, 409)
+        self.kite.place_order.assert_not_called()
+
+    def test_strategy_uncertainty_still_blocks_unrelated_orders(self):
+        self.ue._engine = SimpleNamespace(execution_blocked=True)
+        self.assertEqual(self.preview().status_code, 409)
+        self.ue._engine = None
+        self.ue.equity_engines = {1:SimpleNamespace(symbol='SBIN', paper=False, running=False, in_pos=False, execution_blocked=True)}
+        self.assertEqual(self.preview().status_code, 409)
+
+    def test_managed_stock_modify_and_cancel_blocked(self):
+        self.kite.orders.return_value = [self.broker_order()]
+        self.ue.equity_engines = {1:SimpleNamespace(symbol='RELIANCE', paper=False, running=True, in_pos=False)}
+        for action in ('modify', 'cancel'):
+            self.assertEqual(self.preview(action=action, order_id='order1').status_code, 409)
+        self.kite.modify_order.assert_not_called()
+        self.kite.cancel_order.assert_not_called()
 
     def test_invalid_fields(self):
         for change in ({'quantity':True}, {'quantity':0}, {'quantity':1.5}, {'price':100.01}, {'price':0},

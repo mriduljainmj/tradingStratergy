@@ -20,7 +20,7 @@ from dashboard.authz import admin_required
 from db.database import SessionLocal
 from db.models import InstrumentCatalog, ManualEquityOrder
 from execution.broker import is_kite_auth_error
-from execution.order_safety import serialized_order, has_exposure, unresolved_orders
+from execution.order_safety import serialized_order, unresolved_orders
 
 bp = Blueprint('equity_orders', __name__)
 OPEN = {'OPEN', 'TRIGGER PENDING', 'AMO REQ RECEIVED'}
@@ -41,8 +41,24 @@ def connection():
 def live(ue):
     if ue.state.app_mode != 'LIVE':
         raise Conflict('Select Live mode in Overview before submitting real equity orders.')
-    if ue.is_running or has_exposure(ue) or any(e.running for e in ue.equity_engines.values()):
-        raise Conflict('Stop automated strategies and resolve their positions before manual equity trading.')
+    engines = tuple(ue.equity_engines.values())
+    if (getattr(getattr(ue, '_engine', None), 'execution_blocked', False)
+            or any(getattr(e, 'execution_blocked', False) for e in engines)):
+        raise Conflict('A strategy has an uncertain broker order. Reconcile it in Profile before manual trading.')
+
+
+def protect_managed_equity(ue, symbol):
+    # The main ORB engine trades NFO options, not cash shares. Paper positions
+    # likewise do not own broker equity. Protect only the selected live stock.
+    for engine in tuple(ue.equity_engines.values()):
+        if getattr(engine, 'paper', False):
+            continue
+        managed = str(getattr(engine, 'symbol', '')).upper().split(':')[-1]
+        if managed and managed != symbol.upper():
+            continue
+        if engine.running or engine.in_pos:
+            name = getattr(engine, 'name', '') or 'an equity strategy'
+            raise Conflict(f'{symbol} is managed by live strategy {name}. Stop that strategy and resolve its position using strategy controls before trading this stock manually.')
 
 
 def handled(fn):
@@ -232,6 +248,7 @@ def preview():
                     bad(f'Cannot modify {k}; cancel and create a new order instead.')
             if p['quantity'] <= current.get('filled_quantity', 0):
                 bad('Total quantity must exceed the quantity already filled. Cancel to stop the remainder.')
+    protect_managed_equity(ue, p['tradingsymbol'])
     quote, margin = None, None
     if action != 'cancel':
         key = p['exchange'] + ':' + p['tradingsymbol']
@@ -302,6 +319,7 @@ def execute():
     if unresolved_orders(ue.user_id):
         raise Conflict('An earlier order needs reconciliation. Refresh Orders before continuing.')
     action, p, order_id = intent['action'], intent['order'], intent['order_id']
+    protect_managed_equity(ue, p['tradingsymbol'])
     if action != 'place':
         current = pending_order(kite, order_id)
         if action == 'modify' and p['quantity'] <= current.get('filled_quantity', 0):

@@ -60,8 +60,8 @@ interface Review {
     @if (!canTrade()) {
       <p class="notice">
         Real orders require an administrator account, a connected Kite session and Live mode.
-        <a routerLink="/overview">Open trading controls</a>. Stop automated strategies before manual
-        trading.
+        <a routerLink="/overview">Open trading controls</a>. Live strategies only block manual
+        orders for stocks they manage.
       </p>
     }
     <div class="trading-grid">
